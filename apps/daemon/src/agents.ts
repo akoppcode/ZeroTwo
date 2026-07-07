@@ -1,9 +1,5 @@
 // @ts-nocheck
-export {
-  AGENT_DEFS,
-  getAgentDef,
-  readLocalAgentProfileDefs,
-} from './runtimes/registry.js';
+export { AGENT_DEFS, getAgentDef } from './runtimes/registry.js';
 export { detectAgents, detectAgentsStream } from './runtimes/detection.js';
 export {
   resolveOnPath,
