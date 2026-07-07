@@ -1,6 +1,5 @@
 import { agentCapabilities } from '../capabilities.js';
 import { DEFAULT_MODEL_OPTION } from './shared.js';
-import { loadMmdRouteModels } from '../mmd-routes.js';
 import type { RuntimeAgentDef } from '../types.js';
 
 const CLAUDE_FALLBACK_MODELS = [
@@ -37,11 +36,10 @@ export const claudeAgentDef = {
       '--include-partial-messages': 'partialMessages',
       '--add-dir': 'addDir',
     },
-    // `claude` has no list-models subcommand. Prefer local mmd/MMS routes
-    // when present so proxy-backed Claude-compatible models appear in the
-    // picker, then keep the built-in aliases as fallback hints.
+    // `claude` has no list-models subcommand, so the picker shows these
+    // built-in aliases. Zero Two is subscription-only (spec §5.2): no
+    // custom model-route / proxy-endpoint resolution.
     fallbackModels: CLAUDE_FALLBACK_MODELS,
-    fetchModels: async (_resolvedBin, env) => loadMmdRouteModels(env, CLAUDE_FALLBACK_MODELS),
     // Prompt delivered via stdin to avoid both Linux `spawn E2BIG`
     // (MAX_ARG_STRLEN caps a single argv entry at ~128 KB) and Windows
     // `spawn ENAMETOOLONG` (CreateProcess caps the full command line at

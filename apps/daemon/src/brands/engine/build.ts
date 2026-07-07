@@ -90,7 +90,7 @@ function normalizeBrandForAssembly(brand: Brand): Brand {
 // ─────────────────────────── artifact kinds shipped by default ──────────────
 
 /** The artifact products written into every bundle's artifacts/ folder. */
-const ARTIFACT_KINDS: AssetKind[] = ["landing", "deck", "poster", "email", "newsletter", "form"];
+const ARTIFACT_KINDS: AssetKind[] = ["landing", "poster", "email", "newsletter", "form"];
 
 // ─────────────────────────── the BRAND-SYSTEM.md doc ────────────────────────
 
@@ -126,7 +126,6 @@ Everything below is *derived* — no token here was hand-authored.
 | \`kit.html\` | Themed component showcase (light). |
 | \`kit.dark.html\` | Themed component showcase (dark). |
 | \`artifacts/landing.html\` | Full landing page (hero → features → pricing → FAQ → CTA). |
-| \`artifacts/deck.html\` | 9-slide 16:9 pitch deck with keyboard navigation. |
 | \`artifacts/poster.html\` | 3:4 print-style poster. |
 | \`artifacts/email.html\` | A marketing email. |
 | \`artifacts/newsletter.html\` | Multi-story digest email. |

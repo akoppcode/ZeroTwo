@@ -133,7 +133,6 @@ function transientSuppressedReason(
   }
   if (category === 'process_exit') {
     return detail === 'agent_protocol_error' ||
-      detail === 'qoder_stop_sequence' ||
       detail === 'session_resume_expired' ||
       detail === 'stream_error' ||
       detail === 'fatal_rpc_error'

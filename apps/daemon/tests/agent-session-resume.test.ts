@@ -16,11 +16,7 @@ import {
   computeIncludeStable,
   hashStableInstructions,
   isAgentResumeFailure,
-  isAmrResumeFailure,
   isClaudeResumeFailure,
-  isCodexResumeFailure,
-  isOpencodeResumeFailure,
-  persistCapturedAgentSession,
   resolveAgentResumeContext,
 } from '../src/agent-session-resume.js';
 
@@ -231,95 +227,6 @@ describe('computeIncludeStable', () => {
   });
 });
 
-describe('persistCapturedAgentSession', () => {
-  let tempDir: string;
-
-  beforeEach(() => {
-    tempDir = mkdtempSync(path.join(os.tmpdir(), 'od-captured-session-'));
-  });
-  afterEach(() => {
-    closeDatabase();
-    rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  function seed() {
-    const db = openDatabase(tempDir, { dataDir: tempDir });
-    const now = Date.now();
-    insertProject(db, { id: 'proj-1', name: 'P', createdAt: now, updatedAt: now });
-    insertConversation(db, {
-      id: 'conv-1', projectId: 'proj-1', title: 'C', createdAt: now, updatedAt: now,
-    });
-    return db;
-  }
-
-  it('stores the captured session path for the conversation and agent', () => {
-    const db = seed();
-    const result = persistCapturedAgentSession(db, {
-      conversationId: 'conv-1',
-      agentId: 'pi',
-      sessionId: '/tmp/current.jsonl',
-      stablePromptHash: 'hash-1',
-    });
-    expect(result).toBe('stored');
-    expect(getAgentSessionRecord(db, 'conv-1', 'pi')).toMatchObject({
-      sessionId: '/tmp/current.jsonl',
-      stablePromptHash: 'hash-1',
-    });
-  });
-
-  it('clears stale session state when a successful run has no safe captured session', () => {
-    const db = seed();
-    upsertAgentSession(db, {
-      conversationId: 'conv-1',
-      agentId: 'pi',
-      sessionId: '/tmp/stale.jsonl',
-      stablePromptHash: 'old-hash',
-    });
-
-    const result = persistCapturedAgentSession(db, {
-      conversationId: 'conv-1',
-      agentId: 'pi',
-      sessionId: null,
-      stablePromptHash: 'new-hash',
-    });
-
-    expect(result).toBe('cleared');
-    expect(getAgentSessionRecord(db, 'conv-1', 'pi')).toBeNull();
-    expect(resolveAgentResumeContext(db, { conversationId: 'conv-1', agentId: 'pi' }).isResuming)
-      .toBe(false);
-  });
-
-  // Regression for the resume identity guard: pi-rpc persists via this capture
-  // path, so it must store model/cwd/lastMessageId too — otherwise the next pi
-  // turn sees a null cursor (`missing_cursor`) and reseeds forever, silently
-  // disabling pi's existing follow-up-session path (reported by @nettee).
-  it('persists the resume identity so a successful pi turn still resumes next turn', () => {
-    const db = seed();
-    upsertMessage(db, 'conv-1', { id: 'asst-1', role: 'assistant', content: 'pi reply', runStatus: 'succeeded' });
-
-    const result = persistCapturedAgentSession(db, {
-      conversationId: 'conv-1',
-      agentId: 'pi',
-      sessionId: '/tmp/current.jsonl',
-      stablePromptHash: 'hash-1',
-      model: null,
-      cwd: '/work/proj',
-      lastMessageId: 'asst-1',
-    });
-    expect(result).toBe('stored');
-
-    const ctx = resolveAgentResumeContext(db, {
-      conversationId: 'conv-1',
-      agentId: 'pi',
-      currentModel: null,
-      currentCwd: '/work/proj',
-    });
-    expect(ctx.isResuming).toBe(true);
-    expect(ctx.resumeSessionId).toBe('/tmp/current.jsonl');
-    expect(ctx.invalidationReason).toBeNull();
-  });
-});
-
 describe('hashStableInstructions', () => {
   it('is deterministic for the same input', () => {
     expect(hashStableInstructions('abc')).toBe(hashStableInstructions('abc'));
@@ -417,108 +324,18 @@ describe('isClaudeResumeFailure', () => {
   });
 });
 
-describe('isCodexResumeFailure', () => {
-  it('matches the codex "no rollout found" resume error', () => {
-    expect(
-      isCodexResumeFailure(
-        'Error: thread/resume: thread/resume failed: no rollout found for thread id 019eef4f-7409-7c82-bebe-30504eed3959',
-      ),
-    ).toBe(true);
-  });
-
-  it('matches the generic thread/resume-failed signature', () => {
-    expect(isCodexResumeFailure('thread/resume failed: something else')).toBe(true);
-  });
-
-  it('ignores unrelated codex errors and empty input', () => {
-    expect(isCodexResumeFailure('stream disconnected before first event')).toBe(false);
-    expect(isCodexResumeFailure('rate limit exceeded')).toBe(false);
-    expect(isCodexResumeFailure('')).toBe(false);
-  });
-});
-
-describe('isOpencodeResumeFailure', () => {
-  it('matches the OpenCode "Session not found" resume error', () => {
-    expect(isOpencodeResumeFailure('Error: Session not found')).toBe(true);
-    expect(
-      isOpencodeResumeFailure('{"name":"NotFoundError","data":{"message":"Session not found: ses_x"}}'),
-    ).toBe(true);
-  });
-
-  it('ignores unrelated OpenCode errors and empty input', () => {
-    expect(isOpencodeResumeFailure('OpenCode auth failed: login required')).toBe(false);
-    expect(isOpencodeResumeFailure('rate limit exceeded')).toBe(false);
-    expect(isOpencodeResumeFailure('')).toBe(false);
-  });
-});
-
-describe('isAmrResumeFailure', () => {
-  it('matches vela\'s structured resume_failed ACP error on stdout', () => {
-    expect(
-      isAmrResumeFailure('{"jsonrpc":"2.0","id":4,"error":{"code":-32600,"message":"the resumed session could not be loaded","data":{"kind":"resume_failed","phase":"session_load","retryable":true}}}'),
-    ).toBe(true);
-  });
-
-  it('does not match a bare mention of resume_failed in assistant prose', () => {
-    expect(isAmrResumeFailure('The build step logged resume_failed as a warning.')).toBe(false);
-    expect(isAmrResumeFailure('')).toBe(false);
-  });
-});
-
 describe('isAgentResumeFailure dispatch', () => {
-  it('routes amr to the resume_failed structured detector on stdout', () => {
-    // AMR's signal arrives on stdout (the ACP JSON-RPC channel), not stderr.
-    expect(
-      isAgentResumeFailure('amr', '', '{"error":{"data":{"kind":"resume_failed"}}}'),
-    ).toBe(true);
-    expect(
-      isAgentResumeFailure('amr', '{"error":{"data":{"kind":"resume_failed"}}}', ''),
-    ).toBe(false);
-  });
-
-  it('routes codex to the rollout-not-found detector', () => {
-    expect(
-      isAgentResumeFailure('codex', 'no rollout found for thread id abc'),
-    ).toBe(true);
-    // A Claude-style signature must NOT count as a codex resume failure.
-    expect(
-      isAgentResumeFailure('codex', 'No conversation found with session ID: abc'),
-    ).toBe(false);
-  });
-
-  it('routes opencode to the session-not-found detector (on stderr only)', () => {
-    // The CLI prints the miss to stderr (2nd positional is stdout).
-    expect(isAgentResumeFailure('opencode', 'Error: Session not found', '')).toBe(true);
-    // codex prose is not an OpenCode resume failure.
-    expect(
-      isAgentResumeFailure('opencode', 'no rollout found for thread id abc'),
-    ).toBe(false);
-  });
-
-  it('does NOT treat a generic phrase in successful assistant stdout as a resume miss (#4629 nettee)', () => {
-    // A turn that SUCCEEDS but whose model output literally says "session not
-    // found" must not be failed + have its session cleared — the phrase is only
-    // a resume miss when it comes from the CLI's stderr failure channel.
-    expect(
-      isAgentResumeFailure('opencode', '', 'Sure — your previous session was not found in the list, here it is...'),
-    ).toBe(false);
-    expect(
-      isAgentResumeFailure('codex', '', 'The logs mention "no rollout found for thread id" as an example.'),
-    ).toBe(false);
-  });
-
   it('routes claude (and unknown resume-capable agents) to the Claude detector', () => {
     expect(
       isAgentResumeFailure('claude', 'No conversation found with session ID: abc'),
     ).toBe(true);
-    // codex prose is not a Claude resume failure.
+    // Unrelated prose is not a Claude resume failure.
     expect(
-      isAgentResumeFailure('claude', 'no rollout found for thread id abc'),
+      isAgentResumeFailure('claude', 'rate limit exceeded'),
     ).toBe(false);
   });
 
   it('never reports a failure for empty output', () => {
-    expect(isAgentResumeFailure('codex', '')).toBe(false);
     expect(isAgentResumeFailure('claude', '')).toBe(false);
   });
 });

@@ -1,11 +1,11 @@
 // Modal wrapper around NewProjectPanel.
 //
 // Reuses the existing NewProjectPanel surface so all of the per-kind
-// tabs (prototype / live-artifact / deck / template / image / video /
-// audio / other) and their connector / template / design-system
-// pickers carry over without duplication. The modal closes itself
-// when the panel calls onCreate and it completes (success path) or when the user
-// clicks the backdrop / Esc.
+// tabs (prototype / live-artifact / deck / template / other) and their
+// connector / template / design-system pickers carry over without
+// duplication. The modal closes itself when the panel calls onCreate
+// and it completes (success path) or when the user clicks the
+// backdrop / Esc.
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -14,7 +14,6 @@ import type { OpenDesignHostProjectImportSuccess } from '@open-design/host';
 import { modalOverlay, modalContent } from '../motion';
 import type {
   DesignSystemSummary,
-  MediaProviderCredentials,
   ProjectTemplate,
   PromptTemplateSummary,
   SkillSummary,
@@ -35,7 +34,6 @@ interface Props {
   templates: ProjectTemplate[];
   onDeleteTemplate?: (id: string) => Promise<boolean>;
   promptTemplates: PromptTemplateSummary[];
-  mediaProviders?: Record<string, MediaProviderCredentials>;
   connectors?: ConnectorDetail[];
   connectorsLoading?: boolean;
   loading?: boolean;
@@ -72,7 +70,6 @@ function NewProjectModalBody({
   templates,
   onDeleteTemplate,
   promptTemplates,
-  mediaProviders,
   connectors,
   connectorsLoading,
   loading,
@@ -170,7 +167,6 @@ function NewProjectModalBody({
             templates={templates}
             {...(onDeleteTemplate ? { onDeleteTemplate } : {})}
             promptTemplates={promptTemplates}
-            {...(mediaProviders ? { mediaProviders } : {})}
             {...(connectors ? { connectors } : {})}
             {...(typeof connectorsLoading === 'boolean' ? { connectorsLoading } : {})}
             loading={Boolean(loading) || creating}

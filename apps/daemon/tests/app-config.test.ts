@@ -260,7 +260,7 @@ describe('app-config', () => {
 
     it('clears agentModels when null is sent', async () => {
       await writeAppConfig(dataDir, {
-        agentModels: { a: { model: 'gpt-4' } },
+        agentModels: { claude: { model: 'claude-sonnet-4' } },
         onboardingCompleted: true,
       });
       expect((await readAppConfig(dataDir)).agentModels).toBeDefined();
@@ -272,7 +272,7 @@ describe('app-config', () => {
 
     it('clears agentModels when empty object is sent', async () => {
       await writeAppConfig(dataDir, {
-        agentModels: { a: { model: 'gpt-4' } },
+        agentModels: { claude: { model: 'claude-sonnet-4' } },
       });
       await writeAppConfig(dataDir, { agentModels: {} });
       const cfg = await readAppConfig(dataDir);
@@ -282,34 +282,32 @@ describe('app-config', () => {
     it('validates agentModels entries, dropping invalid shapes', async () => {
       await writeAppConfig(dataDir, {
         agentModels: {
-          validAgent: { model: 'gpt-4', reasoning: 'fast' },
-          invalidAgent: 'not-an-object',
-          arrayAgent: [1, 2, 3],
-          badKeys: { model: 'ok', extra: 42 },
+          claude: { model: 'claude-sonnet-4', reasoning: 'fast' },
+          copilot: { model: 'ok', extra: 42 },
         },
       });
       const cfg = await readAppConfig(dataDir);
       expect(cfg.agentModels).toEqual({
-        validAgent: { model: 'gpt-4', reasoning: 'fast' },
+        claude: { model: 'claude-sonnet-4', reasoning: 'fast' },
       });
     });
 
     it('drops agentModels entirely when no entries are valid', async () => {
       await writeAppConfig(dataDir, {
         onboardingCompleted: true,
-        agentModels: { bad: 'string-value' },
+        agentModels: { claude: 'string-value' },
       });
       const cfg = await readAppConfig(dataDir);
       expect(cfg.onboardingCompleted).toBe(true);
       expect(cfg.agentModels).toBeUndefined();
     });
 
-    it('clears retired Gemini agent preferences from stored config', async () => {
+    it('clears retired agent preferences from stored config', async () => {
       await writeFile(path.join(dataDir, 'app-config.json'), JSON.stringify({
         agentId: 'gemini',
         agentModels: {
           gemini: { model: 'gemini-2.5-pro' },
-          codex: { model: 'gpt-5-codex' },
+          claude: { model: 'claude-sonnet-4' },
         },
         agentCliEnv: {
           gemini: { GEMINI_BIN: '~/bin/gemini' },
@@ -320,7 +318,7 @@ describe('app-config', () => {
 
       expect(cfg.agentId).toBeUndefined();
       expect(cfg.agentModels).toEqual({
-        codex: { model: 'gpt-5-codex' },
+        claude: { model: 'claude-sonnet-4' },
       });
       expect(cfg.agentCliEnv).toBeUndefined();
     });
@@ -330,32 +328,18 @@ describe('app-config', () => {
         agentCliEnv: {
           claude: {
             CLAUDE_CONFIG_DIR: '  ~/.claude-2  ',
+            CLAUDE_BIN: '  ~/bin/claude-next  ',
             ANTHROPIC_BASE_URL: '  https://proxy.example/anthropic  ',
             ANTHROPIC_API_KEY: '  sk-proxy-anthropic  ',
             ANTHROPIC_AUTH_TOKEN: '  sk-proxy-token  ',
             MMD_MODEL_ROUTES_FILE: '  ~/.config/mms/model-routes.json  ',
+            HOME: 'should-not-persist',
+          },
+          copilot: {
+            COPILOT_BIN: '  ~/bin/copilot  ',
           },
           codex: {
             CODEX_HOME: '~/.codex-alt',
-            CODEX_BIN: '~/bin/codex-next',
-            OPENAI_BASE_URL: '  https://proxy.example/openai  ',
-            OPENAI_API_KEY: '  sk-proxy-openai  ',
-          },
-          amr: {
-            VELA_BIN: '~/bin/vela',
-            VELA_API_URL: '  https://custom-amr.example  ',
-            OPEN_DESIGN_AMR_PROFILE: '  local  ',
-            OPENCODE_TEST_HOME: '  ~/.open-design-amr-opencode  ',
-            HOME: 'should-not-persist',
-          },
-          opencode: {
-            OPENCODE_BIN: '  ~/bin/opencode  ',
-          },
-          'byok-opencode': {
-            OPENCODE_BIN: '  ~/bin/byok-opencode  ',
-          },
-          'trae-cli': {
-            TRAE_CLI_BIN: '  ~/bin/traecli-public  ',
           },
           __proto__: {
             CLAUDE_CONFIG_DIR: 'bad',
@@ -365,24 +349,21 @@ describe('app-config', () => {
 
       const cfg = await readAppConfig(dataDir);
 
+      // Subscription-only auth: API-key entries and custom-endpoint /
+      // model-route overrides never survive validation.
       expect(cfg.agentCliEnv).toEqual({
-        claude: { CLAUDE_CONFIG_DIR: '~/.claude-2', ANTHROPIC_BASE_URL: 'https://proxy.example/anthropic', ANTHROPIC_API_KEY: 'sk-proxy-anthropic', ANTHROPIC_AUTH_TOKEN: 'sk-proxy-token', MMD_MODEL_ROUTES_FILE: '~/.config/mms/model-routes.json' },
-        codex: { CODEX_HOME: '~/.codex-alt', CODEX_BIN: '~/bin/codex-next', OPENAI_BASE_URL: 'https://proxy.example/openai', OPENAI_API_KEY: 'sk-proxy-openai' },
-        amr: {
-          VELA_BIN: '~/bin/vela',
-          VELA_API_URL: 'https://custom-amr.example',
-          OPEN_DESIGN_AMR_PROFILE: 'local',
-          OPENCODE_TEST_HOME: '~/.open-design-amr-opencode',
+        claude: {
+          CLAUDE_CONFIG_DIR: '~/.claude-2',
+          CLAUDE_BIN: '~/bin/claude-next',
         },
-        opencode: { OPENCODE_BIN: '~/bin/opencode' },
-        'trae-cli': { TRAE_CLI_BIN: '~/bin/traecli-public' },
+        copilot: { COPILOT_BIN: '~/bin/copilot' },
       });
-      expect(agentCliEnvForAgent(cfg.agentCliEnv, 'byok-opencode')).toEqual({
-        OPENCODE_BIN: '~/bin/opencode',
+      expect(agentCliEnvForAgent(cfg.agentCliEnv, 'copilot')).toEqual({
+        COPILOT_BIN: '~/bin/copilot',
       });
     });
 
-    it('drops legacy standalone Claude and Codex auth keys without base URLs or CLI intent', async () => {
+    it('drops legacy standalone Claude auth keys from stored config', async () => {
       await writeFile(path.join(dataDir, 'app-config.json'), JSON.stringify({
         agentCliEnv: {
           claude: {
@@ -390,11 +371,6 @@ describe('app-config', () => {
             ANTHROPIC_API_KEY: 'sk-legacy-anthropic',
             ANTHROPIC_AUTH_TOKEN: 'sk-legacy-token',
           },
-          codex: {
-            CODEX_HOME: '~/.codex-alt',
-            CODEX_API_KEY: 'sk-legacy-codex',
-            OPENAI_API_KEY: 'sk-legacy-openai',
-          },
         },
       }));
 
@@ -402,91 +378,14 @@ describe('app-config', () => {
 
       expect(cfg.agentCliEnv).toEqual({
         claude: { CLAUDE_CONFIG_DIR: '~/.claude-2' },
-        codex: { CODEX_HOME: '~/.codex-alt' },
       });
-      expect(cfg.agentCliEnvIntent).toBeUndefined();
-    });
-
-    it('keeps explicit CLI API key overrides without requiring base URLs', async () => {
-      await writeAppConfig(dataDir, {
-        agentCliEnv: {
-          claude: { ANTHROPIC_API_KEY: 'sk-anthropic' },
-          codex: { CODEX_API_KEY: 'sk-codex', OPENAI_API_KEY: 'sk-openai' },
-        },
-        agentCliEnvIntent: {
-          claude: { apiKeyOverride: true },
-          codex: { apiKeyOverride: true },
-        },
-      });
-
-      const cfg = await readAppConfig(dataDir);
-
-      expect(cfg.agentCliEnv).toEqual({
-        claude: { ANTHROPIC_API_KEY: 'sk-anthropic' },
-        codex: { CODEX_API_KEY: 'sk-codex', OPENAI_API_KEY: 'sk-openai' },
-      });
-      expect(cfg.agentCliEnvIntent).toEqual({
-        claude: { apiKeyOverride: true },
-        codex: { apiKeyOverride: true },
-      });
-    });
-
-    it('infers CLI API key override intent for explicit agentCliEnv writes', async () => {
-      await writeAppConfig(dataDir, {
-        agentCliEnv: {
-          claude: { ANTHROPIC_AUTH_TOKEN: 'sk-anthropic-token' },
-          codex: { CODEX_API_KEY: 'sk-codex' },
-        },
-      });
-
-      const cfg = await readAppConfig(dataDir);
-
-      expect(cfg.agentCliEnv).toEqual({
-        claude: { ANTHROPIC_AUTH_TOKEN: 'sk-anthropic-token' },
-        codex: { CODEX_API_KEY: 'sk-codex' },
-      });
-      expect(cfg.agentCliEnvIntent).toEqual({
-        claude: { apiKeyOverride: true },
-        codex: { apiKeyOverride: true },
-      });
-    });
-
-    it('does not infer CLI API key override intent when reading legacy disk config', async () => {
-      await writeFile(path.join(dataDir, 'app-config.json'), JSON.stringify({
-        agentCliEnv: {
-          codex: { CODEX_API_KEY: 'sk-legacy-codex' },
-        },
-      }));
-
-      const cfg = await readAppConfig(dataDir);
-
-      expect(cfg.agentCliEnv).toBeUndefined();
-      expect(cfg.agentCliEnvIntent).toBeUndefined();
-    });
-
-    it('drops orphan CLI env intent entries when the agent env is empty', async () => {
-      await writeAppConfig(dataDir, {
-        agentCliEnv: {
-          claude: { CLAUDE_CONFIG_DIR: '~/.claude-2' },
-        },
-        agentCliEnvIntent: {
-          codex: { apiKeyOverride: true },
-        },
-      });
-
-      const cfg = await readAppConfig(dataDir);
-
-      expect(cfg.agentCliEnv).toEqual({
-        claude: { CLAUDE_CONFIG_DIR: '~/.claude-2' },
-      });
-      expect(cfg.agentCliEnvIntent).toBeUndefined();
     });
 
     it('drops agentCliEnv entries that collide with Object.prototype keys', async () => {
       await writeAppConfig(dataDir, {
         agentCliEnv: {
           toString: {
-            CODEX_HOME: '~/.codex-prototype',
+            CLAUDE_CONFIG_DIR: '~/.claude-prototype-2',
           },
           hasOwnProperty: {
             CLAUDE_CONFIG_DIR: '~/.claude-prototype',
@@ -520,7 +419,7 @@ describe('app-config', () => {
 
       await writeAppConfig(dataDir, {
         agentCliEnv: {
-          codex: { CODEX_HOME: '~/.codex-alt' },
+          copilot: { COPILOT_BIN: '~/bin/copilot' },
         },
       });
       await writeAppConfig(dataDir, { agentCliEnv: {} });
@@ -530,9 +429,9 @@ describe('app-config', () => {
 
     it('handles corrupted existing file gracefully on write', async () => {
       await writeFile(path.join(dataDir, 'app-config.json'), 'CORRUPT');
-      await writeAppConfig(dataDir, { agentId: 'test' });
+      await writeAppConfig(dataDir, { agentId: 'claude' });
       const cfg = await readAppConfig(dataDir);
-      expect(cfg.agentId).toBe('test');
+      expect(cfg.agentId).toBe('claude');
     });
   });
 });

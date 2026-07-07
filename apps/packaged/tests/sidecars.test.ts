@@ -403,17 +403,6 @@ describe('buildPackagedDaemonSpawnEnv', () => {
     );
   });
 
-  it('forwards the packaged AMR profile to the daemon when configured', () => {
-    const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
-      appVersion: null,
-      amrProfile: 'test',
-      daemonCliEntry: null,
-      legacyDataDir: null,
-      requireDesktopAuth: true,
-    });
-    expect(env.OPEN_DESIGN_AMR_PROFILE).toBe('test');
-  });
-
   it('forwards POSTHOG_KEY/POSTHOG_HOST to the daemon spawn env when baked into the bundle', () => {
     const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
       appVersion: null,

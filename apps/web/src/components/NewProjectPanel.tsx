@@ -19,40 +19,16 @@ import type {
 
 import { useT } from '../i18n';
 import type { Dict } from '../i18n/types';
-import { fetchPromptTemplate, openFolderDialog } from '../providers/registry';
-import { isStoredMediaProviderEntryPresent } from '../state/config';
-import { isMediaProviderPickerReady } from '../media/provider-readiness';
+import { openFolderDialog } from '../providers/registry';
 import type {
-  AudioKind,
   DesignSystemSummary,
-  MediaAspect,
   ProjectKind,
   ProjectMetadata,
   ProjectPlatform,
   ProjectTemplate,
-  MediaProviderCredentials,
   PromptTemplateSummary,
   SkillSummary,
 } from '../types';
-import {
-  AUDIO_DURATIONS_SEC,
-  AUDIO_MODELS_BY_KIND,
-  DEFAULT_AUDIO_MODEL,
-  DEFAULT_IMAGE_MODEL,
-  DEFAULT_VIDEO_MODEL,
-  findProvider,
-  IMAGE_MODELS,
-  MEDIA_ASPECTS,
-  type MediaModel,
-  VIDEO_LENGTHS_SEC,
-  VIDEO_MODELS,
-} from '../media/models';
-import {
-  mergeAihubmixModels,
-  useAIHubMixImageModels,
-  useAIHubMixVideoModels,
-  useAIHubMixAudioModels,
-} from '../media/aihubmix-image-models';
 import { formatPickAndImportFailure } from '../utils/pickAndImportError';
 import { useBrandsByDesignSystemId } from '../runtime/brands';
 import { BrandPreviewCard } from './BrandPreviewCard';
@@ -60,16 +36,6 @@ import { Icon } from './Icon';
 import { Skeleton } from './Loading';
 import { Toast } from './Toast';
 import { useOpenFolderImport } from './useOpenFolderImport';
-
-// Snapshot of a curated prompt template, captured at New Project time and
-// folded into ProjectMetadata.promptTemplate. The user may have edited the
-// prompt body before clicking Create — that edited copy lives here.
-type PromptTemplatePick = {
-  summary: PromptTemplateSummary;
-  prompt: string;
-};
-
-const SFX_AUDIO_DURATIONS_SEC = AUDIO_DURATIONS_SEC.filter((sec) => sec <= 30);
 
 type TranslateFn = (key: keyof Dict, vars?: Record<string, string | number>) => string;
 
@@ -120,8 +86,7 @@ const DESIGN_PLATFORMS: Array<{
   },
 ];
 
-export type CreateTab = 'prototype' | 'live-artifact' | 'deck' | 'template' | 'media' | 'other';
-export type MediaSurface = 'image' | 'video' | 'audio';
+export type CreateTab = 'prototype' | 'live-artifact' | 'deck' | 'template' | 'other';
 
 export interface CreateInput {
   name: string;
@@ -155,7 +120,6 @@ interface Props {
   // host-owned project identifiers and forwards them here so App-level
   // state can refresh through the daemon API.
   onImportFolderResponse?: (response: OpenDesignHostProjectImportSuccess) => Promise<void> | void;
-  mediaProviders?: Record<string, MediaProviderCredentials>;
   connectors?: ConnectorDetail[];
   connectorsLoading?: boolean;
   onOpenConnectorsTab?: () => void;
@@ -168,14 +132,10 @@ const TAB_LABEL_KEYS: Record<CreateTab, keyof Dict> = {
   'live-artifact': 'newproj.tabLiveArtifact',
   deck: 'newproj.tabDeck',
   template: 'newproj.tabTemplate',
-  media: 'newproj.tabMedia',
   other: 'newproj.tabOther',
 };
 
-// Maps the New Project tab + media surface to the apply-result target
-// kind enum. `media` collapses to image/video/audio inside callers;
-// this helper covers the non-media tabs and the live-artifact special
-// case. Media surfaces map case-by-case at the call site.
+// Maps the New Project tab to the apply-result target kind enum.
 function newProjectTabToApplyKind(
   tab: CreateTab,
 ): TrackingDesignSystemApplyTargetKind {
@@ -186,12 +146,6 @@ function newProjectTabToApplyKind(
       return 'slide_deck';
     case 'live-artifact':
       return 'live_artifact';
-    case 'media':
-      // Media tab has its own surface picker; the apply emission
-      // happens before the user selects image/video/audio, so we
-      // mark it `unknown` rather than guessing. The picker is also
-      // typically hidden under media but the helper stays total.
-      return 'unknown';
     case 'template':
     case 'other':
       return 'unknown';
@@ -232,12 +186,6 @@ function deriveDesignSystemStatusValue(
   }
 }
 
-const MEDIA_SURFACE_LABEL_KEYS: Record<MediaSurface, keyof Dict> = {
-  image: 'newproj.surfaceImage',
-  video: 'newproj.surfaceVideo',
-  audio: 'newproj.surfaceAudio',
-};
-
 export function defaultDesignSystemSelection(
   defaultDesignSystemId: string | null,
   designSystems: DesignSystemSummary[],
@@ -270,12 +218,10 @@ export function NewProjectPanel({
   defaultDesignSystemId,
   templates,
   onDeleteTemplate,
-  promptTemplates,
   onCreate,
   onImportClaudeDesign,
   onImportFolder,
   onImportFolderResponse,
-  mediaProviders,
   connectors,
   connectorsLoading = false,
   onOpenConnectorsTab,
@@ -310,11 +256,6 @@ export function NewProjectPanel({
       tab_name: createTabToTracking(tab),
     });
   }, [tab, analytics.track]);
-  // Media tab consolidates image / video / audio. The active surface picks
-  // which set of options + skill resolution applies; submission still maps
-  // back to the existing image/video/audio ProjectKind branches so the
-  // backend contract is unchanged.
-  const [mediaSurface, setMediaSurface] = useState<MediaSurface>('image');
   const tabsRef = useRef<HTMLDivElement | null>(null);
   const [tabScroll, setTabScroll] = useState({ left: false, right: false });
   const [name, setName] = useState('');
@@ -346,31 +287,10 @@ export function NewProjectPanel({
   const [speakerNotes, setSpeakerNotes] = useState(false);
   const [animations, setAnimations] = useState(false);
   const [templateId, setTemplateId] = useState<string | null>(null);
-  const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL);
-  const [imageAspect, setImageAspect] = useState<MediaAspect>('1:1');
-  const [videoModel, setVideoModel] = useState(DEFAULT_VIDEO_MODEL);
-  const [videoModelTouched, setVideoModelTouched] = useState(false);
-  const [videoAspect, setVideoAspect] = useState<MediaAspect>('16:9');
-  const [videoLength, setVideoLength] = useState(5);
-  const [audioKind, setAudioKind] = useState<AudioKind>('speech');
-  const [audioModel, setAudioModel] = useState(DEFAULT_AUDIO_MODEL.speech);
-  const [audioDuration, setAudioDuration] = useState(10);
-  const [voice, setVoice] = useState('');
-  // Per-surface curated prompt template the user picked. Tracked
-  // independently for image vs video so flipping tabs doesn't clobber the
-  // other one's pick. The body is editable in-line and the edited copy is
-  // what gets carried to the agent — that's the "optimize the template"
-  // affordance the design brief asks for.
-  const [imagePromptTemplate, setImagePromptTemplate] =
-    useState<PromptTemplatePick | null>(null);
-  const [videoPromptTemplate, setVideoPromptTemplate] =
-    useState<PromptTemplatePick | null>(null);
 
   // Design system is meaningful only for the structured/visual surfaces
-  // (prototype, deck, template, and the freeform "other" canvas). The
-  // media surfaces use prompt templates instead — design tokens don't map
-  // onto image/video/audio generations, and the picker just adds noise
-  // there. Keep this list explicit so future tabs declare their intent.
+  // (prototype, deck, template, and the freeform "other" canvas). Keep
+  // this list explicit so future tabs declare their intent.
   const tabSupportsDesignSystem =
     tab === 'prototype' ||
     tab === 'deck' ||
@@ -415,8 +335,8 @@ export function NewProjectPanel({
   // without an explicit click. Only emits once per default-id while
   // the picker is showing, and only while the user hasn't manually
   // changed the selection (so the dashboard separates auto vs manual
-  // attribution). The picker visibility guard skips media tabs where
-  // the DS picker isn't rendered.
+  // attribution). The picker visibility guard skips tabs where the DS
+  // picker isn't rendered.
   const autoSelectFiredForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!showDesignSystemPicker) return;
@@ -496,79 +416,8 @@ export function NewProjectPanel({
         ?? list[0]?.id
         ?? null;
     }
-    if (tab === 'media') {
-      const list = skills.filter(
-        (s) => s.mode === mediaSurface || s.surface === mediaSurface,
-      );
-      // The HyperFrames-HTML render path lives in the `hyperframes` skill.
-      // When the user has chosen `hyperframes-html` (via dropdown or template),
-      // pin the project to that skill explicitly.
-      if (mediaSurface === 'video' && videoModel === 'hyperframes-html') {
-        const hyper = list.find((s) => s.id === 'hyperframes');
-        if (hyper) return hyper.id;
-      }
-      return list.find((s) => s.defaultFor.includes(mediaSurface))?.id
-        ?? list[0]?.id
-        ?? null;
-    }
     return null;
-  }, [tab, mediaSurface, skills, videoModel]);
-
-  // When the user picks a curated prompt template, propagate the template's
-  // declared `model` and `aspect` onto the actual project state. Without
-  // this the user picks (e.g.) a HyperFrames template but `videoModel`
-  // stays on the default seedance — the agent then dispatches the wrong
-  // model and the render path mismatches the prompt.
-  function handleImagePromptTemplate(pick: PromptTemplatePick | null) {
-    setImagePromptTemplate(pick);
-    const m = pick?.summary.model;
-    // Accept catalogued ids plus any live AIHubMix catalogue id (aihubmix-*),
-    // which renders dynamically and won't appear in the static IMAGE_MODELS.
-    if (m && (IMAGE_MODELS.some((x) => x.id === m) || m.startsWith('aihubmix-'))) setImageModel(m);
-    const a = pick?.summary.aspect;
-    if (a && (MEDIA_ASPECTS as readonly string[]).includes(a)) {
-      setImageAspect(a as MediaAspect);
-    }
-  }
-  function handleVideoPromptTemplate(pick: PromptTemplatePick | null) {
-    setVideoPromptTemplate(pick);
-    const m = pick?.summary.model;
-    if (m && VIDEO_MODELS.some((x) => x.id === m)) {
-      setVideoModel(m);
-      setVideoModelTouched(true);
-    }
-    const a = pick?.summary.aspect;
-    if (a && (MEDIA_ASPECTS as readonly string[]).includes(a)) {
-      setVideoAspect(a as MediaAspect);
-    }
-  }
-  function handleVideoModel(id: string) {
-    setVideoModel(id);
-    setVideoModelTouched(true);
-  }
-
-  // The HyperFrames skill renders HTML compositions through a local
-  // `npx hyperframes render` path, which dispatches under the
-  // `hyperframes-html` model — not seedance/veo/sora. When the resolved
-  // skill for the video tab is hyperframes, default `videoModel` so the
-  // model dropdown matches the actual render path. Once the user has
-  // explicitly chosen a model (via the dropdown or by picking a template
-  // that declares a model), `videoModelTouched` latches and this effect
-  // becomes a no-op for the rest of the panel session — re-entering the
-  // Media tab's Video surface no longer silently rewrites their override back to
-  // hyperframes-html.
-  useEffect(() => {
-    if (tab !== 'media' || mediaSurface !== 'video') return;
-    if (skillIdForTab !== 'hyperframes') return;
-    if (videoModelTouched) return;
-    if (videoPromptTemplate) return;
-    if (!VIDEO_MODELS.some((m) => m.id === 'hyperframes-html')) return;
-    setVideoModel('hyperframes-html');
-    // Intentionally leaving videoPromptTemplate / videoModel out of deps
-    // so this only fires when the user toggles the tab or the skill
-    // resolution shifts — not whenever the user changes the dropdown.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, mediaSurface, skillIdForTab, videoModelTouched]);
+  }, [tab, skills]);
 
   const canCreate =
     !loading && (tab !== 'template' || templateId != null);
@@ -665,24 +514,14 @@ export function NewProjectPanel({
 
   function handleCreate() {
     if (!canCreate) return;
-    // Media surfaces don't carry a design system pick. Force the primary
-    // and inspiration ids to empty there so the New Project panel can't
-    // accidentally bind a stale DS that the user can no longer see in the
-    // form (the picker is hidden for image/video/audio).
+    // Tabs without a design system pick force the primary and inspiration
+    // ids to empty so the New Project panel can't accidentally bind a
+    // stale DS that the user can no longer see in the form.
     const { primary: primaryDs, inspirations } =
       buildDesignSystemCreateSelection(showDesignSystemPicker, selectedDsIds);
-    const promptTemplatePick =
-      tab === 'media'
-        ? mediaSurface === 'image'
-          ? imagePromptTemplate
-          : mediaSurface === 'video'
-            ? videoPromptTemplate
-            : null
-        : null;
     const trimmedName = name.trim();
     const metadata = buildMetadata({
       tab,
-      mediaSurface,
       fidelity,
       platformTargets,
       includeLandingPage,
@@ -691,17 +530,7 @@ export function NewProjectPanel({
       animations,
       templateId,
       templates,
-      imageModel,
-      imageAspect,
-      videoModel,
-      videoAspect,
-      videoLength,
-      audioKind,
-      audioModel,
-      audioDuration,
-      voice,
       inspirationIds: inspirations,
-      promptTemplate: promptTemplatePick,
     });
     // Generate the click→result correlation id here so the home_click and
     // the eventual project_create_result share request_id.
@@ -721,7 +550,7 @@ export function NewProjectPanel({
       { requestId },
     );
     onCreate({
-      name: trimmedName || autoName(tab, mediaSurface, t),
+      name: trimmedName || autoName(tab, t),
       skillId: skillIdForTab,
       designSystemId: primaryDs,
       metadata: {
@@ -846,7 +675,7 @@ export function NewProjectPanel({
       </div>
       <div className="newproj-body">
         <h3 className="newproj-title">
-          <span className="newproj-title-text">{titleForTab(tab, mediaSurface, t)}</span>
+          <span className="newproj-title-text">{titleForTab(tab, t)}</span>
           {tab === 'live-artifact' ? (
             // "Beta" is an internationally adopted brand-style status marker;
             // intentionally not run through t() (consistent with short product
@@ -910,46 +739,6 @@ export function NewProjectPanel({
           />
         ) : null}
 
-        {tab === 'media' ? (
-          <div
-            className="newproj-media-segmented"
-            role="tablist"
-            aria-label={t('newproj.tabMedia')}
-          >
-            {(Object.keys(MEDIA_SURFACE_LABEL_KEYS) as MediaSurface[]).map((surface) => (
-              <button
-                key={surface}
-                type="button"
-                role="tab"
-                data-testid={`new-project-media-surface-${surface}`}
-                aria-selected={mediaSurface === surface}
-                className={`newproj-media-surface ${mediaSurface === surface ? 'active' : ''}`}
-                onClick={() => setMediaSurface(surface)}
-              >
-                {t(MEDIA_SURFACE_LABEL_KEYS[surface])}
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        {tab === 'media' && mediaSurface === 'image' ? (
-          <PromptTemplatePicker
-            surface="image"
-            templates={promptTemplates}
-            value={imagePromptTemplate}
-            onChange={handleImagePromptTemplate}
-          />
-        ) : null}
-
-        {tab === 'media' && mediaSurface === 'video' ? (
-          <PromptTemplatePicker
-            surface="video"
-            templates={promptTemplates}
-            value={videoPromptTemplate}
-            onChange={handleVideoPromptTemplate}
-          />
-        ) : null}
-
         {tab === 'prototype' || tab === 'live-artifact' || tab === 'template' || tab === 'other' ? (
           <PlatformPicker value={platformTargets} onChange={setPlatformTargets} />
         ) : null}
@@ -1001,51 +790,6 @@ export function NewProjectPanel({
               onChange={setAnimations}
             />
           </>
-        ) : null}
-
-        {tab === 'media' && mediaSurface === 'image' ? (
-          <MediaProjectOptions
-            surface="image"
-            imageModel={imageModel}
-            imageAspect={imageAspect}
-            mediaProviders={mediaProviders}
-            onImageModel={setImageModel}
-            onImageAspect={setImageAspect}
-          />
-        ) : null}
-
-        {tab === 'media' && mediaSurface === 'video' ? (
-          <MediaProjectOptions
-            surface="video"
-            videoModel={videoModel}
-            videoAspect={videoAspect}
-            videoLength={videoLength}
-            mediaProviders={mediaProviders}
-            onVideoModel={handleVideoModel}
-            onVideoAspect={setVideoAspect}
-            onVideoLength={setVideoLength}
-          />
-        ) : null}
-
-        {tab === 'media' && mediaSurface === 'audio' ? (
-          <MediaProjectOptions
-            surface="audio"
-            audioKind={audioKind}
-            audioModel={audioModel}
-            audioDuration={audioDuration}
-            voice={voice}
-            mediaProviders={mediaProviders}
-            onAudioKind={(kind) => {
-              setAudioKind(kind);
-              setAudioModel(DEFAULT_AUDIO_MODEL[kind]);
-              if (kind === 'sfx') {
-                setAudioDuration((duration) => Math.min(duration, SFX_AUDIO_DURATIONS_SEC.at(-1) ?? 30));
-              }
-            }}
-            onAudioModel={setAudioModel}
-            onAudioDuration={setAudioDuration}
-            onVoice={setVoice}
-          />
         ) : null}
 
         <button
@@ -1651,302 +1395,6 @@ function TemplatePicker({
   );
 }
 
-/* ============================================================
-   Prompt template picker — for the image/video tabs only.
-   - Trigger card (mirrors the design-system trigger) opens a popover
-     with a search field and a thumbnail-card list filtered by surface.
-   - When a template is picked we lazily fetch the full prompt body via
-     fetchPromptTemplate(...) and drop it into a textarea so the user
-     can tune ("optimize") the wording before clicking Create.
-   - The (possibly edited) body lands in metadata.promptTemplate.prompt
-     and becomes part of the system prompt — the agent treats it as a
-     stylistic + structural reference for the generation request.
-   ============================================================ */
-function PromptTemplatePicker({
-  surface,
-  templates,
-  value,
-  onChange,
-}: {
-  surface: 'image' | 'video';
-  templates: PromptTemplateSummary[];
-  value: PromptTemplatePick | null;
-  onChange: (next: PromptTemplatePick | null) => void;
-}) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // Last template we tried to pick that failed — kept so the inline
-  // banner can offer a one-click retry without making the user re-find
-  // the card in the popover (which auto-closed on success). Cleared as
-  // soon as a pick succeeds or the user picks a different template.
-  const [lastFailedPick, setLastFailedPick] =
-    useState<PromptTemplateSummary | null>(null);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const searchRef = useRef<HTMLInputElement | null>(null);
-
-  const surfaceScoped = useMemo(
-    () => templates.filter((tpl) => tpl.surface === surface),
-    [templates, surface],
-  );
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return surfaceScoped;
-    return surfaceScoped.filter((tpl) => {
-      return (
-        tpl.title.toLowerCase().includes(q) ||
-        tpl.summary.toLowerCase().includes(q) ||
-        (tpl.category || '').toLowerCase().includes(q) ||
-        (tpl.tags ?? []).some((tag) => tag.toLowerCase().includes(q))
-      );
-    });
-  }, [surfaceScoped, query]);
-
-  useEffect(() => {
-    if (!open) return;
-    const id = window.setTimeout(() => searchRef.current?.focus(), 30);
-    return () => window.clearTimeout(id);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointer(e: MouseEvent) {
-      if (wrapRef.current?.contains(e.target as Node)) return;
-      setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false);
-    }
-    const id = window.setTimeout(() => {
-      document.addEventListener('mousedown', onPointer);
-      document.addEventListener('keydown', onKey);
-    }, 0);
-    return () => {
-      window.clearTimeout(id);
-      document.removeEventListener('mousedown', onPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  async function pickTemplate(summary: PromptTemplateSummary) {
-    setLoadingId(summary.id);
-    setError(null);
-    try {
-      const detail = await fetchPromptTemplate(summary.surface, summary.id);
-      if (!detail) {
-        setError(t('promptTemplates.fetchError'));
-        setLastFailedPick(summary);
-        return;
-      }
-      onChange({ summary, prompt: detail.prompt });
-      setLastFailedPick(null);
-      setOpen(false);
-      setQuery('');
-    } catch {
-      // fetchPromptTemplate already swallows errors and returns null in
-      // the happy path; this catch is a defensive net for unexpected
-      // throws so the inline banner still surfaces and the user can
-      // retry instead of being stuck on a permanent loading spinner.
-      setError(t('promptTemplates.fetchError'));
-      setLastFailedPick(summary);
-    } finally {
-      setLoadingId(null);
-    }
-  }
-
-  function clear() {
-    onChange(null);
-    setLastFailedPick(null);
-    setError(null);
-    setOpen(false);
-    setQuery('');
-  }
-
-  const triggerTitle = value?.summary.title ?? t('newproj.promptTemplateNoneTitle');
-  const triggerSub = value
-    ? value.summary.category || value.summary.summary || t('newproj.promptTemplateRefSub')
-    : t('newproj.promptTemplateNoneSub');
-
-  return (
-    <div className="newproj-section ds-picker prompt-template-picker" ref={wrapRef}>
-      <label className="newproj-label">{t('newproj.promptTemplateLabel')}</label>
-      <button
-        type="button"
-        data-testid="prompt-template-trigger"
-        className={`ds-picker-trigger${open ? ' open' : ''}${value ? '' : ' empty'}`}
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <PromptTemplateAvatar summary={value?.summary ?? null} />
-        <span className="ds-picker-meta">
-          <span className="ds-picker-title">{triggerTitle}</span>
-          <span className="ds-picker-sub">{triggerSub}</span>
-        </span>
-        <Icon
-          name="chevron-down"
-          size={14}
-          className="ds-picker-chevron"
-          style={{ transform: open ? 'rotate(180deg)' : undefined }}
-        />
-      </button>
-      {open ? (
-        <div className="ds-picker-popover" role="listbox">
-          <div className="ds-picker-head">
-            <input
-              ref={searchRef}
-              data-testid="prompt-template-search"
-              className="ds-picker-search"
-              placeholder={t('newproj.promptTemplateSearch')}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-          <div className="ds-picker-list">
-            <button
-              type="button"
-              role="option"
-              aria-selected={value === null}
-              className={`ds-picker-item${value === null ? ' active' : ''}`}
-              onClick={clear}
-            >
-              <span className="ds-picker-item-avatar">
-                <NoneAvatar />
-              </span>
-              <span className="ds-picker-item-text">
-                <span className="ds-picker-item-title">
-                  {t('newproj.promptTemplateNoneTitle')}
-                </span>
-                <span className="ds-picker-item-sub">
-                  {t('newproj.promptTemplateNoneSub')}
-                </span>
-              </span>
-            </button>
-            {filtered.length === 0 ? (
-              <div className="ds-picker-empty">
-                {surfaceScoped.length === 0
-                  ? t('newproj.promptTemplateEmpty')
-                  : t('promptTemplates.emptyNoMatch')}
-              </div>
-            ) : (
-              filtered.map((tpl) => {
-                const active = value?.summary.id === tpl.id;
-                return (
-                  <button
-                    key={tpl.id}
-                    type="button"
-                    role="option"
-                    aria-selected={active}
-                    className={`ds-picker-item${active ? ' active' : ''}`}
-                    onClick={() => void pickTemplate(tpl)}
-                    disabled={loadingId === tpl.id}
-                  >
-                    <span className="ds-picker-item-avatar">
-                      <PromptTemplateAvatar summary={tpl} />
-                    </span>
-                    <span className="ds-picker-item-text">
-                      <span className="ds-picker-item-title">
-                        {tpl.title}
-                        {loadingId === tpl.id ? (
-                          <span className="ds-picker-item-badge">
-                            {t('common.loading')}
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="ds-picker-item-sub">
-                        {tpl.summary || tpl.category}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-      ) : null}
-      {error ? (
-        <div
-          className="prompt-template-error"
-          role="alert"
-          data-testid="prompt-template-error"
-        >
-          <span className="prompt-template-error-msg">{error}</span>
-          {lastFailedPick ? (
-            <button
-              type="button"
-              className="ghost prompt-template-error-retry"
-              data-testid="prompt-template-retry"
-              onClick={() => void pickTemplate(lastFailedPick)}
-              disabled={loadingId === lastFailedPick.id}
-            >
-              {loadingId === lastFailedPick.id
-                ? t('common.loading')
-                : t('promptTemplates.retry')}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {value ? (
-        <div className="prompt-template-edit">
-          <div className="prompt-template-edit-head">
-            <span className="prompt-template-edit-label">
-              {t('newproj.promptTemplateBodyLabel')}
-            </span>
-            <span className="prompt-template-edit-hint">
-              {t('newproj.promptTemplateOptimizeHint')}
-            </span>
-          </div>
-          <textarea
-            data-testid="prompt-template-body"
-            className="prompt-template-edit-textarea"
-            value={value.prompt}
-            rows={6}
-            onChange={(e) =>
-              onChange({ summary: value.summary, prompt: e.target.value })
-            }
-          />
-          {value.prompt.trim().length === 0 ? (
-            <div
-              className="prompt-template-edit-empty"
-              data-testid="prompt-template-empty-hint"
-            >
-              {t('newproj.promptTemplateBodyEmpty')}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function PromptTemplateAvatar({
-  summary,
-}: {
-  summary: PromptTemplateSummary | null;
-}) {
-  if (!summary) return <NoneAvatar />;
-  if (summary.previewImageUrl) {
-    return (
-      <span className="ds-avatar prompt-template-avatar" aria-hidden>
-        <img
-          src={summary.previewImageUrl}
-          alt=""
-          loading="lazy"
-          draggable={false}
-        />
-      </span>
-    );
-  }
-  return (
-    <span className="ds-avatar prompt-template-avatar fallback" aria-hidden>
-      <Icon name={summary.surface === 'video' ? 'play' : 'image'} size={14} />
-    </span>
-  );
-}
-
 function TemplateOption({
   active,
   onClick,
@@ -2393,455 +1841,8 @@ function fallbackSwatches(seed: string): string[] {
   ];
 }
 
-function MediaProjectOptions(props:
-  | {
-      surface: 'image';
-      imageModel: string;
-      imageAspect: MediaAspect;
-      mediaProviders?: Record<string, MediaProviderCredentials>;
-      onImageModel: (value: string) => void;
-      onImageAspect: (value: MediaAspect) => void;
-    }
-  | {
-      surface: 'video';
-      videoModel: string;
-      videoAspect: MediaAspect;
-      videoLength: number;
-      mediaProviders?: Record<string, MediaProviderCredentials>;
-      onVideoModel: (value: string) => void;
-      onVideoAspect: (value: MediaAspect) => void;
-      onVideoLength: (value: number) => void;
-    }
-  | {
-      surface: 'audio';
-      audioKind: AudioKind;
-      audioModel: string;
-      audioDuration: number;
-      voice: string;
-      mediaProviders?: Record<string, MediaProviderCredentials>;
-      onAudioKind: (value: AudioKind) => void;
-      onAudioModel: (value: string) => void;
-      onAudioDuration: (value: number) => void;
-      onVoice: (value: string) => void;
-    }
-) {
-  const t = useT();
-  const aihubmixImageModels = useAIHubMixImageModels();
-  const aihubmixVideoModels = useAIHubMixVideoModels();
-  const aihubmixAudioModels = useAIHubMixAudioModels();
-
-  if (props.surface === 'image') {
-    return (
-      <div className="newproj-media-options">
-        <MediaModelCards
-          label={t('newproj.modelLabel')}
-          models={supportedModels('image', mergeAihubmixModels(IMAGE_MODELS, aihubmixImageModels))}
-          mediaProviders={props.mediaProviders}
-          value={props.imageModel}
-          onChange={props.onImageModel}
-        />
-        <AspectCards
-          label={t('newproj.aspectLabel')}
-          value={props.imageAspect}
-          onChange={props.onImageAspect}
-        />
-      </div>
-    );
-  }
-
-  if (props.surface === 'video') {
-    return (
-      <div className="newproj-media-options">
-        <MediaModelCards
-          label={t('newproj.modelLabel')}
-          models={supportedModels('video', mergeAihubmixModels(VIDEO_MODELS, aihubmixVideoModels))}
-          mediaProviders={props.mediaProviders}
-          value={props.videoModel}
-          onChange={props.onVideoModel}
-        />
-        <AspectCards
-          label={t('newproj.aspectLabel')}
-          value={props.videoAspect}
-          onChange={props.onVideoAspect}
-        />
-        <label className="newproj-label">
-          <span>{t('newproj.videoLengthLabel')}</span>
-          <select value={props.videoLength} onChange={(e) => props.onVideoLength(Number(e.target.value))}>
-            {VIDEO_LENGTHS_SEC.map((sec) => (
-              <option key={sec} value={sec}>{t('newproj.videoLengthSeconds', { n: sec })}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-    );
-  }
-
-  // AIHubMix's live catalogue is speech (TTS) only; music/sfx stay static.
-  const audioBase =
-    props.audioKind === 'speech'
-      ? mergeAihubmixModels(AUDIO_MODELS_BY_KIND.speech, aihubmixAudioModels)
-      : AUDIO_MODELS_BY_KIND[props.audioKind];
-  const models = supportedModels('audio', audioBase);
-  const audioDurations = props.audioKind === 'sfx'
-    ? SFX_AUDIO_DURATIONS_SEC
-    : AUDIO_DURATIONS_SEC;
-  return (
-    <div className="newproj-media-options">
-      <OptionCards
-        label={t('newproj.audioKindLabel')}
-        options={[
-          { value: 'speech' as const, title: t('newproj.audioKindSpeech') },
-          { value: 'sfx' as const, title: t('newproj.audioKindSfx') },
-        ]}
-        value={props.audioKind}
-        onChange={props.onAudioKind}
-      />
-      <MediaModelCards
-        label={t('newproj.modelLabel')}
-        models={models}
-        mediaProviders={props.mediaProviders}
-        value={props.audioModel}
-        onChange={props.onAudioModel}
-      />
-      <label className="newproj-label">
-        <span>{t('newproj.audioDurationLabel')}</span>
-        <select value={props.audioDuration} onChange={(e) => props.onAudioDuration(Number(e.target.value))}>
-          {audioDurations.map((sec) => (
-            <option key={sec} value={sec}>{t('newproj.audioDurationSeconds', { n: sec })}</option>
-          ))}
-        </select>
-      </label>
-      {props.audioKind === 'speech' ? (
-        <label className="newproj-label">
-          <span>{t('newproj.voiceLabel')}</span>
-          <input
-            value={props.voice}
-            placeholder={t('newproj.voicePlaceholder')}
-            onChange={(e) => props.onVoice(e.target.value)}
-          />
-        </label>
-      ) : null}
-    </div>
-  );
-}
-
-export function supportedModels(surface: 'image' | 'video' | 'audio', models: MediaModel[]): MediaModel[] {
-  const supportedProviders: Record<'image' | 'video' | 'audio', Set<string>> = {
-    image: new Set(['openai', 'codex', 'volcengine', 'grok', 'nanobanana', 'openrouter', 'imagerouter', 'leonardo', 'custom-image', 'aihubmix']),
-    video: new Set(['volcengine', 'hyperframes', 'grok', 'openrouter', 'imagerouter', 'aihubmix']),
-    audio: new Set(['minimax', 'fishaudio', 'senseaudio', 'elevenlabs', 'openai', 'volcengine', 'aihubmix']),
-  };
-  return models.filter((model) => {
-    const provider = findProvider(model.provider);
-    return provider?.integrated === true && supportedProviders[surface].has(model.provider);
-  });
-}
-
-function MediaModelCards({
-  label,
-  models,
-  mediaProviders,
-  value,
-  onChange,
-}: {
-  label: string;
-  models: MediaModel[];
-  mediaProviders?: Record<string, MediaProviderCredentials>;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const searchRef = useRef<HTMLInputElement | null>(null);
-
-  // Group models by provider once. The trigger row needs the same provider
-  // metadata (label + status) to render the selected model's caption, so we
-  // compute groups regardless of whether the popover is open.
-  const groups = useMemo(() => {
-    const out: Array<{
-      providerId: string;
-      providerLabel: string;
-      status: 'configured' | 'integrated' | 'unsupported';
-      sortIndex: number;
-      sortPriority: number;
-      models: MediaModel[];
-    }> = [];
-    for (const model of models) {
-      const provider = findProvider(model.provider);
-      const providerId = provider?.id ?? model.provider;
-      if (!isMediaProviderPickerReady(providerId, mediaProviders)) continue;
-      const entry = mediaProviders?.[providerId];
-      const configured = provider?.credentialsRequired !== false && isStoredMediaProviderEntryPresent(entry);
-      let group = out.find((g) => g.providerId === providerId);
-      if (!group) {
-        group = {
-          providerId,
-          providerLabel: provider?.label ?? model.provider,
-          status: configured
-            ? 'configured'
-            : provider?.integrated
-              ? 'integrated'
-              : 'unsupported',
-          sortIndex: out.length,
-          sortPriority: configured ? 0 : provider?.credentialsRequired === false ? 1 : 2,
-          models: [],
-        };
-        out.push(group);
-      }
-      group.models.push(model);
-    }
-    return out.sort((a, b) => a.sortPriority - b.sortPriority || a.sortIndex - b.sortIndex);
-  }, [models, mediaProviders]);
-
-  const selected = useMemo(() => {
-    for (const group of groups) {
-      const hit = group.models.find((m) => m.id === value);
-      if (hit) return { model: hit, group };
-    }
-    return null;
-  }, [groups, value]);
-  const firstAvailableModelId = groups[0]?.models[0]?.id ?? null;
-
-  useEffect(() => {
-    if (selected) return;
-    if (firstAvailableModelId) {
-      onChange(firstAvailableModelId);
-      return;
-    }
-    if (value) onChange('');
-  }, [firstAvailableModelId, onChange, selected, value]);
-
-  const filteredGroups = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return groups;
-    return groups
-      .map((g) => ({
-        ...g,
-        models: g.models.filter((m) => {
-          return (
-            m.id.toLowerCase().includes(q) ||
-            m.label.toLowerCase().includes(q) ||
-            m.hint.toLowerCase().includes(q) ||
-            g.providerLabel.toLowerCase().includes(q)
-          );
-        }),
-      }))
-      .filter((g) => g.models.length > 0);
-  }, [groups, query]);
-
-  const totalMatches = filteredGroups.reduce((n, g) => n + g.models.length, 0);
-
-  useEffect(() => {
-    if (!open) return;
-    const id = window.setTimeout(() => searchRef.current?.focus(), 30);
-    return () => window.clearTimeout(id);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointer(e: MouseEvent) {
-      if (wrapRef.current?.contains(e.target as Node)) return;
-      setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false);
-    }
-    const id = window.setTimeout(() => {
-      document.addEventListener('mousedown', onPointer);
-      document.addEventListener('keydown', onKey);
-    }, 0);
-    return () => {
-      window.clearTimeout(id);
-      document.removeEventListener('mousedown', onPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  function pick(modelId: string) {
-    onChange(modelId);
-    setOpen(false);
-    setQuery('');
-  }
-
-  const triggerTitle = selected?.model.label ?? t('newproj.modelMissingTitle');
-  // The model.hint frequently leads with the provider name (e.g.
-  // "OpenAI · 4K, native multimodal"), so emitting providerLabel as a
-  // separate prefix would duplicate it. If the hint already opens with the
-  // provider label, just use the hint verbatim — otherwise prefix it.
-  const triggerSub = selected
-    ? selected.model.hint.toLowerCase().startsWith(selected.group.providerLabel.toLowerCase())
-      ? selected.model.hint
-      : `${selected.group.providerLabel} · ${selected.model.hint}`
-    : t('newproj.modelMissingSub');
-
-  return (
-    <div className="newproj-section ds-picker model-picker" ref={wrapRef}>
-      <label className="newproj-label">{label}</label>
-      <button
-        type="button"
-        data-testid="model-picker-trigger"
-        className={`ds-picker-trigger${open ? ' open' : ''}${selected ? '' : ' empty'}`}
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <span className="ds-picker-meta">
-          <span className="ds-picker-title">{triggerTitle}</span>
-          <span className="ds-picker-sub">{triggerSub}</span>
-        </span>
-        <Icon
-          name="chevron-down"
-          size={14}
-          className="ds-picker-chevron"
-          style={{ transform: open ? 'rotate(180deg)' : undefined }}
-        />
-      </button>
-      {open ? (
-        <div className="ds-picker-popover" role="listbox">
-          <div className="ds-picker-head">
-            <input
-              ref={searchRef}
-              data-testid="model-picker-search"
-              className="ds-picker-search"
-              placeholder={t('newproj.modelSearch')}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-          <div className="ds-picker-list">
-            {totalMatches === 0 ? (
-              <div className="ds-picker-empty">{t('newproj.modelEmpty')}</div>
-            ) : (
-              filteredGroups.map((group) => (
-                <div className="ds-picker-group" key={group.providerId}>
-                  <div className="ds-picker-group-head">
-                    <span>{group.providerLabel}</span>
-                    <span className={`newproj-provider-badge ${group.status}`}>
-                      {group.status === 'configured'
-                        ? 'Configured'
-                        : group.status === 'integrated'
-                          ? 'Integrated'
-                          : 'Unsupported'}
-                    </span>
-                  </div>
-                  {group.models.map((model) => {
-                    const active = value === model.id;
-                    return (
-                      <button
-                        key={model.id}
-                        type="button"
-                        role="option"
-                        aria-selected={active}
-                        data-testid={`model-picker-option-${model.id}`}
-                        className={`ds-picker-item${active ? ' active' : ''}`}
-                        onClick={() => pick(model.id)}
-                      >
-                        <span className="ds-picker-item-text">
-                          <span className="ds-picker-item-title">
-                            {model.label}
-                            {model.default ? (
-                              <span className="ds-picker-item-badge">
-                                {t('newproj.modelRecommended')}
-                              </span>
-                            ) : null}
-                          </span>
-                          <span className="ds-picker-item-sub">{model.hint}</span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function AspectCards({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: MediaAspect;
-  onChange: (value: MediaAspect) => void;
-}) {
-  const labels: Record<MediaAspect, string> = {
-    '1:1': 'Square',
-    '16:9': 'Landscape',
-    '9:16': 'Portrait',
-    '4:3': 'Wide',
-    '3:4': 'Tall',
-  };
-  return (
-    <div className="newproj-media-field">
-      <div className="newproj-label">{label}</div>
-      <div className="newproj-aspect-segmented" role="radiogroup" aria-label={label}>
-        {MEDIA_ASPECTS.map((aspect) => {
-          const active = value === aspect;
-          return (
-            <button
-              key={aspect}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              title={`${labels[aspect]} · ${aspect}`}
-              className={`newproj-aspect-pill${active ? ' active' : ''}`}
-              onClick={() => onChange(aspect)}
-            >
-              <span
-                className={`newproj-aspect-icon newproj-aspect-icon-${aspect.replace(':', '-')}`}
-                aria-hidden
-              />
-              <span className="newproj-aspect-ratio">{aspect}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function OptionCards<T extends string | number>({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  options: Array<{ value: T; title: string; hint?: string }>;
-  value: T;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="newproj-media-field">
-      <div className="newproj-label">{label}</div>
-      <div className="newproj-option-grid compact">
-        {options.map((option) => (
-          <button
-            key={String(option.value)}
-            type="button"
-            className={`newproj-card newproj-option-card${value === option.value ? ' active' : ''}`}
-            onClick={() => onChange(option.value)}
-            aria-pressed={value === option.value}
-          >
-            <span>{option.title}</span>
-            {option.hint ? <small>{option.hint}</small> : null}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function buildMetadata(input: {
   tab: CreateTab;
-  mediaSurface: MediaSurface;
   fidelity: 'wireframe' | 'high-fidelity';
   platformTargets: NewProjectPlatform[];
   includeLandingPage: boolean;
@@ -2850,24 +1851,10 @@ function buildMetadata(input: {
   animations: boolean;
   templateId: string | null;
   templates: ProjectTemplate[];
-  imageModel: string;
-  imageAspect: MediaAspect;
-  videoModel: string;
-  videoAspect: MediaAspect;
-  videoLength: number;
-  audioKind: AudioKind;
-  audioModel: string;
-  audioDuration: number;
-  voice: string;
   inspirationIds: string[];
-  promptTemplate: PromptTemplatePick | null;
 }): ProjectMetadata {
   const kind: ProjectKind =
-    input.tab === 'live-artifact'
-      ? 'prototype'
-      : input.tab === 'media'
-        ? input.mediaSurface
-        : input.tab;
+    input.tab === 'live-artifact' ? 'prototype' : input.tab;
   const selectedPlatforms = normalizeSelectedPlatforms(input.platformTargets);
   const concreteTargets = platformTargetsFor(selectedPlatforms);
   const canIncludeOsWidgets = platformTargetsSupportOsWidgets(concreteTargets);
@@ -2910,40 +1897,6 @@ function buildMetadata(input: {
       animations: input.animations,
       templateId: input.templateId,
       templateLabel: tpl?.name ?? 'Saved template',
-      ...inspirations,
-    };
-  }
-  if (input.tab === 'media') {
-    if (input.mediaSurface === 'image') {
-      const imageModel = input.imageModel.trim();
-      return {
-        kind,
-        ...(imageModel ? { imageModel } : {}),
-        imageAspect: input.imageAspect,
-        ...buildPromptTemplateMetadata(input.promptTemplate),
-        ...inspirations,
-      };
-    }
-    if (input.mediaSurface === 'video') {
-      const videoModel = input.videoModel.trim();
-      return {
-        kind,
-        ...(videoModel ? { videoModel } : {}),
-        videoAspect: input.videoAspect,
-        videoLength: input.videoLength,
-        ...buildPromptTemplateMetadata(input.promptTemplate),
-        ...inspirations,
-      };
-    }
-    const audioModel = input.audioModel.trim();
-    return {
-      kind,
-      audioKind: input.audioKind,
-      ...(audioModel ? { audioModel } : {}),
-      audioDuration: input.audioDuration,
-      ...(input.audioKind === 'speech' && input.voice.trim()
-        ? { voice: input.voice.trim() }
-        : {}),
       ...inspirations,
     };
   }
@@ -2999,41 +1952,7 @@ function platformTargetsFor(platforms: NewProjectPlatform[]): ProjectPlatform[] 
   return targets.size > 0 ? [...targets] : ['responsive'];
 }
 
-function buildPromptTemplateMetadata(
-  pick: PromptTemplatePick | null,
-): { promptTemplate?: ProjectMetadata['promptTemplate'] } {
-  if (!pick) return {};
-  const trimmed = pick.prompt.trim();
-  if (trimmed.length === 0) return {};
-  const { summary } = pick;
-  return {
-    promptTemplate: {
-      id: summary.id,
-      surface: summary.surface,
-      title: summary.title,
-      prompt: trimmed,
-      summary: summary.summary || undefined,
-      category: summary.category || undefined,
-      tags: summary.tags && summary.tags.length > 0 ? summary.tags : undefined,
-      model: summary.model,
-      aspect: summary.aspect,
-      source: summary.source
-        ? {
-            repo: summary.source.repo,
-            license: summary.source.license,
-            author: summary.source.author,
-            url: summary.source.url,
-          }
-        : undefined,
-    },
-  };
-}
-
-function titleForTab(
-  tab: CreateTab,
-  mediaSurface: MediaSurface,
-  t: TranslateFn,
-): string {
+function titleForTab(tab: CreateTab, t: TranslateFn): string {
   switch (tab) {
     case 'prototype':
       return t('newproj.titlePrototype');
@@ -3043,32 +1962,12 @@ function titleForTab(
       return t('newproj.titleDeck');
     case 'template':
       return t('newproj.titleTemplate');
-    case 'media': {
-      // Title tracks the active surface so the heading still reads "New
-      // image" / "New video" / "New audio" — the shared "Media" label only
-      // appears on the tab strip itself.
-      const key: keyof Dict =
-        mediaSurface === 'image'
-          ? 'newproj.titleImage'
-          : mediaSurface === 'video'
-            ? 'newproj.titleVideo'
-            : 'newproj.titleAudio';
-      return t(key);
-    }
     case 'other':
       return t('newproj.titleOther');
   }
 }
 
-function autoName(
-  tab: CreateTab,
-  mediaSurface: MediaSurface,
-  t: TranslateFn,
-): string {
+function autoName(tab: CreateTab, t: TranslateFn): string {
   const stamp = new Date().toLocaleDateString();
-  // For the Media tab the auto name reads "Image · {date}" / "Video · …" /
-  // "Audio · …" so the project list still surfaces the actual surface.
-  const labelKey: keyof Dict =
-    tab === 'media' ? MEDIA_SURFACE_LABEL_KEYS[mediaSurface] : TAB_LABEL_KEYS[tab];
-  return `${t(labelKey)} · ${stamp}`;
+  return `${t(TAB_LABEL_KEYS[tab])} · ${stamp}`;
 }

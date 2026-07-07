@@ -208,7 +208,6 @@ export function localizedBrandKitAssetDefs(locale?: string | null): Array<{
     case 'zh-CN':
       return [
         { kind: 'landing', label: '落地页', desc: 'Hero、功能区和 CTA - 品牌的网站门面', href: 'system/artifacts/landing.html' },
-        { kind: 'deck', label: '演示文稿', desc: '16:9 幻灯片，支持键盘导航', href: 'system/artifacts/deck.html' },
         { kind: 'poster', label: '海报', desc: '印刷风关键视觉海报', href: 'system/artifacts/poster.html' },
         { kind: 'email', label: '邮件', desc: '兼容性优先的表格布局 HTML 邮件', href: 'system/artifacts/email.html' },
         { kind: 'newsletter', label: 'Newsletter', desc: '多故事邮件摘要', href: 'system/artifacts/newsletter.html' },
@@ -217,7 +216,6 @@ export function localizedBrandKitAssetDefs(locale?: string | null): Array<{
     case 'zh-TW':
       return [
         { kind: 'landing', label: '落地頁', desc: 'Hero、功能區和 CTA - 品牌的網站門面', href: 'system/artifacts/landing.html' },
-        { kind: 'deck', label: '簡報', desc: '16:9 投影片，支援鍵盤導覽', href: 'system/artifacts/deck.html' },
         { kind: 'poster', label: '海報', desc: '印刷風關鍵視覺海報', href: 'system/artifacts/poster.html' },
         { kind: 'email', label: '郵件', desc: '相容性優先的表格版 HTML 郵件', href: 'system/artifacts/email.html' },
         { kind: 'newsletter', label: 'Newsletter', desc: '多故事郵件摘要', href: 'system/artifacts/newsletter.html' },
@@ -226,7 +224,6 @@ export function localizedBrandKitAssetDefs(locale?: string | null): Array<{
     default:
       return [
         { kind: 'landing', label: 'Landing page', desc: "Hero, features, CTA - the brand's web face", href: 'system/artifacts/landing.html' },
-        { kind: 'deck', label: 'Pitch deck', desc: '16:9 slides with keyboard navigation', href: 'system/artifacts/deck.html' },
         { kind: 'poster', label: 'Poster', desc: 'Print-style key-art poster', href: 'system/artifacts/poster.html' },
         { kind: 'email', label: 'Email', desc: 'Bulletproof table-layout HTML email', href: 'system/artifacts/email.html' },
         { kind: 'newsletter', label: 'Newsletter', desc: 'Multi-story email digest', href: 'system/artifacts/newsletter.html' },

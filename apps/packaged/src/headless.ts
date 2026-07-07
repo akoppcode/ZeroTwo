@@ -36,13 +36,6 @@ function resolveHeadlessNamespaceBaseRoot(): string {
   return join(dataBase, "open-design", "namespaces");
 }
 
-function resolveHeadlessAmrProfile(): PackagedConfig["amrProfile"] {
-  const value = process.env.OPEN_DESIGN_AMR_PROFILE?.trim();
-  if (value == null || value.length === 0) return null;
-  if (value === "prod" || value === "test" || value === "local") return value;
-  throw new Error(`unsupported packaged AMR profile: ${value}`);
-}
-
 function resolveHeadlessConfig(): PackagedConfig {
   const namespace =
     OPEN_DESIGN_SIDECAR_CONTRACT.normalizeNamespace(
@@ -59,7 +52,6 @@ function resolveHeadlessConfig(): PackagedConfig {
     join(__dirname, "..", "..", "..", "open-design");
 
   return {
-    amrProfile: resolveHeadlessAmrProfile(),
     appVersion: null,
     daemonCliEntry: null,
     daemonSidecarEntry: null,
@@ -123,7 +115,6 @@ async function main(): Promise<void> {
 
   const sidecars = await startPackagedSidecars(runtime, paths, {
     appVersion: activeConfig.appVersion,
-    amrProfile: activeConfig.amrProfile,
     daemonCliEntry: activeConfig.daemonCliEntry,
     daemonSidecarEntry: activeConfig.daemonSidecarEntry,
     electronNodeCommand: launcherRuntime.electronNodeCommand,

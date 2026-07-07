@@ -3,10 +3,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 
 import {
-  clearAgentSession,
   getAgentSessionRecord,
   latestCompletedAssistantMessageId,
-  upsertAgentSession,
 } from './db.js';
 
 type SqliteDb = Database.Database;
@@ -34,8 +32,6 @@ export interface AgentResumeContext {
   /** Set when a stored session existed but was rejected; see the type. */
   invalidationReason: ResumeInvalidationReason | null;
 }
-
-export type CapturedAgentSessionResult = 'stored' | 'cleared' | 'skipped';
 
 /**
  * Resume identity guard. A stored upstream session is only safe to continue
@@ -119,47 +115,6 @@ export function resolveAgentResumeContext(
     storedStablePromptHash: resumable ? (record?.stablePromptHash ?? null) : null,
     invalidationReason,
   };
-}
-
-/**
- * Persist a captured upstream session for a successful run.
- *
- * A missing captured session on a successful run means the adapter could not
- * safely identify the child session it just created (for example, ambiguous pi
- * `.jsonl` writes in a shared cwd). Clear the stored row so the next turn does
- * not resume stale history; it will start fresh and seed from the transcript.
- */
-export function persistCapturedAgentSession(
-  db: SqliteDb,
-  input: {
-    conversationId: string | null | undefined;
-    agentId: string;
-    sessionId: string | null;
-    stablePromptHash?: string | null;
-    // Resume identity (see resolveAgentResumeContext). Must be stored alongside
-    // the captured session so the next turn can verify the session is still
-    // safe to resume; omitting them leaves a null cursor that the guard treats
-    // as `missing_cursor` and reseeds every turn.
-    model?: string | null;
-    cwd?: string | null;
-    lastMessageId?: string | null;
-  },
-): CapturedAgentSessionResult {
-  if (!input.conversationId) return 'skipped';
-  if (input.sessionId) {
-    upsertAgentSession(db, {
-      conversationId: input.conversationId,
-      agentId: input.agentId,
-      sessionId: input.sessionId,
-      stablePromptHash: input.stablePromptHash ?? null,
-      model: input.model ?? null,
-      cwd: input.cwd ?? null,
-      lastMessageId: input.lastMessageId ?? null,
-    });
-    return 'stored';
-  }
-  clearAgentSession(db, input.conversationId, input.agentId);
-  return 'cleared';
 }
 
 // Signatures Claude Code prints to stderr when a `--resume <id>` target no
@@ -248,72 +203,20 @@ export function isClaudeResumeFailure(stderr: string, stdout = ''): boolean {
   return stdout ? hasClaudeResumeFailureResultEvent(stdout) : false;
 }
 
-// Signature codex prints when `exec resume <thread_id>` targets a thread whose
-// rollout file is gone (pruned, ~/.codex/sessions cleared, machine moved):
-//   Error: thread/resume: thread/resume failed: no rollout found for thread id <id>
-// Verified against the installed Codex CLI. Like the Claude case this fails
-// locally before any model call, so clearing the stale handle and re-seeding
-// the transcript next turn is the correct, lossless recovery.
-const CODEX_RESUME_FAILURE_PATTERNS: RegExp[] = [
-  /no rollout found for thread id/i,
-  /thread\/resume failed/i,
-];
-
-/** True when codex CLI output indicates a resume target thread is missing. */
-export function isCodexResumeFailure(text: string): boolean {
-  if (!text) return false;
-  return CODEX_RESUME_FAILURE_PATTERNS.some((re) => re.test(text));
-}
-
-// Signature OpenCode prints when `run -s <id>` targets a session whose store is
-// gone (deleted, corrupted, different machine). Verified against the installed
-// OpenCode CLI: `run -s <well-formed-but-missing-id>` prints `Error: Session
-// not found` to stderr (and the HTTP path returns a `NotFoundError`). Like the
-// other CLIs this fails before any model call, so clearing the stale handle and
-// re-seeding the transcript next turn is the correct, lossless recovery.
-const OPENCODE_RESUME_FAILURE_PATTERNS: RegExp[] = [
-  /session not found/i,
-  /NotFoundError/,
-];
-
-/** True when OpenCode CLI output indicates a resume target session is missing. */
-export function isOpencodeResumeFailure(text: string): boolean {
-  if (!text) return false;
-  return OPENCODE_RESUME_FAILURE_PATTERNS.some((re) => re.test(text));
-}
-
 /**
  * Per-agent dispatch for "the session/thread I asked to resume is gone".
  * Generalizes the resume-fallback so every `resumesSessionViaCli` adapter
- * routes through one decision point in server.ts. Unknown agents return false
- * (no fallback) — a new resume-capable adapter must opt in here explicitly.
+ * routes through one decision point in server.ts.
  *
  * Detection scans only the CLI's FAILURE channel, never successful assistant
- * output: codex/opencode print their resume-miss to `stderr` (a generic phrase
- * like OpenCode's "Session not found" must not be matched against the model's
- * stdout, or a turn that merely *mentions* it would be falsely failed); Claude's
- * prose is on stderr and its structured `result` marker on stdout.
+ * output: Claude's prose is on stderr and its structured `result` marker on
+ * stdout — a successful turn whose model text happens to contain a failure
+ * phrase must not be mistaken for a resume failure.
  */
 export function isAgentResumeFailure(
-  agentId: string,
+  _agentId: string,
   stderr: string,
   stdout = '',
 ): boolean {
-  if (agentId === 'codex') return isCodexResumeFailure(stderr);
-  if (agentId === 'opencode') return isOpencodeResumeFailure(stderr);
-  if (agentId === 'amr') return isAmrResumeFailure(stdout);
-  // claude + codebuddy share Claude Code's stream-json result shape.
   return isClaudeResumeFailure(stderr, stdout);
-}
-
-// vela (AMR) reports a missing resumed session as a structured ACP JSON-RPC
-// error `{"error":{"data":{"kind":"resume_failed",...}}}` on stdout (the
-// protocol channel). Match the structured marker — not a bare word — so a
-// model reply that merely mentions "resume_failed" cannot trip it.
-const AMR_RESUME_FAILURE_PATTERN = /"kind"\s*:\s*"resume_failed"/;
-
-/** True when vela's ACP output carries a resume_failed signal. */
-export function isAmrResumeFailure(stdout: string): boolean {
-  if (!stdout) return false;
-  return AMR_RESUME_FAILURE_PATTERN.test(stdout);
 }

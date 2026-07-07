@@ -7,7 +7,6 @@ import {
   sanitizePriorAssistantTurnForTranscript,
   streamViaDaemon,
 } from '../../src/providers/daemon';
-import { streamMessageOpenAI } from '../../src/providers/openai-compatible';
 import { parseSseFrame } from '../../src/providers/sse';
 
 afterEach(() => {
@@ -176,40 +175,6 @@ describe('streamViaDaemon', () => {
     expect(err.resumable).toBe(true);
   });
 
-  it('sends run-scoped media execution policy to the daemon', async () => {
-    const handlers = createDaemonHandlers();
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === '/api/runs') return jsonResponse({ runId: 'run-1' });
-      if (url === '/api/runs/run-1/events') {
-        return sseResponse('event: end\ndata: {"code":0,"status":"succeeded"}\n\n');
-      }
-      throw new Error(`unexpected fetch ${url}`);
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    await streamViaDaemon({
-      agentId: 'mock',
-      history: [{ id: '1', role: 'user', content: 'make an image' }],
-      systemPrompt: '',
-      signal: new AbortController().signal,
-      handlers,
-      mediaExecution: {
-        mode: 'enabled',
-        allowedSurfaces: ['image'],
-        allowedModels: ['doubao-seedream-3-0-t2i-250415'],
-      },
-    });
-
-    const [, createRunInit] = fetchMock.mock.calls[0] as unknown as [RequestInfo | URL, RequestInit];
-    const body = JSON.parse(String(createRunInit.body));
-    expect(body.mediaExecution).toEqual({
-      mode: 'enabled',
-      allowedSurfaces: ['image'],
-      allowedModels: ['doubao-seedream-3-0-t2i-250415'],
-    });
-  });
-
   it('requests title generation when enabled', async () => {
     const handlers = createDaemonHandlers();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -316,26 +281,6 @@ describe('streamViaDaemon', () => {
     expect(transcript).toContain('first gemini request');
     expect(transcript).toContain('gemini response');
     expect(transcript).toContain('second gemini request');
-  });
-
-  it('keeps legacy API-mode assistant context when routing through BYOK OpenCode', () => {
-    const transcript = buildDaemonTranscript(
-      [
-        { id: '1', role: 'user', content: 'draft the registration flow' },
-        {
-          id: '2',
-          role: 'assistant',
-          content: 'openai api response with design decisions',
-          agentId: 'openai-api',
-        },
-        { id: '3', role: 'user', content: 'make the second step clearer' },
-      ],
-      'byok-opencode',
-    );
-
-    expect(transcript).toContain('draft the registration flow');
-    expect(transcript).toContain('openai api response with design decisions');
-    expect(transcript).toContain('make the second step clearer');
   });
 
   it('extracts only the latest user prompt for telemetry', () => {
@@ -2002,89 +1947,6 @@ describe('streamViaDaemon', () => {
       .map((event) => event.label);
     expect(statusLabels).not.toContain('waiting_for_first_output');
     expect(statusLabels).not.toContain('tool_call_update');
-  });
-});
-
-describe('streamMessageOpenAI', () => {
-  it('ignores comments and keeps delta/end behavior unchanged', async () => {
-    const handlers = createStreamHandlers();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        sseResponse(
-          [
-            ': keepalive',
-            '',
-            'event: delta',
-            'data: {"text":"hi"}',
-            '',
-            ': keepalive',
-            '',
-            'event: end',
-            'data: {}',
-            '',
-          ].join('\n'),
-        ),
-      ),
-    );
-
-    await streamMessageOpenAI(
-      {
-        mode: 'api',
-        apiKey: 'test-key',
-        baseUrl: 'https://example.test',
-        model: 'gpt-test',
-        agentId: null,
-        skillId: null,
-        designSystemId: null,
-      },
-      '',
-      [{ id: '1', role: 'user', content: 'hello' }],
-      new AbortController().signal,
-      handlers,
-    );
-
-    expect(handlers.onDelta).toHaveBeenCalledTimes(1);
-    expect(handlers.onDelta).toHaveBeenCalledWith('hi');
-    expect(handlers.onError).not.toHaveBeenCalled();
-    expect(handlers.onDone).toHaveBeenCalledWith('hi');
-  });
-
-  it('routes through the OpenAI-specific proxy endpoint and handles CRLF frames', async () => {
-    const handlers = createStreamHandlers();
-    const fetchMock = vi.fn(async () =>
-      sseResponse(
-        [
-          'event: delta',
-          'data: {"delta":"hi"}',
-          '',
-          'event: end',
-          'data: {}',
-          '',
-        ].join('\r\n'),
-      ),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await streamMessageOpenAI(
-      {
-        mode: 'api',
-        apiKey: 'test-key',
-        baseUrl: 'https://example.test',
-        model: 'gpt-test',
-        agentId: null,
-        skillId: null,
-        designSystemId: null,
-      },
-      '',
-      [{ id: '1', role: 'user', content: 'hello' }],
-      new AbortController().signal,
-      handlers,
-    );
-
-    expect(fetchMock).toHaveBeenCalledWith('/api/proxy/openai/stream', expect.any(Object));
-    expect(handlers.onDelta).toHaveBeenCalledWith('hi');
-    expect(handlers.onDone).toHaveBeenCalledWith('hi');
   });
 });
 

@@ -79,8 +79,6 @@ describe('HandoffButton zero-editors fallback', () => {
   });
 
   it('copies a framework-specific CLI handoff prompt with the local project path', async () => {
-    const fetchMock = vi.fn(async () => new Response('{}', { status: 202 }));
-    vi.stubGlobal('fetch', fetchMock);
     fetchHostEditors.mockResolvedValue({
       platform: 'darwin',
       editors: [
@@ -99,12 +97,6 @@ describe('HandoffButton zero-editors fallback', () => {
         bin: 'claude',
         available: true,
       },
-      {
-        id: 'codex',
-        name: 'Codex CLI',
-        bin: 'codex',
-        available: false,
-      },
     ];
 
     render(
@@ -114,33 +106,12 @@ describe('HandoffButton zero-editors fallback', () => {
           projectName="Landing"
           projectDir="/tmp/open-design/Landing"
           agents={agents}
-          metricsConsent
-          installationId="od-install-abc"
         />
       </I18nProvider>,
     );
 
     fireEvent.click(await screen.findByTestId('handoff-caret'));
     fireEvent.click(await screen.findByRole('tab', { name: '复制给 CLI' }));
-    const amrWebsiteLink = screen.getByRole('link', { name: /打开 AMR 官网/ }) as HTMLAnchorElement;
-    expect(amrWebsiteLink.getAttribute('href'))
-      .toBe('https://open-design.ai/amr');
-    fireEvent.click(amrWebsiteLink);
-    const amrWebsiteUrl = new URL(amrWebsiteLink.href);
-    expect(amrWebsiteUrl.searchParams.get('od_origin')).toBe('open_design');
-    expect(amrWebsiteUrl.searchParams.get('od_entry_source')).toBe('handoff_amr_website');
-    expect(amrWebsiteUrl.searchParams.get('od_device_id')).toBe('od-install-abc');
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/integrations/vela/analytics-entry',
-      expect.objectContaining({ method: 'POST' }),
-    );
-    expect(screen.getByTestId('handoff-cli-item-amr').textContent).toContain('Open Design');
-    expect(screen.getByTestId('handoff-cli-item-amr').textContent).not.toContain('未安装');
-    expect(
-      screen.getByTestId('handoff-cli-item-amr').compareDocumentPosition(
-        screen.getByTestId('handoff-cli-item-codex'),
-      ) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: 'Vue.js' }));
     fireEvent.click(await screen.findByTestId('handoff-cli-item-claude'));
 

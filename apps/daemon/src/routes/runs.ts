@@ -24,20 +24,13 @@ import {
 import type { OdNativeEvent } from '@open-design/agui-adapter';
 import { newInsertId, readAnalyticsContext } from '../analytics.js';
 import type { AnalyticsContext } from '../analytics.js';
-import { spawnEnvForAgent } from '../agents.js';
-import { agentCliEnvForAgent, readAppConfig } from '../app-config.js';
-import {
-  codexSessionIdFromRunEvents,
-  readCodexRolloutFirstCall,
-} from '../codex-rollout-usage.js';
+import { readAppConfig } from '../app-config.js';
 import type { ConnectorService } from '../connectors/service.js';
 import { getProject, listConversations, updateProject, upsertMessage } from '../db.js';
-import { readVelaLoginStatus } from '../integrations/vela.js';
 import {
   deriveLangfuseDeliveryState,
   readTelemetrySinkConfig,
 } from '../langfuse-trace.js';
-import { parseMediaExecutionPolicyInput } from '../media/policy.js';
 import { isManagedProjectCwd } from '../mcp-config.js';
 import {
   buildConnectorProbe,
@@ -52,7 +45,6 @@ import {
   SandboxImportedProjectError,
 } from '../projects.js';
 import {
-  amrUserIdForRunAnalytics,
   hasExplicitRequestedModelForAnalytics,
   runtimeTypeForRunAnalytics,
   scanRunEventsForUsageAnalytics,
@@ -89,7 +81,6 @@ type JsonRecord = Record<string, unknown>;
 type ApiRequest = Request<Record<string, string>, unknown, JsonRecord>;
 type ApiResponse = Response<unknown>;
 type ProjectMetadata = (Partial<ContractProjectMetadata> & JsonRecord) | null | undefined;
-type AgentCliEnv = Parameters<typeof agentCliEnvForAgent>[0];
 type RunDeliveryTarget = 'managed-project' | 'external-project' | 'none';
 
 interface ProjectRecord {
@@ -474,10 +465,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
       return sendApiError(res, 503, 'UPSTREAM_UNAVAILABLE', 'daemon is shutting down');
     }
     const requestBody = toJsonRecord(req.body);
-    const mediaExecution = parseMediaExecutionPolicyInput(requestBody.mediaExecution);
-    if (!mediaExecution.ok) {
-      return sendApiError(res, 400, 'BAD_REQUEST', mediaExecution.message);
-    }
     const toolBundle = parseRunToolBundleForRequest(requestBody.toolBundle);
     if (!toolBundle.ok) {
       return sendApiError(res, 400, 'BAD_REQUEST', toolBundle.message);
@@ -531,7 +518,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     }
     const meta: RunCreateMeta = {
       ...requestBody,
-      mediaExecution: mediaExecution.policy,
       toolBundle: toolBundle.bundle,
     };
     if (resolvedSnapshot?.ok) {
@@ -737,22 +723,10 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
       const detectedAgentsForAnalytics = await detectAgents(
         toJsonRecord((appCfgForAnalytics as { agentCliEnv?: unknown }).agentCliEnv),
       ).catch((): Array<{ id: string; available: boolean }> => []);
-      const velaStatusForAnalytics = (() => {
-        try {
-          const configuredAmrEnv = agentCliEnvForAgent(
-            (appCfgForAnalytics as { agentCliEnv?: AgentCliEnv }).agentCliEnv,
-            'amr',
-          );
-          return readVelaLoginStatus(process.env, configuredAmrEnv);
-        } catch {
-          return null;
-        }
-      })();
       const configureGlobals = deriveConfigureGlobals({
         mode: 'daemon',
         agentId: typeof reqBody.agentId === 'string' ? reqBody.agentId : null,
         agents: detectedAgentsForAnalytics,
-        amrAuthorized: velaStatusForAnalytics?.loggedIn === true,
       });
       const promptText =
         typeof reqBody.currentPrompt === 'string'
@@ -885,7 +859,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
           derived: configureGlobals.runtime_type,
           hint: analyticsHints.runtimeType,
         }),
-        ...amrUserIdForRunAnalytics(velaStatusForAnalytics),
         project_id: requestProjectId,
         conversation_id:
           typeof reqBody.conversationId === 'string' ? reqBody.conversationId : null,
@@ -1019,50 +992,23 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
             )
           : false;
         // Resolve the turn's first-call usage (cache-hit of the OPENING model
-        // call — the signal session reuse moves). Every coding agent except
-        // codex reports per-call usage on the stream, so the forward-scanned
-        // first usage event IS the opening call. codex reports only a single
-        // cumulative `turn.completed` usage on the stream, so its first stream
-        // event is the whole-session aggregate; its real per-call number lives
-        // in the rollout `last_token_usage`, read here best-effort.
-        const firstCallUsage = await (async (): Promise<{
-          first_call_input_tokens?: number;
-          first_call_cache_read_input_tokens?: number;
-          first_call_cache_hit_ratio?: number;
-        } | null> => {
-          if (run.agentId === 'codex') {
-            // Best-effort: a throw anywhere here (env resolution, rollout read)
-            // must degrade to "no codex first-call fields", never bubble to the
-            // outer run_finished .catch and drop the whole completion event.
-            try {
-              const sessionId = codexSessionIdFromRunEvents(run.events);
-              const codexHome = spawnEnvForAgent(
-                'codex',
-                { ...process.env, OD_DATA_DIR: RUNTIME_DATA_DIR },
-                agentCliEnvForAgent(
-                  (appCfgAtFinish as { agentCliEnv?: AgentCliEnv }).agentCliEnv,
-                  'codex',
-                ),
-              ).CODEX_HOME;
-              return await readCodexRolloutFirstCall({ codexHome, sessionId });
-            } catch {
-              return null;
-            }
-          }
-          if (usageAnalytics.first_call_input_tokens === undefined) return null;
-          return {
-            first_call_input_tokens: usageAnalytics.first_call_input_tokens,
-            ...(usageAnalytics.first_call_cache_read_input_tokens !== undefined
-              ? {
-                  first_call_cache_read_input_tokens:
-                    usageAnalytics.first_call_cache_read_input_tokens,
-                }
-              : {}),
-            ...(usageAnalytics.first_call_cache_hit_ratio !== undefined
-              ? { first_call_cache_hit_ratio: usageAnalytics.first_call_cache_hit_ratio }
-              : {}),
-          };
-        })();
+        // call — the signal session reuse moves). Agents report per-call usage
+        // on the stream, so the forward-scanned first usage event IS the
+        // opening call.
+        const firstCallUsage = usageAnalytics.first_call_input_tokens === undefined
+          ? null
+          : {
+              first_call_input_tokens: usageAnalytics.first_call_input_tokens,
+              ...(usageAnalytics.first_call_cache_read_input_tokens !== undefined
+                ? {
+                    first_call_cache_read_input_tokens:
+                      usageAnalytics.first_call_cache_read_input_tokens,
+                  }
+                : {}),
+              ...(usageAnalytics.first_call_cache_hit_ratio !== undefined
+                ? { first_call_cache_hit_ratio: usageAnalytics.first_call_cache_hit_ratio }
+                : {}),
+            };
         const analyticsCapturedAt = Date.now();
         const timingAnalytics = summarizeRunTimingAnalytics({
           runCreatedAt: run.createdAt,
@@ -1205,9 +1151,8 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
               ? { cache_hit_ratio: usageAnalytics.cache_hit_ratio }
               : {}),
             // First-call cache-hit of the turn's opening model call (per-call
-            // usage for claude/opencode/codebuddy/pi from the stream; codex from
-            // its rollout). Sliced by is_followup_turn, this isolates the
-            // session-reuse cache win on non-first turns.
+            // usage from the stream). Sliced by is_followup_turn, this
+            // isolates the session-reuse cache win on non-first turns.
             ...(firstCallUsage ?? {}),
             is_followup_turn: isFollowupTurn,
             cache_token_source: usageAnalytics.cache_token_source,
@@ -1392,10 +1337,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
       return sendApiError(res, 503, 'UPSTREAM_UNAVAILABLE', 'daemon is shutting down');
     }
     const requestBody = toJsonRecord(req.body);
-    const mediaExecution = parseMediaExecutionPolicyInput(requestBody.mediaExecution);
-    if (!mediaExecution.ok) {
-      return sendApiError(res, 400, 'BAD_REQUEST', mediaExecution.message);
-    }
     const toolBundle = parseRunToolBundleForRequest(requestBody.toolBundle);
     if (!toolBundle.ok) {
       return sendApiError(res, 400, 'BAD_REQUEST', toolBundle.message);
@@ -1427,7 +1368,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     }
     const meta = {
       ...requestBody,
-      mediaExecution: mediaExecution.policy,
       toolBundle: toolBundle.bundle,
       ...(chatProject?.metadata ? { projectMetadata: chatProject.metadata } : {}),
     };

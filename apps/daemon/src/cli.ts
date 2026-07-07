@@ -5,7 +5,6 @@ import { basename } from 'node:path';
 import { runDaemonCliStartup, startDaemonRuntime } from './daemon-startup.js';
 import { runLiveArtifactsMcpServer } from './mcp-live-artifacts-server.js';
 import { runArtifactsCli } from './artifacts-cli.js';
-import { runProjectHandoff } from './handoff-cli.js';
 import { runConnectorsToolCli } from './tools-connectors-cli.js';
 import { runDesignSystemsToolCli } from './tools-design-systems-cli.js';
 import { DESIGN_SYSTEMS_USAGE, isDesignSystemsHelpArg } from './design-systems-cli-help.js';
@@ -16,8 +15,7 @@ import { splitResearchSubcommand } from './research/cli-args.js';
 import { resolveDaemonUrl } from './daemon-url.js';
 import { requestJsonIpc } from '@open-design/sidecar';
 import { SIDECAR_ENV, SIDECAR_MESSAGES } from '@open-design/sidecar-proto';
-import { EXPORT_FORMATS, EXPORT_IMAGE_FORMATS } from '@open-design/contracts';
-import { buildExportCliRequestBody, buildExportCliResultEnvelope, resolveExportCliDeckMode } from './export-cli-request.js';
+import { buildExportCliRequestBody, buildExportCliResultEnvelope } from './export-cli-request.js';
 import { exportRoutePath } from './export-cli-routing.js';
 import {
   AGENT_SLUGS,
@@ -33,46 +31,12 @@ const argv = process.argv.slice(2);
 //
 // `od` is two CLIs glued together:
 //   - default mode: starts the daemon + opens the web UI.
-//   - `od media …`: a thin client that POSTs to the running daemon. This
-//     is what the code agent invokes from inside a chat to actually
-//     produce image / video / audio bytes (the unifying contract).
+//   - subcommands like `od export …`: thin clients that POST to the
+//     running daemon.
 //
 // We dispatch on the first positional argument so flags like --port keep
 // working unchanged. Subcommand routing is keyword-based; flags are
 // parsed inside each handler.
-
-// Flags accepted by `od media generate`. Whitelisted so a hallucinated
-// `--length 5` from the LLM fails fast instead of silently no-op'ing
-// while we route a bogus body to the daemon.
-//
-// Hoisted to the top of the module *before* the subcommand dispatch
-// below: top-level `await SUBCOMMAND_MAP[first](rest)` runs runMedia
-// synchronously during module evaluation, and runMedia references these
-// `const` Sets — leaving them at the bottom of the file would hit the
-// TDZ ("Cannot access 'MEDIA_GENERATE_STRING_FLAGS' before
-// initialization") and crash every `od media …` invocation.
-const MEDIA_GENERATE_STRING_FLAGS = new Set([
-  'project',
-  'surface',
-  'model',
-  'prompt',
-  'output',
-  'aspect',
-  'length',
-  'duration',
-  'prompt-influence',
-  'voice',
-  'audio-kind',
-  'composition-dir',
-  'image',
-  'daemon-url',
-  'language',
-]);
-const MEDIA_GENERATE_BOOLEAN_FLAGS = new Set([
-  'help',
-  'h',
-  'loop',
-]);
 
 const MCP_STRING_FLAGS = new Set([
   'daemon-url',
@@ -82,8 +46,8 @@ const MCP_BOOLEAN_FLAGS = new Set([
   'h',
 ]);
 
-// Hoisted next to MCP_*_FLAGS for the same TDZ reason as the MEDIA flags
-// above: `od mcp install <agent>` dispatches through SUBCOMMAND_MAP during
+// Hoisted to the top of the module *before* the subcommand dispatch below:
+// `od mcp install <agent>` dispatches through SUBCOMMAND_MAP during
 // top-level module evaluation, and runMcpInstall references these `const`
 // Sets — defining them next to runMcpInstall lower in the file would hit
 // the TDZ.
@@ -192,8 +156,6 @@ const DIAGNOSTICS_STRING_FLAGS = new Set(['daemon-url', 'output']);
 const DIAGNOSTICS_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 const CONFIG_STRING_FLAGS = new Set(['daemon-url', 'value', 'value-json']);
 const CONFIG_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
-const AMR_STRING_FLAGS = new Set(['daemon-url']);
-const AMR_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'refresh']);
 const PROJECT_STRING_FLAGS = new Set([
   'daemon-url', 'name', 'skill', 'design-system', 'plugin', 'metadata-json',
   'pending-prompt', 'project', 'conversation', 'message', 'prompt',
@@ -205,7 +167,7 @@ const PROJECT_STRING_FLAGS = new Set([
 const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow']);
 // `od templates …` mirrors NewProjectPanel / ExamplesTab. Same surface,
 // same /api/templates store. The CLI form is the embeddability contract:
-// external agents (hermes-agent, openclaw, ...) can snapshot, list, or
+// external agents (openclaw, scripted jobs, ...) can snapshot, list, or
 // remove user-saved project templates without going through the web UI.
 const TEMPLATES_STRING_FLAGS = new Set([
   'daemon-url', 'name', 'description',
@@ -213,7 +175,7 @@ const TEMPLATES_STRING_FLAGS = new Set([
 const TEMPLATES_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 // `od automation …` mirrors the Automations tab. Same surface, same
 // /api/routines store. The CLI form is the embeddability contract:
-// external agents (hermes-agent, openclaw, etc.) can drive Open Design
+// external agents (openclaw, scripted jobs, etc.) can drive Open Design
 // automations headlessly without going through the web UI.
 const AUTOMATION_STRING_FLAGS = new Set([
   'daemon-url', 'name', 'prompt', 'prompt-file', 'schedule', 'target',
@@ -260,7 +222,7 @@ const FIGMA_BOOLEAN_FLAGS = new Set([
 ]);
 // `od brand …` mirrors the Brands library + New Brand modal. Same surface,
 // same /api/brands store. The CLI form is the embeddability contract: an
-// external agent (hermes-agent, openclaw, scripted job) can extract, list,
+// external agent (openclaw, scripted job) can extract, list,
 // inspect, and remove brands headlessly without rendering the web UI.
 // Hoisted next to the other dispatch-touched flag sets because runBrand is
 // reachable through the top-of-file SUBCOMMAND_MAP dispatch, which runs during
@@ -307,9 +269,7 @@ const PLUGIN_LIST_BOOLEAN_FLAGS = new Set([
 
 const SUBCOMMAND_MAP = {
   artifacts: runArtifacts,
-  media: runMedia,
   mcp: runMcp,
-  amr: runAmr,
   research: runResearch,
   plugin: runPlugin,
   ui: runUi,
@@ -342,38 +302,35 @@ const SUBCOMMAND_MAP = {
 };
 
 const EXPORT_STRING_FLAGS = new Set([
-  'daemon-url', 'project', 'format', 'out', 'output', 'image-format', 'title', 'file',
+  'daemon-url', 'project', 'format', 'title', 'file',
 ]);
-const EXPORT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'deck', 'page', 'no-deck']);
-// EXPORT_FORMATS / EXPORT_IMAGE_FORMATS are the shared contract DTO (single
-// source of truth for the web/daemon/CLI export surface), imported above.
+const EXPORT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
+// The CLI's programmatic export surface is the desktop vector PDF route
+// (`/export/pdf`) only, so validate locally instead of against the
+// contract's wider ExportFormat union.
+const EXPORT_CLI_FORMATS = ['pdf'];
 
 function printExportHelp() {
   console.log(`Usage:
-  od export <file> --project <id> --format <fmt> [options]
+  od export <file> --project <id> --format pdf [options]
 
-Programmatic export of an HTML/deck artifact to PDF, image, or PPTX. Runs
-entirely from the rendered design (no model/agent calls). Rasterization uses
-the desktop runtime's bundled Chromium, so a desktop/packaged runtime must be
-reachable; otherwise the command reports that the renderer is unavailable.
+Programmatic export of an HTML artifact to PDF. Runs entirely from the
+rendered design (no model/agent calls). Rendering uses the desktop runtime,
+so a desktop/packaged runtime must be reachable; otherwise the command
+reports that the exporter is unavailable. The desktop runtime writes the
+PDF and reports the resulting path.
 
-Formats:  ${EXPORT_FORMATS.join(', ')}
+Formats:  ${EXPORT_CLI_FORMATS.join(', ')}
 
 Options:
   --project <id>           Project id (required)
-  --format <fmt>           One of: ${EXPORT_FORMATS.join(' | ')} (required)
-  --out <path>             Write the file here (defaults to the suggested name)
-  --image-format <fmt>     png | jpeg (for --format image)
-  --deck                   Treat the artifact as a multi-slide deck
-  --page, --no-deck        Treat the artifact as a normal scrollable page
+  --format pdf             Export format (required)
   --title <title>          Title used for metadata / default filename
   --json                   Print a machine-readable result envelope
   --daemon-url <url>       Override daemon URL
 
 Examples:
-  od export index.html --project p1 --format pdf --out page.pdf
-  od export slide.html --project p1 --format image --image-format png --out slide.png
-  od export deck.html --project p1 --format pptx --out deck.pptx`);
+  od export index.html --project p1 --format pdf`);
 }
 
 async function runExport(args) {
@@ -396,42 +353,14 @@ async function runExport(args) {
     printExportHelp();
     process.exit(2);
   }
-  if (!(EXPORT_FORMATS as readonly string[]).includes(format)) {
-    console.error(`invalid --format: ${format} (expected ${EXPORT_FORMATS.join(' | ')})`);
-    process.exit(2);
-  }
-  if (flags['image-format'] && !(EXPORT_IMAGE_FORMATS as readonly string[]).includes(flags['image-format'])) {
-    console.error(`invalid --image-format: ${flags['image-format']} (expected ${EXPORT_IMAGE_FORMATS.join(' | ')})`);
-    process.exit(2);
-  }
-  if (flags['image-format'] && format !== 'image') {
-    console.error('--image-format is only valid with --format image');
+  if (!EXPORT_CLI_FORMATS.includes(format)) {
+    console.error(`invalid --format: ${format} (expected ${EXPORT_CLI_FORMATS.join(' | ')})`);
     process.exit(2);
   }
   const base = await cliDaemonBaseUrl(flags);
-  // All three formats rasterize through the desktop screenshot renderer so the
-  // CLI matches the UI exactly. In particular `pdf` uses `/export/pdf-image`
-  // (one raster page per deck slide / per viewport for a page) — NOT the generic
-  // `/export` vector `printToPDF` path, which drops CJK glyphs in the packaged
-  // runtime and is the bug this feature exists to avoid.
   const exportPath = exportRoutePath(format);
-  let deckMode;
-  try {
-    deckMode = resolveExportCliDeckMode({
-      format,
-      deck: flags.deck === true,
-      page: flags.page === true,
-      noDeck: flags['no-deck'] === true,
-    });
-  } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
-    process.exit(2);
-  }
   const requestBody = buildExportCliRequestBody({
     fileName: file,
-    format,
-    deck: deckMode,
-    ...(format === 'image' && flags['image-format'] ? { imageFormat: flags['image-format'] } : {}),
     ...(flags.title ? { title: flags.title } : {}),
   });
   let resp;
@@ -446,32 +375,26 @@ async function runExport(args) {
     process.exit(3);
   }
   if (!resp.ok) return structuredHttpFailure(resp);
-  const buffer = Buffer.from(await resp.arrayBuffer());
-  let out = flags.out || flags.output;
-  if (!out) {
-    const cd = resp.headers.get('content-disposition') || '';
-    const star = /filename\*=UTF-8''([^;]+)/i.exec(cd);
-    const plain = /filename="([^"]+)"/i.exec(cd);
-    if (star && star[1]) {
-      try { out = decodeURIComponent(star[1]); } catch { out = plain && plain[1] ? plain[1] : null; }
-    } else if (plain && plain[1]) {
-      out = plain[1];
+  // The desktop runtime writes the PDF itself (Save dialog / default name)
+  // and returns a JSON result instead of streaming bytes.
+  const result = await resp.json();
+  if (result?.canceled) {
+    if (flags.json) {
+      return process.stdout.write(JSON.stringify({ ok: true, canceled: true, format }, null, 2) + '\n');
     }
-    if (!out) {
-      const ext = format === 'image'
-        ? (flags['image-format'] === 'jpeg' ? 'jpg' : 'png')
-        : format === 'pptx' ? 'pptx' : 'pdf';
-      out = `artifact.${ext}`;
-    }
+    console.log('export canceled');
+    return;
   }
-  const { writeFile } = await import('node:fs/promises');
-  await writeFile(out, buffer);
+  if (!result?.ok || typeof result.path !== 'string') {
+    console.error(`export failed: ${result?.error || 'unknown error'}`);
+    process.exit(4);
+  }
   if (flags.json) {
     return process.stdout.write(
-      JSON.stringify(buildExportCliResultEnvelope({ path: out, bytes: buffer.length, format }), null, 2) + '\n',
+      JSON.stringify(buildExportCliResultEnvelope({ path: result.path, format }), null, 2) + '\n',
     );
   }
-  console.log(`wrote ${out} (${buffer.length} bytes)`);
+  console.log(`wrote ${result.path}`);
 }
 
 if (argv[0] === 'mcp' && argv[1] === 'live-artifacts') {
@@ -559,7 +482,7 @@ function printRootHelp() {
 
   od automation <list|get|create|update|run|runs|pause|resume|delete> [args]
       Drive the Automations surface headlessly. Same store as the UI's
-      Automations tab, so an external agent (hermes, openclaw, ...) can
+      Automations tab, so an external agent (openclaw, ...) can
       schedule, trigger, or harvest results from a routine without
       opening the web UI.
 
@@ -583,18 +506,13 @@ function printRootHelp() {
       into a zip for support tickets. Same output as Settings → About →
       Export diagnostics.
 
-  od export <file> --project <id> --format <pdf|image|pptx> [--out <path>]
-      Programmatically export an HTML/deck artifact to PDF, image, or PPTX
-      (no model/agent calls). Mirrors the web Download menu; rasterization uses
-      the desktop runtime's bundled Chromium.
+  od export <file> --project <id> --format pdf
+      Programmatically export an HTML artifact to PDF (no model/agent
+      calls). Mirrors the web Download menu; rendering uses the desktop
+      runtime.
 
   "$OD_NODE_BIN" "$OD_BIN" tools ...
       Recommended agent-runtime form; avoids relying on user PATH for od or node.
-
-  od media generate --surface <image|video|audio> --model <id> [opts]
-      Generate a media artifact and write it into the active project.
-      Designed to be invoked by a code agent - picks up OD_DAEMON_URL
-      and OD_PROJECT_ID from the env that the daemon injected on spawn.
 
   od mcp [--daemon-url <url>]
       Run a stdio MCP server that proxies project tool calls to a
@@ -611,78 +529,9 @@ Options:
   --no-open        Do not open the browser after start.
 
 What the daemon does:
-  * scans PATH for installed code-agent CLIs (claude, codex, devin, opencode, cursor-agent, ...)
+  * scans PATH for installed code-agent CLIs (claude, copilot)
   * serves the chat UI at http://<host>:<port>
-  * proxies messages (text + images) to the selected agent via child-process spawn
-  * exposes /api/projects/:id/media/generate — the unified image/video/audio
-     dispatcher that the agent calls via \`od media generate\`.`);
-}
-
-// ---------------------------------------------------------------------------
-// Subcommand: od amr …
-// ---------------------------------------------------------------------------
-
-async function runAmr(args) {
-  const sub = args[0];
-  if (!sub || sub === 'help' || args.includes('--help') || args.includes('-h')) {
-    console.log(`Usage:
-  od amr status [--refresh] [--json]
-
-Options:
-  --daemon-url <url>   Open Design daemon HTTP base.
-  --refresh            Bypass the daemon's short wallet display cache.
-  --json               Emit raw JSON.`);
-    process.exit(sub === 'help' || args.includes('--help') || args.includes('-h') ? 0 : 2);
-  }
-  const rest = args.slice(1);
-  const flags = parseFlags(rest, { string: AMR_STRING_FLAGS, boolean: AMR_BOOLEAN_FLAGS });
-  const base = await cliDaemonBaseUrl(flags);
-  switch (sub) {
-    case 'status': {
-      const query = flags.refresh ? '?refresh=1' : '';
-      const statusResp = await fetch(`${base}/api/integrations/vela/status`);
-      if (!statusResp.ok) return structuredHttpFailure(statusResp);
-      const status = await statusResp.json();
-      let wallet = null;
-      if (status?.loggedIn && (!status?.account?.balanceUsd || flags.refresh)) {
-        const walletResp = await fetch(`${base}/api/integrations/vela/wallet${query}`);
-        if (walletResp.ok) wallet = await walletResp.json();
-        else if (flags.refresh && !status?.account?.balanceUsd) return structuredHttpFailure(walletResp);
-      }
-      const merged = {
-        ...status,
-        user: status?.user ?? wallet?.user ?? null,
-        account:
-          status?.loggedIn && wallet?.status === 'available'
-            ? {
-                ...(status?.account ?? {}),
-                balanceUsd: status?.account?.balanceUsd ?? wallet.balanceUsd,
-              }
-            : status?.account,
-        wallet,
-      };
-      if (flags.json) return process.stdout.write(JSON.stringify(merged, null, 2) + '\n');
-      const account = merged?.user?.email ?? merged?.user?.id ?? '-';
-      console.log(`AMR account\t${account}`);
-      console.log(`Profile\t${merged?.profile ?? '-'}`);
-      if (merged?.account?.plan) console.log(`Plan\t${merged.account.plan}`);
-      if (merged?.account?.balanceUsd) {
-        console.log(`Wallet balance\t$${merged.account.balanceUsd}`);
-        if (wallet?.updatedAt || wallet?.fetchedAt) {
-          console.log(`Updated\t${wallet.updatedAt ?? wallet.fetchedAt}`);
-        }
-        console.log(`Source\t${wallet?.source ?? 'status_account'}`);
-        return;
-      }
-      console.log(`Wallet balance\tunavailable`);
-      console.log(`Status\t${wallet?.status ?? (merged?.loggedIn ? 'logged_in' : 'signed_out')}`);
-      if (wallet?.error?.message) console.log(`Reason\t${wallet.error.message}`);
-      return;
-    }
-    default:
-      console.error(`unknown subcommand: od amr ${sub}`);
-      process.exit(2);
-  }
+  * proxies messages (text + images) to the selected agent via child-process spawn`);
 }
 
 // ---------------------------------------------------------------------------
@@ -763,245 +612,6 @@ Flags:
   --query        Required search query.
   --max-sources  Optional source cap. Defaults to 5, clamped to Tavily's max.
   --daemon-url   Local daemon URL. Defaults to OD_DAEMON_URL, OD_SIDECAR_IPC_PATH discovery, or http://127.0.0.1:7456.`);
-}
-
-// ---------------------------------------------------------------------------
-// Subcommand: od media …
-// ---------------------------------------------------------------------------
-
-async function runMedia(args) {
-  const sub = args.find((a) => !a.startsWith('-')) || '';
-  if (sub === 'help' || sub === '-h' || sub === '--help' || sub === '') {
-    printMediaHelp();
-    return;
-  }
-  if (sub !== 'generate' && sub !== 'wait') {
-    console.error(`unknown subcommand: od media ${sub}`);
-    printMediaHelp();
-    process.exit(1);
-  }
-
-  const idx = args.indexOf(sub);
-  const subArgs = [...args.slice(0, idx), ...args.slice(idx + 1)];
-  if (sub === 'wait') return runMediaWait(subArgs);
-  return runMediaGenerate(subArgs);
-}
-
-async function runMediaGenerate(rawArgs) {
-  let flags;
-  try {
-    flags = parseFlags(rawArgs, {
-      string: MEDIA_GENERATE_STRING_FLAGS,
-      boolean: MEDIA_GENERATE_BOOLEAN_FLAGS,
-    });
-  } catch (err) {
-    console.error(err.message);
-    printMediaHelp();
-    process.exit(2);
-  }
-
-  const daemonUrl = await cliDaemonUrl(flags);
-  const projectId = flags.project || process.env.OD_PROJECT_ID;
-  const token = process.env.OD_TOOL_TOKEN;
-  if (!projectId && !token) {
-    console.error(
-      'project id required. Pass --project <id> or set OD_PROJECT_ID. The daemon injects this when it spawns the code agent.',
-    );
-    process.exit(2);
-  }
-
-  const surface = flags.surface;
-  if (!surface || !['image', 'video', 'audio'].includes(surface)) {
-    console.error('--surface must be one of: image | video | audio');
-    process.exit(2);
-  }
-  if (!flags.model) {
-    console.error('--model required (see http://<daemon>/api/media/models)');
-    process.exit(2);
-  }
-
-  const body = {
-    surface,
-    model: flags.model,
-    prompt: flags.prompt,
-    output: flags.output,
-    aspect: flags.aspect,
-    voice: flags.voice,
-    audioKind: flags['audio-kind'],
-    compositionDir: flags['composition-dir'],
-    image: flags.image,
-    language: flags.language,
-  };
-  if (flags.length != null) body.length = Number(flags.length);
-  if (flags.duration != null) body.duration = Number(flags.duration);
-  if (flags['prompt-influence'] != null) body.promptInfluence = Number(flags['prompt-influence']);
-  if (flags.loop === true) body.loop = true;
-
-  const url = token
-    ? `${daemonUrl.replace(/\/$/, '')}/api/tools/media/generate`
-    : `${daemonUrl.replace(/\/$/, '')}/api/projects/${encodeURIComponent(projectId)}/media/generate`;
-  let resp;
-  try {
-    resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(body),
-    });
-  } catch (err) {
-    surfaceFetchError(err, daemonUrl);
-    process.exit(3);
-  }
-  if (!resp.ok) {
-    const text = await resp.text();
-    console.error(`daemon ${resp.status}: ${text}`);
-    process.exit(4);
-  }
-  const accepted = await resp.json();
-  const { taskId } = accepted;
-  if (!taskId) {
-    console.error('daemon did not return a taskId');
-    process.exit(4);
-  }
-  console.error(`task ${taskId} queued (${accepted.status || 'queued'})`);
-  await pollUntilDoneOrBudget(daemonUrl, taskId, 0, {
-    stillRunningExitCode: 0,
-  });
-}
-
-async function runMediaWait(rawArgs) {
-  const taskId = rawArgs.find((a) => a && !a.startsWith('--'));
-  if (!taskId) {
-    console.error('usage: od media wait <taskId> [--since <n>] [--daemon-url <url>]');
-    process.exit(2);
-  }
-  const flagsOnly = rawArgs.filter((a) => a !== taskId);
-  let flags;
-  try {
-    flags = parseFlags(flagsOnly, {
-      string: new Set(['since', 'daemon-url']),
-      boolean: new Set(['help', 'h']),
-    });
-  } catch (err) {
-    console.error(err.message);
-    printMediaHelp();
-    process.exit(2);
-  }
-  const daemonUrl = await cliDaemonUrl(flags);
-  const since = Number.isFinite(Number(flags.since))
-    ? Number(flags.since)
-    : 0;
-  await pollUntilDoneOrBudget(daemonUrl, taskId, since, { totalBudgetMs: 120_000 });
-}
-
-async function pollUntilDoneOrBudget(daemonUrl, taskId, sinceStart, options = {}) {
-  const totalBudgetMs = typeof options.totalBudgetMs === 'number' ? options.totalBudgetMs : 25_000;
-  const perCallTimeoutMs = 4_000;
-  const stillRunningExitCode =
-    typeof options.stillRunningExitCode === 'number'
-      ? options.stillRunningExitCode
-      : 2;
-  const startedAt = Date.now();
-  const url = `${daemonUrl.replace(/\/$/, '')}/api/media/tasks/${encodeURIComponent(taskId)}/wait`;
-
-  let since = Number.isFinite(sinceStart) ? sinceStart : 0;
-  let lastSnapshot = null;
-
-  while (Date.now() - startedAt < totalBudgetMs) {
-    const remaining = totalBudgetMs - (Date.now() - startedAt);
-    const callTimeout = Math.max(500, Math.min(perCallTimeoutMs, remaining));
-    let resp;
-    try {
-      resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ since, timeoutMs: callTimeout }),
-      });
-    } catch (err) {
-      surfaceFetchError(err, daemonUrl);
-      process.exit(3);
-    }
-    if (resp.status === 404) {
-      console.error(`task ${taskId} not found (expired or never queued)`);
-      process.exit(4);
-    }
-    if (!resp.ok) {
-      const text = await resp.text();
-      console.error(`daemon ${resp.status}: ${text}`);
-      process.exit(4);
-    }
-    let snap;
-    try {
-      snap = await resp.json();
-    } catch {
-      console.error('daemon returned non-JSON for /wait');
-      process.exit(4);
-    }
-    lastSnapshot = snap;
-    if (Array.isArray(snap.progress)) {
-      for (const line of snap.progress) {
-        process.stderr.write(line + '\n');
-        process.stdout.write(`# ${line}\n`);
-      }
-    }
-    if (typeof snap.nextSince === 'number') since = snap.nextSince;
-
-    if (snap.status === 'done') {
-      const file = snap.file || {};
-      const warnings = Array.isArray(file.warnings) ? file.warnings : [];
-      for (const w of warnings) {
-        if (typeof w === 'string' && w) console.error(`WARN: ${w}`);
-      }
-      if (file.providerError) {
-        const provider = file.providerId || 'provider';
-        console.error(
-          `WARN: ${provider} call failed — wrote stub fallback (${file.size} bytes) to ${file.name}`,
-        );
-        console.error(`WARN: reason: ${file.providerError}`);
-        console.error(
-          'WARN: surface this verbatim to the user. Do NOT claim the stub is the final result.',
-        );
-      }
-      process.stdout.write(JSON.stringify({ file }) + '\n');
-      process.exit(file.providerError ? 5 : 0);
-    }
-    if (snap.status === 'failed') {
-      const msg = snap.error?.message || 'task failed';
-      console.error(`task failed: ${msg}`);
-      process.stdout.write(
-        JSON.stringify({ taskId, status: 'failed', error: snap.error || {} }) + '\n',
-      );
-      process.exit(snap.error?.status || 5);
-    }
-    if (snap.status === 'interrupted') {
-      const msg = snap.error?.message || 'task interrupted';
-      console.error(`task interrupted: ${msg}`);
-      process.stdout.write(
-        JSON.stringify({ taskId, status: 'interrupted', error: snap.error || {} }) + '\n',
-      );
-      process.exit(snap.error?.status || 5);
-    }
-  }
-
-  const handoff = {
-    taskId,
-    status: lastSnapshot?.status || 'running',
-    nextSince: since,
-    elapsed: Math.round((Date.now() - startedAt) / 1000),
-  };
-  process.stdout.write(JSON.stringify(handoff) + '\n');
-  const stillRunningHint =
-    stillRunningExitCode === 0
-      ? 'This is a successful queued/running handoff, not a failure.'
-      : `exit code ${stillRunningExitCode} = still running.`;
-  process.stderr.write(
-    `task ${taskId} still running after ${handoff.elapsed}s. ` +
-      `Run \`"$OD_NODE_BIN" "$OD_BIN" media wait ${taskId} --since ${since}\` to continue in an agent runtime ` +
-      `(${stillRunningHint}).\n`,
-  );
-  process.exit(stillRunningExitCode);
 }
 
 function surfaceFetchError(err, daemonUrl) {
@@ -1103,44 +713,6 @@ async function cliDaemonBaseUrl(flags) {
   return (await cliDaemonUrl(flags)).replace(/\/$/, '');
 }
 
-function printMediaHelp() {
-  console.log(`Usage: od media generate --surface <image|video|audio> --model <id> [opts]
-       "$OD_NODE_BIN" "$OD_BIN" media generate --surface <image|video|audio> --model <id> [opts]
-
-Required:
-  --surface  image | video | audio
-  --model    Model id from /api/media/models (e.g. gpt-image-2, seedance-2, suno-v5).
-  --project  Project id. Auto-resolved from OD_PROJECT_ID when invoked by the daemon.
-
-Common options:
-  --prompt "<text>"         Generation prompt. ElevenLabs SFX prompts must stay under 450 characters.
-  --output <filename>       File to write under the project. Auto-named if omitted.
-  --aspect 1:1|16:9|9:16|4:3|3:4
-  --length <seconds>        Video length.
-  --duration <seconds>      Audio duration.
-  --prompt-influence <0-1>  ElevenLabs SFX prompt adherence. Higher values follow the prompt more closely.
-  --loop                    ElevenLabs SFX only: request a seamless loop.
-  --voice <voice-id>        Speech / TTS voice.
-  --language <lang>         Language boost for TTS (e.g. Chinese,Yue for Cantonese).
-  --audio-kind music|speech|sfx
-  --composition-dir <path>  hyperframes-html only — project-relative path
-                            to the dir containing hyperframes.json /
-                            meta.json / index.html. The daemon runs
-                            \`npx hyperframes render\` against it.
-  --image <path>            Project-relative path to a reference image
-                            (image-to-video for Seedance i2v models, or
-                            future image-edit endpoints). Daemon reads
-                            the file from the project, base64-encodes
-                            it, and forwards it to the upstream API.
-  --daemon-url <url>
-
-Output: a single line of JSON: {"file": { name, size, kind, mime, ... }}
-
-Skills should call this and then reference the returned filename in their
-artifact / message body. The daemon writes the bytes into the project's
-files folder so the FileViewer can preview them immediately.`);
-}
-
 // ---------------------------------------------------------------------------
 // Subcommand: od mcp
 // ---------------------------------------------------------------------------
@@ -1228,8 +800,8 @@ To register this server into a coding agent's own config automatically:
 // ---------------------------------------------------------------------------
 
 // Resolve the canonical launch spec from the running daemon's
-// /api/mcp/install-info (the same payload the Settings → MCP panel and the
-// Codex one-click install use), so every install path configures byte-for-
+// /api/mcp/install-info (the same payload the Settings → MCP panel's
+// one-click installs use), so every install path configures byte-for-
 // byte the same command. Falls back to a minimal `od mcp --daemon-url`
 // spec when the daemon is unreachable.
 async function resolveMcpLaunchSpec(flags) {
@@ -5160,8 +4732,8 @@ async function runFigma(args) {
 //
 // Headless surface for the Brands library. This is the dual-track contract:
 // every capability the Brands UI exposes (extract from a URL, list, inspect,
-// delete) is reachable here so an external agent (hermes-agent, openclaw,
-// scripted job) can drive the brand lifecycle without rendering a page.
+// delete) is reachable here so an external agent (openclaw, scripted job)
+// can drive the brand lifecycle without rendering a page.
 // Storage is /api/brands on the local daemon; a "brand" registers a `user:<id>`
 // design system under the hood, so applying a brand reuses the existing
 // design-system apply flow — there is no separate brandId apply path.
@@ -5729,9 +5301,6 @@ async function runProject(args) {
   od project open-in <id> --editor <slug> Open the project's working directory
                                           in the chosen editor (cursor, zed,
                                           vscode, finder, terminal, …).
-  od project handoff <id> --conversation <id> --api-key <key> --model <model>
-                    [--base-url <url>] [--max-tokens <n>]
-                    Synthesize a resume-conversation handoff prompt.
 
 Common options:
   --daemon-url <url>   Open Design daemon HTTP base.
@@ -5740,16 +5309,6 @@ Common options:
   }
   const sub = args[0];
   const rest = args.slice(1);
-  // Handoff owns its own flag parsing, daemon-URL resolution, and
-  // structured fail() output. Dispatch it before the generic project
-  // parser below so a malformed `od project handoff` invocation
-  // (`--unknown`, `--max-tokens` with no value) hits handoff-cli's
-  // machine-readable fail() path instead of throwing out of parseFlags.
-  if (sub === 'handoff') {
-    const { exitCode } = await runProjectHandoff(rest);
-    if (exitCode !== 0) process.exit(exitCode);
-    return;
-  }
   const flags = parseFlags(rest, { string: PROJECT_STRING_FLAGS, boolean: PROJECT_BOOLEAN_FLAGS });
   const base = (await projectDaemonUrl(flags)).replace(/\/$/, '');
   switch (sub) {
@@ -5981,7 +5540,7 @@ async function runRun(args) {
     console.log(`Usage:
   od run start --project <projectId> [--conversation <id>] [--message "<text>"]
                [--plugin <id>] [--inputs <json>] [--grant-caps a,b]
-               [--agent claude|codex|opencode] [--model <id>] [--follow] [--json]
+               [--agent claude|copilot] [--model <id>] [--follow] [--json]
   od run redesign [--path <folder>] [--message "<text>" | --prompt-file <path|->]
                [--agent claude] [--model <id>] [--follow] [--json]
   od run watch  <runId>                     ND-JSON event stream on stdout.
@@ -6750,7 +6309,7 @@ function renderDiffLineContent(value) {
 
 // `od templates …` is the headless face of NewProjectPanel /
 // ExamplesTab — same /api/templates store, same DTO shapes. External
-// agents (hermes-agent, openclaw, custom bots) use these to snapshot a
+// agents (openclaw, custom bots) use these to snapshot a
 // project as a reusable starting point, list everything the user has
 // saved, or drop one that is no longer needed. The web UI and the CLI
 // share the daemon HTTP layer so neither can drift out of step.
@@ -9073,7 +8632,7 @@ async function runMemoryConfig(base, rest, flags, writeJson) {
 //
 // Headless surface for the Automations tab. This is the dual-track contract:
 // every capability the Automations UI exposes is reachable here so an
-// external agent (hermes-agent, openclaw, custom Slackbot, etc.) can run
+// external agent (openclaw, custom Slackbot, etc.) can run
 // the full lifecycle — list, create, fire, harvest, retire — without
 // rendering a page. Storage is /api/routines on the local daemon; the
 // "routine" name is the implementation detail, "automation" is the user-
@@ -9289,7 +8848,7 @@ Schedule formats:
 Output:
   Plain text: tab-separated rows for list, human-readable lines for get / runs.
   --json     Raw JSON for any subcommand.
-  Designed so external agents (hermes-agent, openclaw, scripted jobs)
+  Designed so external agents (openclaw, scripted jobs)
   can drive the full automation lifecycle headlessly.
 
 Common options:

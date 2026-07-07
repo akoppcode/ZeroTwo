@@ -966,18 +966,6 @@ export function MemorySection({
     return entries.filter((e) => e.type === filter);
   }, [entries, filter]);
 
-  // The "no API key" banner only shows when the most recent attempt
-  // skipped for that specific reason. We don't show it for
-  // memory-disabled (the user's own toggle) or empty-message (a
-  // routine no-op on tool-only turns); those skips just appear in the
-  // history list with a muted subtitle.
-  const showNoProviderBanner = useMemo(() => {
-    const latest = extractions[0];
-    return Boolean(
-      latest && latest.phase === 'skipped' && latest.reason === 'no-provider',
-    );
-  }, [extractions]);
-
   // Now-clock for relative timestamps in the extraction list. Refresh
   // every 30s so "12s ago" doesn't get stuck reading "12s ago" five
   // minutes after the user opened the panel. Using state (not a ref)
@@ -1734,13 +1722,6 @@ export function MemorySection({
         <div role="status" className="memory-disabled-banner">
           <strong>{t('settings.memoryDisabled')}</strong> —{' '}
           {t('settings.memoryDisabledBanner')}
-        </div>
-      ) : null}
-
-      {enabled && showNoProviderBanner ? (
-        <div role="status" className="memory-noprovider-banner">
-          <strong>{t('settings.memoryNoProviderBannerTitle')}</strong> —{' '}
-          {t('settings.memoryNoProviderBannerBody')}
         </div>
       ) : null}
 

@@ -151,8 +151,6 @@ interface CreationProps {
   onCreated: (projectId: string, project?: Project, conversationId?: string | null) => void;
   onProjectPrepared?: (project: Project) => void;
   onSystemsRefresh?: () => Promise<void> | void;
-  config?: AppConfig;
-  onOpenConnectorsTab?: () => void;
   chrome?: 'standalone' | 'embedded';
   // Intent signal: user clicked Generate. Fires before any async work,
   // so a wrapper (OnboardingView) can emit the `generate` ui_click row
@@ -329,8 +327,6 @@ export function DesignSystemCreationFlow({
   onCreated,
   onProjectPrepared,
   onSystemsRefresh,
-  config,
-  onOpenConnectorsTab,
   chrome = 'standalone',
   onBeforeGenerate,
   onGenerateSettled,
@@ -371,7 +367,6 @@ export function DesignSystemCreationFlow({
   // programmatic pass registers a usable user:<id> design system in the
   // background.
   const brandExtract = useBrandExtract();
-  const composioConfigured = isComposioConfigured(config?.composio);
   const [githubConnector, setGithubConnector] = useState<ConnectorDetail | null>(null);
   const [githubConnectorLoading, setGithubConnectorLoading] = useState(false);
   const [githubConnectorError, setGithubConnectorError] = useState<string | null>(null);
@@ -480,18 +475,6 @@ export function DesignSystemCreationFlow({
   }
 
   const refreshGithubConnector = useCallback(async () => {
-    if (!composioConfigured) {
-      githubConnectorRefreshId.current += 1;
-      githubConnectorRequestInFlight.current = false;
-      setGithubConnector(null);
-      githubConnectorRef.current = null;
-      githubConnectorLoadedRef.current = false;
-      setGithubConnectorLoading(false);
-      setGithubConnectorError(null);
-      setGithubAuthorizationPending(false);
-      setGithubAuthorizationUrl(null);
-      return;
-    }
     if (githubConnectorRequestInFlight.current) return;
     const refreshId = ++githubConnectorRefreshId.current;
     githubConnectorRequestInFlight.current = true;
@@ -531,7 +514,7 @@ export function DesignSystemCreationFlow({
         setGithubConnectorLoading(false);
       }
     }
-  }, [composioConfigured]);
+  }, []);
 
   useEffect(() => {
     void refreshGithubConnector();
@@ -564,7 +547,6 @@ export function DesignSystemCreationFlow({
   }, []);
 
   useEffect(() => {
-    if (!composioConfigured) return undefined;
     function handleConnectorMessage(event: MessageEvent) {
       const data = event.data;
       if (!data || typeof data !== 'object') return;
@@ -581,10 +563,10 @@ export function DesignSystemCreationFlow({
       window.removeEventListener('message', handleConnectorMessage);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [composioConfigured, refreshGithubConnector]);
+  }, [refreshGithubConnector]);
 
   async function handleConnectGithub() {
-    if (!composioConfigured || githubConnectorAction) return;
+    if (githubConnectorAction) return;
     setGithubConnectorAction('connect');
     setGithubConnectorError(null);
     try {
@@ -611,7 +593,7 @@ export function DesignSystemCreationFlow({
   }
 
   async function handleDisconnectGithub() {
-    if (!composioConfigured || githubConnectorAction) return;
+    if (githubConnectorAction) return;
     setGithubConnectorAction('disconnect');
     setGithubConnectorError(null);
     try {
@@ -959,7 +941,6 @@ export function DesignSystemCreationFlow({
         await prepareCreatedDesignSystemProject({
           project,
           state,
-          composioConfigured,
           githubConnector,
           onProjectPrepared: (preparedProject) => {
             projectForCreated = preparedProject;
@@ -1299,14 +1280,12 @@ export function DesignSystemCreationFlow({
                   <div className="ds-resource-row">
                     <strong>{t('dsCreate.githubRepo')}</strong>
                     <GitHubRepositoryAccessPanel
-                      composioConfigured={composioConfigured}
                       connector={githubConnector}
                       loading={githubConnectorLoading}
                       action={githubConnectorAction}
                       authorizationPending={githubAuthorizationPending}
                       authorizationUrl={githubAuthorizationUrl}
                       error={githubConnectorError}
-                      onOpenConnectorsTab={onOpenConnectorsTab}
                       onToggleMethods={(expanded) => emitCreateFormClick('show_access_methods', expanded)}
                       onConnect={() => void handleConnectGithub()}
                       onOpenAuthorization={() => openConnectorAuthorizationUrl(githubAuthorizationUrl)}
@@ -2143,7 +2122,7 @@ export function DesignSystemDetailView({
         setActiveConversationId(fresh.id);
         conversationId = fresh.id;
       }
-      if (config.mode !== 'daemon' || !config.agentId) {
+      if (!config.agentId) {
         setChatError('Pick a local agent first, then ask Open Design to update this design system.');
         return;
       }
@@ -2402,7 +2381,6 @@ export function DesignSystemDetailView({
       chatStreaming,
       config.agentId,
       config.agentModels,
-      config.mode,
       ensureWorkspaceProject,
       feedbackSection,
       introChatMessages,
@@ -3726,27 +3704,23 @@ interface GitHubAccessMethod {
 }
 
 function GitHubRepositoryAccessPanel({
-  composioConfigured,
   connector,
   loading,
   action,
   authorizationPending,
   authorizationUrl,
   error,
-  onOpenConnectorsTab,
   onToggleMethods,
   onConnect,
   onOpenAuthorization,
   onDisconnect,
 }: {
-  composioConfigured: boolean;
   connector: ConnectorDetail | null;
   loading: boolean;
   action: 'connect' | 'disconnect' | null;
   authorizationPending: boolean;
   authorizationUrl: string | null;
   error: string | null;
-  onOpenConnectorsTab?: () => void;
   // Reports the post-toggle expanded state so the parent can track it.
   onToggleMethods?: (expanded: boolean) => void;
   onConnect: () => void;
@@ -3762,10 +3736,7 @@ function GitHubRepositoryAccessPanel({
   let composioDescription = 'Composio GitHub connector access for agent tools; repo URLs still work with local git or GitHub CLI.';
   let composioIcon: IconName = 'settings';
 
-  if (!composioConfigured) {
-    composioBadge = 'Not configured';
-    composioDescription = 'Add a Composio API key only if this project needs connector-backed GitHub tools.';
-  } else if (connected) {
+  if (connected) {
     composioBadge = 'Connected';
     composioTone = 'success';
     composioIcon = 'github';
@@ -3791,11 +3762,7 @@ function GitHubRepositoryAccessPanel({
     composioDescription = 'Reconnect the Composio GitHub connector, or continue with local git/GitHub CLI.';
   }
 
-  const composioAction = !composioConfigured ? (
-    <Button variant="ghost" onClick={onOpenConnectorsTab}>
-      Configure Composio
-    </Button>
-  ) : connected || authorizationPending ? (
+  const composioAction = connected || authorizationPending ? (
     <>
       {authorizationPending && authorizationUrl ? (
         <Button variant="ghost" disabled={busy} onClick={onOpenAuthorization}>
@@ -4028,7 +3995,6 @@ function scheduleAfterProjectHandoff(task: () => void): void {
 async function prepareCreatedDesignSystemProject({
   project,
   state,
-  composioConfigured,
   githubConnector,
   onProjectPrepared,
   onSystemsRefresh,
@@ -4038,7 +4004,6 @@ async function prepareCreatedDesignSystemProject({
 }: {
   project: Project;
   state: SetupState;
-  composioConfigured: boolean;
   githubConnector: ConnectorDetail | null;
   onProjectPrepared?: (project: Project) => void;
   onSystemsRefresh?: () => Promise<void> | void;
@@ -4060,8 +4025,8 @@ async function prepareCreatedDesignSystemProject({
           ? 'github_api'
           : 'git_clone',
         result: 'success',
-        hasFallback: composioConfigured && githubConnector?.status === 'connected',
-        fallbackType: composioConfigured && githubConnector?.status === 'connected'
+        hasFallback: githubConnector?.status === 'connected',
+        fallbackType: githubConnector?.status === 'connected'
           ? 'native_github_auth'
           : 'none',
         repoHost: dominantRepoHost(githubUrls),
@@ -4155,7 +4120,6 @@ async function prepareCreatedDesignSystemProject({
       project.id,
       SOURCE_CONTEXT_MANIFEST_PATH,
       buildSourceContextManifest(state, {
-        composioConfigured,
         githubConnector,
         stagedLocalCode,
         stagedFigma,
@@ -4727,10 +4691,6 @@ function isGithubRepositoryUrl(url: string): boolean {
   }
 }
 
-function isComposioConfigured(composio: AppConfig['composio'] | undefined): boolean {
-  return Boolean(composio?.apiKeyConfigured || composio?.apiKey?.trim());
-}
-
 function isGithubConnectorConnected(connector: ConnectorDetail | null): boolean {
   return connector?.status === 'connected';
 }
@@ -5172,7 +5132,6 @@ function buildCreationAgentPrompt(
 function buildSourceContextManifest(
   state: SetupState,
   options: {
-    composioConfigured: boolean;
     githubConnector: ConnectorDetail | null;
     stagedLocalCode?: StagedLocalCodeContext;
     stagedFigma?: StagedFigmaContext;
@@ -5361,19 +5320,15 @@ function shellQuote(value: string): string {
 }
 
 function githubConnectorStatusForManifest(options: {
-  composioConfigured: boolean;
   githubConnector: ConnectorDetail | null;
 }): string {
-  if (!options.composioConfigured) {
-    return 'GitHub connector is not configured; repository intake will use local git credentials or authenticated GitHub CLI when possible.';
-  }
   if (isGithubConnectorConnected(options.githubConnector)) {
     const account = getDisplayableGithubAccountLabel(options.githubConnector);
     return account
       ? `connected as ${account}.`
       : 'connected.';
   }
-  return 'Composio key is configured, but GitHub is not connected; repository intake can still use local git credentials or authenticated GitHub CLI when possible.';
+  return 'GitHub connector is not connected; repository intake will use local git credentials or authenticated GitHub CLI when possible.';
 }
 
 function buildProvenance(state: SetupState): DesignSystemProvenance {

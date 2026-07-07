@@ -9,7 +9,6 @@ const routeInventorySymbol = Symbol.for('open-design.routeInventory');
 
 const guardedRouteKeys = new Set([
   'POST /api/projects/:id/export/pdf',
-  'POST /api/projects/:id/media/generate',
 ]);
 
 const guardedMethods = ['get', 'post', 'put', 'patch', 'delete', 'options', 'all', 'use'] as const;

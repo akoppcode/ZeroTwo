@@ -1,24 +1,16 @@
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ChatSessionMode, ConnectorDetail } from '@open-design/contracts';
 import type { OpenDesignHostProjectImportSuccess } from '@open-design/host';
-import {
-  DEFAULT_AUDIO_MODEL,
-  DEFAULT_IMAGE_MODEL,
-  DEFAULT_VIDEO_MODEL,
-} from '../media/models';
 import type {
   AgentInfo,
-  ApiProtocol,
   AppConfig,
   AppTheme,
   DesignSystemSummary,
-  ExecMode,
   Project,
   ProjectKind,
   ProjectMetadata,
   ProjectTemplate,
   PromptTemplateSummary,
-  ProviderModelOption,
   SkillSummary,
 } from '../types';
 // `EntryShell` owns the redesigned home layout (left rail + centered
@@ -68,26 +60,20 @@ interface Props {
   promptTemplates: PromptTemplateSummary[];
   defaultDesignSystemId: string | null;
   agents: AgentInfo[];
-  // Forwarded to EntryShell → OnboardingView so the AMR cloud card can show a
-  // detecting/skeleton state while the cold-start agent stream is in flight.
+  // Forwarded to EntryShell → OnboardingView so the CLI scan can show a
+  // detecting state while the cold-start agent stream is in flight.
   agentsLoading?: boolean;
   // Execution / model-switching context forwarded to the EntryShell so the
-  // sticky top-bar can expose the active CLI/BYOK + model and persist
+  // sticky top-bar can expose the active CLI agent + model and persist
   // changes through the same channels as the project view.
   config: AppConfig;
-  providerModelsCache?: Record<string, ProviderModelOption[]>;
-  onProviderModelsCacheChange?: Dispatch<SetStateAction<Record<string, ProviderModelOption[]>>>;
   integrationInitialTab?: IntegrationTab;
-  composioConfigLoading?: boolean;
   daemonLive: boolean;
-  onModeChange: (mode: ExecMode) => void;
   onAgentChange: (id: string) => void;
   onAgentModelChange: (
     id: string,
     choice: { model?: string; reasoning?: string },
   ) => void;
-  onApiProtocolChange: (protocol: ApiProtocol) => void;
-  onApiModelChange: (model: string) => void;
   onConfigPersist: (cfg: AppConfig) => Promise<void> | void;
   onSkillsRefresh?: () => Promise<void> | void;
   onSkillsChanged?: (affectedSkillId?: string) => void;
@@ -126,8 +112,7 @@ interface Props {
   onCreateDesignSystem?: () => void;
   onOpenDesignSystem?: (id: string) => void;
   onDesignSystemsRefresh?: () => Promise<void> | void;
-  onPersistComposioKey: (composio: AppConfig['composio']) => Promise<void> | void;
-  onOpenSettings: (section?: 'execution' | 'media' | 'composio' | 'orbit' | 'integrations' | 'mcpClient' | 'language' | 'appearance' | 'notifications' | 'pet' | 'projectLocations' | 'library' | 'about' | 'memory' | 'designSystems') => void;
+  onOpenSettings: (section?: 'execution' | 'orbit' | 'integrations' | 'mcpClient' | 'language' | 'appearance' | 'notifications' | 'pet' | 'projectLocations' | 'library' | 'about' | 'memory' | 'designSystems') => void;
   onCompleteOnboarding: () => void;
 }
 
@@ -236,16 +221,10 @@ export function EntryView({
   agents,
   agentsLoading,
   config,
-  providerModelsCache,
-  onProviderModelsCacheChange,
   integrationInitialTab,
-  composioConfigLoading = false,
   daemonLive,
-  onModeChange,
   onAgentChange,
   onAgentModelChange,
-  onApiProtocolChange,
-  onApiModelChange,
   onConfigPersist,
   onSkillsRefresh,
   onSkillsChanged,
@@ -270,7 +249,6 @@ export function EntryView({
   onCreateDesignSystem,
   onOpenDesignSystem,
   onDesignSystemsRefresh,
-  onPersistComposioKey,
   onOpenSettings,
   onCompleteOnboarding,
 }: Props) {
@@ -352,21 +330,15 @@ export function EntryView({
       connectors={connectors}
       connectorsLoading={connectorsLoading}
       {...(integrationInitialTab ? { integrationInitialTab } : {})}
-      composioConfigLoading={composioConfigLoading}
       skillsLoading={skillsLoading}
       designSystemsLoading={designSystemsLoading}
       projectsLoading={projectsLoading}
       config={config}
-      providerModelsCache={providerModelsCache}
-      onProviderModelsCacheChange={onProviderModelsCacheChange}
       agents={agents}
       {...(agentsLoading !== undefined ? { agentsLoading } : {})}
       daemonLive={daemonLive}
-      onModeChange={onModeChange}
       onAgentChange={onAgentChange}
       onAgentModelChange={onAgentModelChange}
-      onApiProtocolChange={onApiProtocolChange}
-      onApiModelChange={onApiModelChange}
       onConfigPersist={onConfigPersist}
       onSkillsRefresh={onSkillsRefresh}
       onSkillsChanged={onSkillsChanged}
@@ -387,7 +359,6 @@ export function EntryView({
       onCreateDesignSystem={onCreateDesignSystem}
       onOpenDesignSystem={onOpenDesignSystem}
       onDesignSystemsRefresh={onDesignSystemsRefresh}
-      onPersistComposioKey={onPersistComposioKey}
       onOpenSettings={onOpenSettings}
       onCompleteOnboarding={onCompleteOnboarding}
     />
@@ -423,21 +394,7 @@ export function metadataForSkill(skill: SkillSummary): ProjectMetadata {
         typeof skill.animations === 'boolean' ? skill.animations : false,
     };
   }
-  if (kind === 'image') {
-    return { kind, imageModel: DEFAULT_IMAGE_MODEL, imageAspect: '1:1' };
-  }
-  if (kind === 'video') {
-    return { kind, videoModel: DEFAULT_VIDEO_MODEL, videoAspect: '16:9', videoLength: 5 };
-  }
-  if (kind === 'audio') {
-    return {
-      kind,
-      audioKind: 'speech',
-      audioModel: DEFAULT_AUDIO_MODEL.speech,
-      audioDuration: 10,
-    };
-  }
-  return { kind: 'other' };
+  return { kind };
 }
 
 export function kindForSkill(skill: SkillSummary): ProjectKind {

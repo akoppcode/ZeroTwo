@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { assertDeckLayoutSafe } from '../qa/deck-layout.js';
 import { injectFontFaces, readFontManifest, type FontFile } from './fonts.js';
 import { readBrand, resolveBrandFile, writeBrand } from './store.js';
 import { sanitizeSeedOverrides } from './schema.js';
@@ -25,7 +24,6 @@ import type { AssetKind, Brand } from './schema.js';
 
 export const BRAND_ARTIFACT_KINDS: AssetKind[] = [
   'landing',
-  'deck',
   'poster',
   'email',
   'newsletter',
@@ -141,12 +139,6 @@ export async function rebuildSystem(
   if (overrides) {
     system = reassembleWithSeed(system, brand, { ...system.seed, ...overrides }, fontFiles);
   }
-
-  // Layout-validation guard: the deck lays content on fixed-size 16:9 slides,
-  // so a regressed template can clip / truncate / overflow brand copy. Block
-  // the rebuild before anything is written when the no-clip invariants fail.
-  const deckHtml = system.files['artifacts/deck.html'];
-  if (deckHtml) assertDeckLayoutSafe(deckHtml);
 
   const outDir = brandSystemDir(brandsRoot, id);
   fs.rmSync(outDir, { recursive: true, force: true });

@@ -44,8 +44,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     intro:
       'Open Design is more than a window — it is a local privileged daemon ' +
       "(`od`) plus a Skills + Design-Systems + Atoms registry. Once it's " +
-      'running on your machine, any code agent (Claude Code, Codex, Cursor, ' +
-      'OpenCode/openclaw, Hermes, your own script) can drive generations, ' +
+      'running on your machine, any code agent (Claude Code, GitHub Copilot ' +
+      'CLI, your own script) can drive generations, ' +
       'inspect projects, and produce design artifacts through four ' +
       'interchangeable surfaces.',
     bullets: [
@@ -86,7 +86,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     heading: 'Drive Open Design from any shell',
     intro:
       'The `od` bin ships with the daemon and is the same binary used by ' +
-      'Claude Code / Codex when they run a generation. Most subcommands are ' +
+      'Claude Code / Copilot when they run a generation. Most subcommands are ' +
       'thin clients that POST to the local daemon, so they work the same ' +
       'whether you launched it via `pnpm tools-dev` or as a packaged app.',
     bullets: [
@@ -181,7 +181,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
           'od files read <seed-project-id> index.html --daemon-url http://127.0.0.1:7456 | head',
       },
       {
-        label: 'Verify environment + detected agents (Claude, Codex, Cursor, …)',
+        label: 'Verify environment + detected agents (Claude, Copilot, …)',
         language: 'bash',
         body: 'od doctor\nod status --json',
       },
@@ -198,9 +198,9 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     heading: 'Expose Open Design as an MCP server to any coding agent',
     intro:
       'Open Design ships with a Model Context Protocol server (`od mcp`) ' +
-      'that lets any MCP-capable client — Cursor, Claude Code, Antigravity, ' +
-      'VS Code Copilot Chat, openclaw, hermes — discover Open Design tools ' +
-      '(list skills, render previews, generate media, run plugins) without ' +
+      'that lets any MCP-capable client — Claude Code, VS Code Copilot Chat — ' +
+      'discover Open Design tools ' +
+      '(list skills, render previews, run plugins) without ' +
       'shelling out manually. The daemon publishes a ready-to-paste install ' +
       'snippet via `GET /api/mcp/install-info` for each major client.',
     bullets: [
@@ -211,7 +211,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
     snippets: [
       {
-        label: 'Generic MCP client config (works in Cursor, Claude Code, Codex, …)',
+        label: 'Generic MCP client config (works in Claude Code, Copilot, …)',
         language: 'json',
         body:
           '{\n' +
@@ -237,8 +237,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
     footer:
       'In the Open Design app, open Settings → Integrations to copy a ' +
-      'client-specific install command (Cursor, Claude Code, Antigravity, ' +
-      'VS Code) instead of editing JSON by hand.',
+      'client-specific install command (Claude Code, VS Code) instead of ' +
+      'editing JSON by hand.',
   },
   {
     id: 'http',
@@ -299,7 +299,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       '(YAML front-matter + body). Open Design extends the format with the ' +
       '`od:` namespace (`mode`, `preview`, `design_system`, `inputs`, …) so ' +
       'the same artifact can be used both inside Open Design and by a vanilla ' +
-      'agent like Claude Code, Codex, openclaw, or hermes. Discovery follows ' +
+      'agent like Claude Code or GitHub Copilot CLI. Discovery follows ' +
       'a precedence chain so projects can override their own skills.',
     bullets: [
       'Discovery: `./.claude/skills/` → `./skills/` → `~/.claude/skills/` (project wins).',
@@ -358,8 +358,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
     footer:
       'Spec: `docs/skills-protocol.md` and `docs/agent-adapters.md` cover ' +
-      'the full adapter surface (Claude Code, Codex, Cursor, MCP-capable ' +
-      'agents, BYOK API fallback) and the per-adapter skill injection ' +
+      'the full adapter surface (Claude Code, Copilot, MCP-capable ' +
+      'agents) and the per-adapter skill injection ' +
       'strategies.',
   },
 ];

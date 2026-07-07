@@ -260,20 +260,6 @@ interface Props {
   activeWorkspaceContext?: WorkspaceContextItem | null;
   initialWorkspaceContexts?: WorkspaceContextItem[];
   workspaceContexts?: WorkspaceContextItem[];
-  // BYOK image-model picker shown above the textarea for protocols that
-  // inject the daemon-side generate_image tool (SenseAudio, AIHubMix).
-  // Hidden for every other BYOK tab so the composer stays clean. The
-  // state owner is ProjectView (per-session, reset on refresh);
-  // ChatComposer is a fully controlled select.
-  byokApiProtocol?: AppConfig['apiProtocol'];
-  byokImageModel?: string;
-  onChangeByokImageModel?: (model: string) => void;
-  byokVideoModel?: string;
-  onChangeByokVideoModel?: (model: string) => void;
-  byokSpeechModel?: string;
-  onChangeByokSpeechModel?: (model: string) => void;
-  byokSpeechVoice?: string;
-  onChangeByokSpeechVoice?: (voice: string) => void;
   currentSkillId?: string | null;
   onProjectSkillChange?: (skillId: string | null) => void;
   // Set when the project was created with a plugin already pinned
@@ -415,15 +401,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       activeWorkspaceContext = null,
       initialWorkspaceContexts = [],
       workspaceContexts = [],
-      byokApiProtocol,
-      byokImageModel,
-      onChangeByokImageModel,
-      byokVideoModel,
-      onChangeByokVideoModel,
-      byokSpeechModel,
-      onChangeByokSpeechModel,
-      byokSpeechVoice,
-      onChangeByokSpeechVoice,
       currentSkillId = null,
       onProjectSkillChange,
       pinnedPluginId = null,
@@ -2676,13 +2653,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               t={t}
             />
           ) : null}
-          {/* The inline BYOK media-model pickers (image / video / speech +
-              voice) were removed pending a unified model-selection surface.
-              The selected models still flow into the run from the project's
-              creation-time pick (see ProjectView byok*ModelOverride → submit);
-              this only drops the per-composer override UI. The byok* props and
-              handlers are intentionally retained as the plumbing the unified
-              picker will reuse. */}
           <div
             className="composer-input-wrap"
             onFocus={() => setComposerEngaged(true)}

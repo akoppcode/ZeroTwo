@@ -90,8 +90,8 @@ const templates: ProjectTemplate[] = [
     id: 'tmpl-landing',
     name: 'Landing Page',
     description: 'A saved landing page starter.',
-    files: [{ name: 'prototype/App.jsx', path: 'prototype/App.jsx' }],
-    createdAt: '2026-05-07T00:00:00.000Z',
+    files: [{ name: 'prototype/App.jsx', content: '' }],
+    createdAt: Date.parse('2026-05-07T00:00:00.000Z'),
   },
 ];
 

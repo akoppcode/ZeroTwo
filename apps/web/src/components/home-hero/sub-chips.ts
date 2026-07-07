@@ -19,10 +19,8 @@ import {
   type FacetOption,
 } from '../plugins-home/facets';
 
-// Parent chips that carry a second-level rail. Media chips (image/video/
-// audio/hyperframes) own their own inline composer form and are excluded;
-// the facet table only defines children for prototype/deck/image/video, and
-// we surface the rail for prototype + deck.
+// Parent chips that carry a second-level rail. We surface the rail for
+// prototype + deck only.
 export type SubChipParentId = 'prototype' | 'deck';
 
 export interface HomeHeroSubChip {

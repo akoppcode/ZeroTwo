@@ -16,9 +16,7 @@ import {
 import { createPortal } from 'react-dom';
 import { hasOdCard } from '@open-design/contracts';
 import { useAnalytics } from '../analytics/provider';
-import { getResolvedDeviceId } from '../analytics/client';
 import { trackChatPanelClick, trackMessageQueueClick, trackRunFailedToastSurfaceView } from '../analytics/events';
-import { amrHandoffDeviceId, attributedAmrUrl, recordAmrEntry } from '../analytics/amr-attribution';
 import { useT } from '../i18n';
 import {
   FEATURED_DESIGN_TOOLBOX_ACTION_IDS,
@@ -42,7 +40,6 @@ import {
 } from '../design-system-auto-prompt';
 import { isTodoWriteToolName, latestTodoWriteInputForPinnedCard } from '../runtime/todos';
 import type { AppConfig, ChatAttachment, ChatCommentAttachment, ChatMessage, ChatMessageFeedbackChange, Conversation, DesignSystemSummary, PreviewComment, Project, ProjectFile, ProjectMetadata, SkillSummary } from '../types';
-import { agentDisplayName } from '../utils/agentLabels';
 import { commentTargetDisplayName, commentsToAttachments, simplePositionLabel } from '../comments';
 import { AssistantMessage, type QuestionFormOpenRequest } from './AssistantMessage';
 import type { BrandBrowserAssistConfirm } from './OdCard';
@@ -50,17 +47,6 @@ import {
   DESIGN_SYSTEM_NEXT_STEP_ACTIONS,
   type NextStepActionsVariant,
 } from './NextStepActions';
-import { AmrGuidance } from './AmrGuidance';
-import { AmrLoginPill } from './AmrLoginPill';
-import {
-  AMR_LOGIN_STATUS_EVENT,
-  amrLoginStatusEventReason,
-} from './amrLoginPolling';
-import { amrRechargeUrlForProfile, resolveRunFailureUi } from '../runtime/amr-guidance';
-import {
-  fetchVelaLoginStatus,
-  type VelaLoginStatus,
-} from '../providers/daemon';
 import { RESUME_CONTINUE_PROMPT } from '../runtime/resume';
 import {
   ChatComposer,
@@ -546,16 +532,6 @@ interface Props {
   // Composer settings/CLI button forwards to here. The dialog lives in App
   // (it owns the AppConfig lifecycle) so we just pass the open trigger.
   onOpenSettings?: (section?: SettingsSection) => void;
-  showByokRecoveryAction?: boolean;
-  onSwitchToLocalCli?: () => void;
-  onOpenAmrSettings?: () => void;
-  onSwitchToAmrAndRetry?: (failedAssistant: ChatMessage) => void;
-  // PR #3157: Antigravity's `agy -p` can't complete OAuth on its own,
-  // so the auth banner offers a "Sign in via terminal" button that
-  // POSTs to /api/agents/antigravity/oauth-launch. Handler resolves
-  // after the daemon kicks off `osascript`/`x-terminal-emulator`/
-  // `cmd /c start` so the UI can disable the button while in flight.
-  onLaunchAntigravityOauth?: () => Promise<void>;
   // Same dialog, but landing on the External MCP tab. Forwarded to the
   // composer's `/mcp` slash and MCP picker button.
   onOpenMcpSettings?: () => void;
@@ -624,18 +600,6 @@ interface Props {
   // each user message — that satisfies §8 "show context inside the run
   // message" without forcing a separate side widget.
   activePluginSnapshot?: AppliedPluginSnapshot | null;
-  // SenseAudio BYOK only — wired straight through to ChatComposer for the
-  // in-composer image-model picker. Active protocol is read so the picker
-  // hides when the user is on any other BYOK tab (azure / openai / …).
-  byokApiProtocol?: AppConfig['apiProtocol'];
-  byokImageModel?: string;
-  onChangeByokImageModel?: (model: string) => void;
-  byokVideoModel?: string;
-  onChangeByokVideoModel?: (model: string) => void;
-  byokSpeechModel?: string;
-  onChangeByokSpeechModel?: (model: string) => void;
-  byokSpeechVoice?: string;
-  onChangeByokSpeechVoice?: (voice: string) => void;
   composerFooterAccessory?: ReactNode;
   // Slot rendered next to the composer's "+" menu (e.g. the working-dir pill).
   composerLeadingAccessory?: ReactNode;
@@ -655,8 +619,6 @@ interface Props {
   designSystemPicker?: ReactNode;
   config?: AppConfig;
 }
-
-const AMR_PROFILE_ENV_KEY = 'OPEN_DESIGN_AMR_PROFILE';
 
 type Tab = 'chat' | 'comments';
 
@@ -813,11 +775,6 @@ export function ChatPane({
   onSelectConversation,
   onDeleteConversation,
   onOpenSettings,
-  showByokRecoveryAction = false,
-  onSwitchToLocalCli,
-  onOpenAmrSettings,
-  onSwitchToAmrAndRetry,
-  onLaunchAntigravityOauth,
   onOpenMcpSettings,
   onBrowsePlugins,
   onOpenConnectors,
@@ -851,15 +808,6 @@ export function ChatPane({
   researchAvailable,
   activePluginSnapshot,
   skills = [],
-  byokApiProtocol,
-  byokImageModel,
-  onChangeByokImageModel,
-  byokVideoModel,
-  onChangeByokVideoModel,
-  byokSpeechModel,
-  onChangeByokSpeechModel,
-  byokSpeechVoice,
-  onChangeByokSpeechVoice,
   composerLeadingAccessory,
   composerFooterAccessory,
   currentDesignSystemId,
@@ -877,20 +825,7 @@ export function ChatPane({
     () => messages.filter((message) => !shouldHideEmptyBrandAssistantMessage(message, projectMetadata)),
     [messages, projectMetadata],
   );
-  const amrProfile = config?.agentCliEnv?.amr?.[AMR_PROFILE_ENV_KEY] ?? null;
-  const [inlineAmrLoginStatus, setInlineAmrLoginStatus] =
-    useState<VelaLoginStatus | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
-  // Guards the inline AMR sign-in card so a successful login auto-retries the
-  // failed run exactly once (the pill's onStatusChange fires loggedIn on every
-  // poll). Keyed by the failed assistant's id.
-  const amrAuthRetriedRef = useRef<string | null>(null);
-  // Tracks the last observed AMR login state so we retry only on a real
-  // signed-out -> signed-in transition. Without this, a run that keeps failing
-  // AMR_AUTH_REQUIRED while /status already reports signed-in would auto-retry
-  // forever (each retry is a new assistant id, so the id guard alone never
-  // converges).
-  const amrAuthPrevLoggedInRef = useRef<boolean | undefined>(undefined);
   const chatLogScrollIdleTimerRef = useRef<number | null>(null);
   const historyWrapRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<ChatComposerHandle | null>(null);
@@ -907,24 +842,6 @@ export function ChatPane({
   // shouldn't be yanked back the moment the next chunk streams in.
   const pinnedToBottomRef = useRef(true);
   const scrolledToFormRef = useRef<Set<string>>(new Set());
-  const refreshInlineAmrLoginStatus = useCallback(async () => {
-    const next = await fetchVelaLoginStatus().catch(() => null);
-    if (next) setInlineAmrLoginStatus(next);
-    return next;
-  }, []);
-
-  useEffect(() => {
-    void refreshInlineAmrLoginStatus();
-    const onAmrLoginStatusChange = (event: Event) => {
-      const reason = amrLoginStatusEventReason(event);
-      if (reason === 'login-canceled') return;
-      void refreshInlineAmrLoginStatus();
-    };
-    window.addEventListener(AMR_LOGIN_STATUS_EVENT, onAmrLoginStatusChange);
-    return () => {
-      window.removeEventListener(AMR_LOGIN_STATUS_EVENT, onAmrLoginStatusChange);
-    };
-  }, [refreshInlineAmrLoginStatus]);
 
   // "Anchor the just-sent turn to the top" (ChatGPT-style). On send we pin
   // the user's message to the top of the viewport and let the reply stream
@@ -1109,8 +1026,8 @@ export function ChatPane({
   );
   const retryAssistant = retryableAssistantMessage(displayMessages, lastAssistantId, streaming);
   // The failed run's error event lives on the (persisted) assistant message, so
-  // the error card + AMR card survive a reload — unlike the ephemeral global
-  // `error` state. Drive both off this event.
+  // the error card survives a reload — unlike the ephemeral global
+  // `error` state. Drive it off this event.
   const failedRunErrorEvent = (() => {
     const evs = retryAssistant?.events ?? [];
     for (let i = evs.length - 1; i >= 0; i--) {
@@ -1119,50 +1036,6 @@ export function ChatPane({
     }
     return null;
   })();
-  // Per-case failure UI (button + copy + whether to promote AMR). Only
-  // meaningful for a failed run (retryAssistant present).
-  const runFailureUi = retryAssistant
-    ? resolveRunFailureUi(failedRunErrorEvent?.code, retryAssistant.agentId)
-    : null;
-  const hasInlineAmrAuthorizeFailure = Boolean(
-    retryAssistant && onRetry && runFailureUi?.primaryAction === 'authorize',
-  );
-  useEffect(() => {
-    if (!hasInlineAmrAuthorizeFailure || !retryAssistant || !onRetry) return;
-    let stopped = false;
-    const retryIfSignedIn = async () => {
-      const next = await refreshInlineAmrLoginStatus();
-      if (stopped) return;
-      // Retry only on a real signed-out -> signed-in transition. A null/unknown
-      // status is NOT treated as signed-out, so it can't fabricate a transition;
-      // and once signed-in we never retry again until an explicit signed-out is
-      // seen. Otherwise a run that keeps failing auth while /status reports
-      // signed-in would retry forever (each retry is a new assistant id).
-      if (next?.loggedIn === true) {
-        const wasSignedOut = amrAuthPrevLoggedInRef.current === false;
-        amrAuthPrevLoggedInRef.current = true;
-        if (wasSignedOut && amrAuthRetriedRef.current !== retryAssistant.id) {
-          amrAuthRetriedRef.current = retryAssistant.id;
-          onRetry(retryAssistant);
-        }
-      } else if (next && next.loggedIn === false) {
-        amrAuthPrevLoggedInRef.current = false;
-      }
-    };
-    void retryIfSignedIn();
-    const interval = window.setInterval(() => {
-      void retryIfSignedIn();
-    }, 500);
-    return () => {
-      stopped = true;
-      window.clearInterval(interval);
-    };
-  }, [
-    hasInlineAmrAuthorizeFailure,
-    onRetry,
-    refreshInlineAmrLoginStatus,
-    retryAssistant,
-  ]);
   // Offer Continue (resume) when the failed run is resumable AND the active
   // agent still matches the agent that produced it. The daemon stores a
   // resumable session per (conversation, agent); after an agent switch the new
@@ -1178,18 +1051,10 @@ export function ChatPane({
     !!retryAssistant?.resumable &&
     !!retryAssistant?.agentId &&
     retryAssistant.agentId === config?.agentId;
-  // Prefer a case-specific message (AMR auth / balance) over the raw upstream
-  // string; fall back to the live global error (also covers conversation-load
-  // / audio errors) then the persisted run error so a reload still shows it.
+  // The live global error (also covers conversation-load / audio errors),
+  // falling back to the persisted run error so a reload still shows it.
   const rawError = error ?? failedRunErrorEvent?.detail ?? null;
-  // Friendly agent name for {agent} interpolation in failure copy (e.g. the
-  // sign-in messages). Falls back to a neutral word when unreadable, never null.
-  const failedAgentLabel =
-    agentDisplayName(retryAssistant?.agentId, retryAssistant?.agentName) ??
-    t('chat.runError.agentFallback');
-  const displayError = runFailureUi?.messageKey
-    ? t(runFailureUi.messageKey, { agent: failedAgentLabel })
-    : rawError;
+  const displayError = rawError;
   const errorDiagnosticText = displayError
     ? buildRunErrorDiagnosticText({
         message: displayError,
@@ -1206,15 +1071,10 @@ export function ChatPane({
   // the error-source area is collapsed.
   const errorSourcePeek =
     errorDiagnosticText?.split('\n').find((line) => line.trim().length > 0)?.trim() ?? null;
-  // Status-dot tone for the unified card. Brand (accent) for AMR sign-in/top-up
-  // — the commercial recovery path; warn (amber) for the self-healing
+  // Status-dot tone for the unified card. Warn (amber) for the self-healing
   // connection drop; error (red) for everything else. Purely visual.
-  const runErrorTone: 'error' | 'warn' | 'brand' =
-    runFailureUi?.primaryAction === 'authorize' || runFailureUi?.primaryAction === 'recharge'
-      ? 'brand'
-      : failedRunErrorEvent?.code === 'AGENT_CONNECTION_DROPPED'
-        ? 'warn'
-        : 'error';
+  const runErrorTone: 'error' | 'warn' =
+    failedRunErrorEvent?.code === 'AGENT_CONNECTION_DROPPED' ? 'warn' : 'error';
   const [copiedErrorDiagnostic, setCopiedErrorDiagnostic] = useState(false);
   // Collapsed by default: the error source area shows one line until expanded.
   const [errorSourceOpen, setErrorSourceOpen] = useState(false);
@@ -1244,32 +1104,10 @@ export function ChatPane({
   // this no longer the last assistant — keep their pill so the error survives.
   const errorCardOwnerId =
     retryAssistant && failedRunErrorEvent ? retryAssistant.id : null;
-  // AMR promotion card payload (only the non-AMR model/auth/quota case).
-  const amrSwitchPayload =
-    runFailureUi?.showSwitchCard
-    && failedRunErrorEvent?.code !== 'UPSTREAM_UNAVAILABLE'
-    && retryAssistant
-    && failedRunErrorEvent?.code
-      ? {
-          errorCode: failedRunErrorEvent.code,
-          projectId: projectId ?? '',
-          projectKind: projectKindForTracking,
-          conversationId: activeConversationId,
-          assistantMessageId: retryAssistant.id,
-          runId: retryAssistant.runId ?? null,
-        }
-      : null;
-  const showByokRecoveryCta = showByokRecoveryAction && Boolean(onSwitchToLocalCli);
-  const showErrorActions =
-    showByokRecoveryCta || Boolean(retryAssistant && onRetry && runFailureUi);
+  const showErrorActions = Boolean(retryAssistant && onRetry);
   useEffect(() => {
     if (!displayError || !failedRunErrorEvent?.code || !retryAssistant) return;
-    // The hosted-AMR nudge owns this same surface_view when it renders below
-    // the error card. For all other failed-run guidance (AMR auth/balance,
-    // Antigravity auth/quota, upstream outage, generic retry), the chat error
-    // card itself is the visible run_failed_toast surface.
-    if (amrSwitchPayload) return;
-
+    // The chat error card itself is the visible run_failed_toast surface.
     const key = [
       projectId ?? '',
       activeConversationId ?? '',
@@ -1294,7 +1132,6 @@ export function ChatPane({
   }, [
     activeConversationId,
     analytics.track,
-    amrSwitchPayload,
     displayError,
     failedRunErrorEvent?.code,
     projectId,
@@ -2000,15 +1837,6 @@ export function ChatPane({
       activeWorkspaceContext={activeWorkspaceContext}
       initialWorkspaceContexts={initialWorkspaceContexts}
       workspaceContexts={workspaceContexts}
-      byokApiProtocol={byokApiProtocol}
-      byokImageModel={byokImageModel}
-      onChangeByokImageModel={onChangeByokImageModel}
-      byokVideoModel={byokVideoModel}
-      onChangeByokVideoModel={onChangeByokVideoModel}
-      byokSpeechModel={byokSpeechModel}
-      onChangeByokSpeechModel={onChangeByokSpeechModel}
-      byokSpeechVoice={byokSpeechVoice}
-      onChangeByokSpeechVoice={onChangeByokSpeechVoice}
       currentSkillId={currentSkillId}
       onProjectSkillChange={onProjectSkillChange}
       pinnedPluginId={activePluginSnapshot?.pluginId ?? null}
@@ -2336,9 +2164,6 @@ export function ChatPane({
                       </svg>
                     </span>
                     <div className="run-error__copy">
-                      {runFailureUi ? (
-                        <p className="run-error__title">{t(runFailureUi.titleKey)}</p>
-                      ) : null}
                       <p className="run-error__desc">{displayError}</p>
                     </div>
                   </div>
@@ -2381,164 +2206,39 @@ export function ChatPane({
                     </div>
                   ) : null}
                   {/* ③ fix actions */}
-                  {showErrorActions || (retryAssistant && onRetry && runFailureUi) ? (
+                  {showErrorActions && retryAssistant && onRetry ? (
                     <div className="run-error__actions">
-                      {showByokRecoveryCta ? (
+                      {canResumeFailedRun ? (
+                        // Resumable failure: continue the agent's existing
+                        // CLI session instead of restarting from scratch, so
+                        // partial work is kept. Replaces the from-scratch
+                        // Retry as the single primary recovery action. Use
+                        // the wired resume handler when present, otherwise a
+                        // plain send of the continue prompt — never the
+                        // re-sending Retry path, which would resume + repeat.
                         <button
                           type="button"
-                          className="chat-error-action"
-                          onClick={onSwitchToLocalCli}
+                          className="ghost chat-error-retry"
+                          onClick={() =>
+                            onResumeRun
+                              ? onResumeRun(retryAssistant)
+                              : onSend(RESUME_CONTINUE_PROMPT, [], [])
+                          }
                         >
-                          {t('avatar.useLocal')}
+                          {t('chat.resumeRunCta')}
                         </button>
-                      ) : null}
-                      {retryAssistant && onRetry && runFailureUi ? (
-                        <>
-                          {runFailureUi.primaryAction === 'authorize' ? (
-                            // Sign in to AMR inline — the pill drives vela login,
-                            // surfaces the activation URL/code when the browser
-                            // doesn't auto-open, and on success we retry the run
-                            // without bouncing the user out to Settings.
-                            <AmrLoginPill
-                              className="chat-error-amr-login"
-                              signInLabel={t('chat.amrError.authorizeCta')}
-                              amrEntrySourceDetail="chat_error_authorize_retry"
-                              initialStatus={inlineAmrLoginStatus}
-                              metricsConsent={config?.telemetry?.metrics === true}
-                              installationId={config?.installationId}
-                              showActivationDetails
-                              hideSignedOutStatus
-                              revealPendingCancelAction
-                              onStatusChange={(loginStatus) => {
-                                // Retry only on a real signed-out -> signed-in
-                                // transition (see amrAuthPrevLoggedInRef).
-                                if (loginStatus?.loggedIn === true) {
-                                  const wasSignedOut =
-                                    amrAuthPrevLoggedInRef.current === false;
-                                  amrAuthPrevLoggedInRef.current = true;
-                                  if (
-                                    wasSignedOut &&
-                                    amrAuthRetriedRef.current !== retryAssistant.id
-                                  ) {
-                                    amrAuthRetriedRef.current = retryAssistant.id;
-                                    onRetry(retryAssistant);
-                                  }
-                                } else if (
-                                  loginStatus &&
-                                  loginStatus.loggedIn === false
-                                ) {
-                                  amrAuthPrevLoggedInRef.current = false;
-                                }
-                              }}
-                            />
-                          ) : runFailureUi.primaryAction === 'launch-terminal-auth' ? (
-                            <button
-                              type="button"
-                              className="chat-error-action"
-                              onClick={() => {
-                                onLaunchAntigravityOauth?.();
-                              }}
-                            >
-                              {t('chat.antigravityError.launchTerminalCta')}
-                            </button>
-                          ) : runFailureUi.primaryAction === 'launch-terminal-switch-model' ? (
-                            <button
-                              type="button"
-                              className="chat-error-action"
-                              onClick={() => {
-                                onLaunchAntigravityOauth?.();
-                              }}
-                            >
-                              {t('chat.antigravityError.launchSwitchModelCta')}
-                            </button>
-                          ) : runFailureUi.primaryAction === 'recharge' ? (
-                            <button
-                              type="button"
-                              className="chat-error-action"
-                              onClick={() => {
-                                const attribution = recordAmrEntry(
-                                  analytics.track,
-                                  'chat_error_recharge',
-                                  new Date(),
-                                  {
-                                    metricsConsent:
-                                      config?.telemetry?.metrics === true,
-                                  },
-                                );
-                                // Forward the canonical telemetry device id to
-                                // AMR only on metrics opt-in (see
-                                // amrHandoffDeviceId). Sourced from the current
-                                // config.installationId / resolved device id,
-                                // not the mount-time bootstrap UUID, so the join
-                                // key matches the telemetry identity even across
-                                // a Delete-my-data rotation.
-                                const deviceId = amrHandoffDeviceId({
-                                  metricsConsent:
-                                    config?.telemetry?.metrics === true,
-                                  resolvedDeviceId: getResolvedDeviceId(),
-                                  installationId: config?.installationId,
-                                });
-                                window.open(
-                                  attributedAmrUrl(
-                                    amrRechargeUrlForProfile(amrProfile),
-                                    attribution,
-                                    deviceId,
-                                  ),
-                                  '_blank',
-                                  'noopener,noreferrer',
-                                );
-                              }}
-                            >
-                              {t('chat.amrError.rechargeCta')}
-                            </button>
-                          ) : null}
-                          {canResumeFailedRun ? (
-                            // Resumable failure: continue the agent's existing
-                            // CLI session instead of restarting from scratch, so
-                            // partial work is kept. Replaces the from-scratch
-                            // Retry as the single primary recovery action. Use
-                            // the wired resume handler when present, otherwise a
-                            // plain send of the continue prompt — never the
-                            // re-sending Retry path, which would resume + repeat.
-                            <button
-                              type="button"
-                              className="ghost chat-error-retry"
-                              onClick={() =>
-                                onResumeRun
-                                  ? onResumeRun(retryAssistant)
-                                  : onSend(RESUME_CONTINUE_PROMPT, [], [])
-                              }
-                            >
-                              {t('chat.resumeRunCta')}
-                            </button>
-                          ) : runFailureUi.primaryAction === 'retry' || runFailureUi.secondaryRetry ? (
-                            <button
-                              type="button"
-                              className="ghost chat-error-retry"
-                              onClick={() => onRetry(retryAssistant)}
-                            >
-                              {t('promptTemplates.retry')}
-                            </button>
-                          ) : null}
-                        </>
-                      ) : null}
+                      ) : (
+                        <button
+                          type="button"
+                          className="ghost chat-error-retry"
+                          onClick={() => onRetry(retryAssistant)}
+                        >
+                          {t('promptTemplates.retry')}
+                        </button>
+                      )}
                     </div>
                   ) : null}
                 </div>
-              ) : null}
-              {amrSwitchPayload ? (
-                <AmrGuidance
-                  {...amrSwitchPayload}
-                  sourceDetail="chat_error_switch_retry_card"
-                  metricsConsent={config?.telemetry?.metrics === true}
-                  onActivate={() => {
-                    if (retryAssistant && onSwitchToAmrAndRetry) {
-                      onSwitchToAmrAndRetry(retryAssistant);
-                    } else {
-                      onOpenAmrSettings?.();
-                    }
-                  }}
-                />
               ) : null}
               {/* Dynamic spacer: when a turn is anchored to the top, this
                   grows just enough to let the user message reach the top of

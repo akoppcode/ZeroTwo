@@ -11,10 +11,6 @@ import type { SkillSummary } from '@open-design/contracts';
 const originalFetch = globalThis.fetch;
 
 const TEST_CONFIG: AppConfig = {
-  mode: 'daemon',
-  apiKey: '',
-  baseUrl: '',
-  model: '',
   agentId: null,
   skillId: null,
   designSystemId: null,

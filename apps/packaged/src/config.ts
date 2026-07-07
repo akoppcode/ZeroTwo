@@ -19,10 +19,8 @@ export const PACKAGED_WEB_STANDALONE_ROOT_ENV = "OD_WEB_STANDALONE_ROOT";
 export const PACKAGED_WEB_OUTPUT_MODE_ENV = "OD_WEB_OUTPUT_MODE";
 
 export type PackagedWebOutputMode = "server" | "standalone";
-export type PackagedAmrProfile = "prod" | "test" | "local";
 
 export type RawPackagedConfig = {
-  amrProfile?: string;
   appVersion?: string;
   daemonCliEntryRelative?: string;
   daemonSidecarEntryRelative?: string;
@@ -48,7 +46,6 @@ export type RawPackagedConfig = {
 };
 
 export type PackagedConfig = {
-  amrProfile: PackagedAmrProfile | null;
   appVersion: string | null;
   daemonCliEntry: string | null;
   daemonSidecarEntry: string | null;
@@ -117,13 +114,6 @@ function resolvePackagedWebOutputMode(value: string | undefined): PackagedWebOut
   throw new Error(`unsupported packaged web output mode: ${value}`);
 }
 
-function resolvePackagedAmrProfile(value: string | undefined): PackagedAmrProfile | null {
-  const cleaned = cleanOptionalString(value);
-  if (cleaned == null) return null;
-  if (cleaned === "prod" || cleaned === "test" || cleaned === "local") return cleaned;
-  throw new Error(`unsupported packaged AMR profile: ${value}`);
-}
-
 function isTruthyEnv(value: string | undefined): boolean {
   return value === "1" || value === "true" || value === "yes";
 }
@@ -180,7 +170,6 @@ export async function readPackagedConfig(): Promise<PackagedConfig> {
   const webSidecarEntry = await resolvePackagedRelativeEntry(raw.webSidecarEntryRelative);
 
   return {
-    amrProfile: resolvePackagedAmrProfile(raw.amrProfile),
     appVersion: cleanOptionalString(raw.appVersion),
     daemonCliEntry,
     daemonSidecarEntry,

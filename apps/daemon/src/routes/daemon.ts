@@ -65,33 +65,6 @@ export function registerDaemonRoutes(app: Express, deps: RegisterDaemonRoutesDep
     }
   });
 
-  app.post('/api/agents/:agentId/oauth-launch', requireLocalDaemonRequest, async (req, res) => {
-    const agentId = req.params.agentId;
-    if (agentId !== 'antigravity') {
-      return res.status(400).json({
-        ok: false,
-        error: `oauth-launch is only supported for antigravity, got ${agentId}`,
-      });
-    }
-    try {
-      const { launchAgentInSystemTerminal } = await import('../runtimes/terminal-launch.js');
-      const result = await launchAgentInSystemTerminal('agy');
-      if (result.ok) {
-        return res.json({ ok: true, platform: result.platform, via: result.via });
-      }
-      return res.status(500).json({
-        ok: false,
-        platform: result.platform,
-        error: result.reason,
-      });
-    } catch (err) {
-      return res.status(500).json({
-        ok: false,
-        error: String(err),
-      });
-    }
-  });
-
   app.post('/api/daemon/db/verify', requireLocalDaemonRequest, async (req, res) => {
     try {
       const { verifySqliteIntegrity } = await import('../storage/db-inspect.js');

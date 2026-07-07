@@ -14,7 +14,7 @@ import {
   projectKindFromMetadataToTracking,
   fidelityToTracking,
 } from '@open-design/contracts/analytics';
-import type { AmrModelsResponse, ChatSessionMode, RunContextSelection } from '@open-design/contracts';
+import type { ChatSessionMode, RunContextSelection } from '@open-design/contracts';
 import { DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID } from '@open-design/contracts';
 import { EntryView } from './components/EntryView';
 import type { IntegrationTab } from './components/IntegrationsView';
@@ -40,10 +40,7 @@ import {
 } from './components/IframeKeepAlivePool';
 import {
   SettingsDialog,
-  switchApiProtocolConfig,
-  updateCurrentApiProtocolConfig,
   type SettingsSection,
-  type SettingsHighlight,
 } from './components/SettingsDialog';
 import { PrivacyConsentModal } from './components/PrivacyConsentModal';
 import {
@@ -59,27 +56,16 @@ import {
 } from './providers/registry';
 import {
   RUNS_CHANGED_EVENT,
-  fetchAmrModels,
-  fetchVelaLoginStatus,
   listProjectRuns,
-  type VelaLoginStatus,
 } from './providers/daemon';
-import { AMR_LOGIN_STATUS_EVENT } from './components/amrLoginPolling';
 import { goBack, navigate, useRoute } from './router';
 import {
   fetchDaemonConfig,
   DEFAULT_PET,
-  fetchMediaProvidersFromDaemon,
-  hasAnyConfiguredProvider,
-  fetchComposioConfigFromDaemon,
   loadConfig,
   mergeDaemonConfig,
-  mergeDaemonMediaProviders,
   saveConfig,
-  shouldSyncLocalMediaProvidersToDaemon,
-  syncComposioConfigToDaemon,
   syncConfigToDaemon,
-  syncMediaProvidersToDaemon,
 } from './state/config';
 import { applyAppearanceToDocument } from './state/appearance';
 import { isMacPlatform } from './utils/platform';
@@ -107,8 +93,6 @@ import { useI18n } from './i18n';
 import { liveArtifactTabId } from './types';
 import type {
   AgentInfo,
-  AgentModelChoice,
-  ApiProtocol,
   AppConfig,
   AppVersionInfo,
   ChatAttachment,
@@ -117,7 +101,6 @@ import type {
   Project,
   ProjectMetadata,
   ProjectTemplate,
-  ProviderModelOption,
   PromptTemplateSummary,
   SkillSummary,
 } from './types';
@@ -132,10 +115,6 @@ type AppCreateProjectInput = Omit<CreateInput, 'metadata'> & {
   initialRunContext?: RunContextSelection | null;
   conversationMode?: ChatSessionMode;
   autoSendFirstMessage?: boolean;
-  /** The home submit already ran the Open Design Cloud balance gate (and the
-   *  user acknowledged any soft warning), so the project's first auto-send
-   *  must not re-gate — re-prompting a decision the user just made. */
-  amrGatePrechecked?: boolean;
   requestId?: string;
   pendingFiles?: File[];
   userWorkingDirToken?: string;
@@ -143,34 +122,7 @@ type AppCreateProjectInput = Omit<CreateInput, 'metadata'> & {
 };
 
 const APP_CONFIG_CHANGED_EVENT = 'open-design:app-config-changed';
-const AMR_AGENT_ID = 'amr';
-const AMR_PROFILE_ENV_KEY = 'OPEN_DESIGN_AMR_PROFILE';
 const AGENT_FOCUS_REFRESH_THROTTLE_MS = 10_000;
-
-export function shouldSyncMediaProvidersOnSave(
-  mediaProviders: AppConfig['mediaProviders'],
-  options?: { force?: boolean },
-): boolean {
-  return Boolean(options?.force) || hasAnyConfiguredProvider(mediaProviders);
-}
-
-function normalizeSavedComposioConfig(config: AppConfig['composio']): AppConfig['composio'] {
-  const apiKey = config?.apiKey?.trim() ?? '';
-  if (apiKey) {
-    return {
-      ...config,
-      apiKey: '',
-      apiKeyConfigured: true,
-      apiKeyTail: apiKey.slice(-4),
-    };
-  }
-  return { ...(config ?? {}) };
-}
-
-function amrProfileForConfig(config: AppConfig): string | null {
-  const profile = config.agentCliEnv?.[AMR_AGENT_ID]?.[AMR_PROFILE_ENV_KEY];
-  return typeof profile === 'string' && profile ? profile : null;
-}
 
 function mergeLinkedDirsIntoMetadata(
   metadata: ProjectMetadata | undefined,
@@ -185,46 +137,10 @@ function mergeLinkedDirsIntoMetadata(
   };
 }
 
-function sameAgentModelChoice(
-  left: AgentModelChoice | undefined,
-  right: AgentModelChoice | undefined,
-): boolean {
-  return (left?.model ?? null) === (right?.model ?? null)
-    && (left?.reasoning ?? null) === (right?.reasoning ?? null);
-}
-
-function clearStaleAmrModelChoiceOnProfileChange(
-  previous: AppConfig,
-  next: AppConfig,
-): AppConfig {
-  if (amrProfileForConfig(previous) === amrProfileForConfig(next)) return next;
-
-  const previousChoice = previous.agentModels?.[AMR_AGENT_ID];
-  const nextChoice = next.agentModels?.[AMR_AGENT_ID];
-  if (!nextChoice || !sameAgentModelChoice(previousChoice, nextChoice)) return next;
-
-  const nextAgentModels = { ...(next.agentModels ?? {}) };
-  delete nextAgentModels[AMR_AGENT_ID];
-  return { ...next, agentModels: nextAgentModels };
-}
-
 type ProjectListRequest = {
   generation: number;
   mutationVersion: number;
 };
-
-export async function persistComposioConfigChange(
-  current: AppConfig,
-  composio: AppConfig['composio'],
-  sync: (config: AppConfig['composio']) => Promise<boolean> = syncComposioConfigToDaemon,
-): Promise<AppConfig> {
-  const saved = await sync(composio);
-  if (!saved) throw new Error('Composio config save failed');
-  return {
-    ...current,
-    composio: normalizeSavedComposioConfig(composio),
-  };
-}
 
 export function buildPersistedConfig(next: AppConfig, current: AppConfig): AppConfig {
   const stalePrivacySnapshot =
@@ -239,28 +155,14 @@ export function buildPersistedConfig(next: AppConfig, current: AppConfig): AppCo
           telemetry: current.telemetry,
         }
       : {}),
-    composio: next.composio
-      ? {
-          apiKey: '',
-          apiKeyConfigured: Boolean(next.composio.apiKeyConfigured),
-          apiKeyTail: next.composio.apiKeyTail ?? '',
-        }
-      : next.composio,
   };
 }
 
 /**
- * True when `next` and `last` produce an identical persisted shape —
- * i.e. the only diffs between them are fields that buildPersistedConfig
- * intentionally strips before disk/daemon writes (the Composio API key
- * draft today; any future save-on-explicit-confirm secrets later).
- *
+ * True when `next` and `last` produce an identical persisted shape.
  * The autosave loop in Settings uses this to skip the "All changes
- * saved" indicator transition when the user has only typed an unsaved
- * secret. Without it, autosave completes a no-op write and flashes
- * "Saved" — misleading users into trusting that a sensitive key has
- * been persisted when in fact only the section-local "Save key"
- * gesture commits it.
+ * saved" indicator transition when nothing that reaches disk or the
+ * daemon actually changed.
  */
 export function isAutosaveDraftOnlyChange(next: AppConfig, last: AppConfig): boolean {
   return (
@@ -277,45 +179,9 @@ export function resolveSettingsCloseConfig(
   return base.onboardingCompleted ? base : { ...base, onboardingCompleted: true };
 }
 
-function mergeAmrModelsIntoAgents(
-  agents: AgentInfo[],
-  amrModels: AmrModelsResponse | null,
-): AgentInfo[] {
-  if (!amrModels || amrModels.models.length === 0) return agents;
-  return agents.map((agent) => {
-    if (agent.id !== 'amr') return agent;
-    const shouldPreferAgentModels =
-      amrModels.source === 'preset' &&
-      Array.isArray(agent.models) &&
-      agent.models.length > 0;
-    if (shouldPreferAgentModels) return agent;
-    return { ...agent, models: amrModels.models, modelsSource: 'live' };
-  });
-}
-
 const CANONICAL_AGENT_ORDER = [
-  'amr',
   'claude',
-  'codex',
-  'devin',
-  'gemini',
-  'opencode',
-  'hermes',
-  'trae-cli',
-  'grok-build',
-  'kimi',
-  'cursor-agent',
-  'qwen',
-  'qoder',
   'copilot',
-  'pi',
-  'kiro',
-  'kilo',
-  'vibe',
-  'deepseek',
-  'aider',
-  'antigravity',
-  'reasonix',
 ] as const;
 
 const CANONICAL_AGENT_ORDER_INDEX = new Map<string, number>(
@@ -403,18 +269,11 @@ function AppInner() {
   const [projectOpenError, setProjectOpenError] = useState<string | null>(null);
   const [settingsWelcome, setSettingsWelcome] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('execution');
-  const [settingsHighlight, setSettingsHighlight] = useState<SettingsHighlight>(null);
   const [integrationInitialTab, setIntegrationInitialTab] = useState<IntegrationTab>('mcp');
   const [daemonLive, setDaemonLive] = useState(false);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const amrModelsRef = useRef<AmrModelsResponse | null>(null);
-  const amrPollGenerationRef = useRef(0);
   const agentStreamRequestSeqRef = useRef(0);
   const agentFocusRefreshLastRunRef = useRef(Date.now());
-  const [amrPollRestartToken, setAmrPollRestartToken] = useState(0);
-  const [providerModelsCache, setProviderModelsCache] = useState<
-    Record<string, ProviderModelOption[]>
-  >({});
   // Functional skills (capabilities the agent invokes mid-task) — stays
   // small and lives under the Settings → Skills surface.
   const [skills, setSkills] = useState<SkillSummary[]>([]);
@@ -448,13 +307,6 @@ function AppInner() {
   const [appVersionInfo, setAppVersionInfo] = useState<AppVersionInfo | null>(
     null,
   );
-  const [daemonMediaProviders, setDaemonMediaProviders] = useState<
-    AppConfig['mediaProviders'] | null
-  >(null);
-  const [daemonMediaProvidersFetchState, setDaemonMediaProvidersFetchState] = useState<
-    'idle' | 'ok' | 'error'
-  >('idle');
-  const [mediaProvidersNotice, setMediaProvidersNotice] = useState<string | null>(null);
   // Per-resource loading flags. Each goes false the moment its own fetch
   // resolves so each entry-view tab can render as its data lands instead of
   // every tab waiting on the slowest endpoint (typically `/api/agents`,
@@ -470,15 +322,6 @@ function AppInner() {
   // so they don't race ahead of the daemon-stored choice and overwrite it
   // with a freshly picked first-available agent.
   const [daemonConfigLoaded, setDaemonConfigLoaded] = useState(false);
-  // Narrower flag dedicated to the Composio API key hydration. The key is
-  // persisted by the daemon (and only reflected back via apiKeyConfigured
-  // + apiKeyTail), so after a dev-server restart there is a window where
-  // the dialog can render an empty Composio input even though a saved key
-  // exists. Settings → Connectors uses this to render a skeleton over the
-  // input + buttons instead of an empty input that the user might
-  // mistake for "no key saved" — and to disable Save/Clear so a misclick
-  // can't overwrite the saved state with `''` before hydration lands.
-  const [composioConfigLoading, setComposioConfigLoading] = useState(true);
   const route = useRoute();
   const analytics = useAnalytics();
 
@@ -489,11 +332,6 @@ function AppInner() {
 
   const isCurrentAgentStreamRequest = useCallback((requestId: number) => {
     return agentStreamRequestSeqRef.current === requestId;
-  }, []);
-
-  const restartAmrPolling = useCallback(() => {
-    amrPollGenerationRef.current += 1;
-    setAmrPollRestartToken((current) => current + 1);
   }, []);
 
   // v2 schema removed the standalone `app_launch` event; the initial
@@ -618,17 +456,12 @@ function AppInner() {
     analytics.setIdentity(config.installationId ?? null);
   }, [analytics.setIdentity, config.installationId, config.telemetry?.metrics]);
 
-  // App-level AMR sign-in state — declared here because the configure
-  // globals effect below reads it; the sync effects live next to the
-  // other AMR plumbing further down.
-  const [amrLoginStatus, setAmrLoginStatus] = useState<VelaLoginStatus | null>(null);
-
   // v2 analytics requires every event to carry the configure-state
   // triplet (has_available_configure_cli / configure_type /
   // configure_availability). We push it into the PostHog global register
-  // whenever the user's execution-mode config or the detected agent list
-  // changes; the next capture inherits the fresh values, so dashboards
-  // can segment by execution setup without per-helper boilerplate.
+  // whenever the selected agent or the detected agent list changes; the
+  // next capture inherits the fresh values, so dashboards can segment by
+  // execution setup without per-helper boilerplate.
   //
   // Gated on `agentsLoading` so the cold-start probe (`fetchAgentsStream()`
   // lands asynchronously after this effect's first run) does not stamp
@@ -640,29 +473,18 @@ function AppInner() {
   // no mode pinned.
   useEffect(() => {
     if (agentsLoading) return;
-    const byokConfigured = (() => {
-      const protocols = config.apiProtocolConfigs;
-      if (!protocols) return Boolean(config.apiKey?.trim());
-      return Object.values(protocols).some(
-        (cfg) => Boolean(cfg?.apiKey?.trim()),
-      );
-    })();
     const globals = deriveConfigureGlobals({
-      mode: config.mode,
+      mode: 'daemon',
       agentId: config.agentId,
       agents: agents.map((a) => ({ id: a.id, available: a.available })),
-      byokConfigured,
-      amrAuthorized: amrLoginStatus?.loggedIn === true,
+      byokConfigured: false,
+      amrAuthorized: false,
     });
     analytics.setConfigureGlobals(globals);
   }, [
     analytics.setConfigureGlobals,
     agentsLoading,
-    amrLoginStatus,
-    config.mode,
     config.agentId,
-    config.apiKey,
-    config.apiProtocolConfigs,
     agents,
   ]);
 
@@ -712,84 +534,6 @@ function AppInner() {
     });
   }, [activeProjectId, activeFileName]);
 
-  useEffect(() => {
-    if (!daemonLive) return;
-    let cancelled = false;
-    let timer: number | null = null;
-    const pollGeneration = amrPollGenerationRef.current + 1;
-    amrPollGenerationRef.current = pollGeneration;
-    const pollDelayMs = 1_000;
-    const maxPresetPolls = 10;
-    let presetPolls = 0;
-
-    const applyAmrModels = async () => {
-      const result = await fetchAmrModels();
-      if (
-        cancelled ||
-        amrPollGenerationRef.current !== pollGeneration ||
-        !result ||
-        !Array.isArray(result.models) ||
-        result.models.length === 0
-      ) {
-        return;
-      }
-      amrModelsRef.current = result;
-      setAgents((current) => mergeAmrModelsIntoAgents(current, result));
-      const shouldPollPreset =
-        result.source === 'preset' &&
-        !result.remoteError &&
-        presetPolls < maxPresetPolls;
-      if (shouldPollPreset) {
-        presetPolls += 1;
-        timer = window.setTimeout(() => {
-          void applyAmrModels();
-        }, pollDelayMs);
-      }
-    };
-
-    void applyAmrModels();
-    return () => {
-      cancelled = true;
-      if (timer !== null) window.clearTimeout(timer);
-    };
-  }, [amrPollRestartToken, daemonLive]);
-
-  // App-level AMR sign-in state. Feeds two analytics globals: the
-  // `amr` configure_type bucket (deriveConfigureGlobals below) and the
-  // `user_id` public param (the AMR account id is the only join key
-  // between this PostHog project and the AMR-side one). Child surfaces
-  // push status changes up via onAmrLoginStatusChange; the global
-  // AMR_LOGIN_STATUS_EVENT covers logins finishing in surfaces that
-  // unmounted before their poll settled.
-  useEffect(() => {
-    let cancelled = false;
-    const sync = async () => {
-      const status = await fetchVelaLoginStatus();
-      if (!cancelled && status) setAmrLoginStatus(status);
-    };
-    void sync();
-    const onStatusEvent = () => {
-      void sync();
-    };
-    window.addEventListener(AMR_LOGIN_STATUS_EVENT, onStatusEvent);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(AMR_LOGIN_STATUS_EVENT, onStatusEvent);
-    };
-  }, [daemonLive]);
-
-  useEffect(() => {
-    analytics.setUserId(
-      amrLoginStatus?.loggedIn === true ? amrLoginStatus.user?.id ?? null : null,
-    );
-  }, [analytics.setUserId, amrLoginStatus]);
-
-  const handleAmrLoginStatusChange = useCallback((status: VelaLoginStatus | null) => {
-    if (status) setAmrLoginStatus(status);
-    if (status?.loggedIn !== true) return;
-    restartAmrPolling();
-  }, [restartAmrPolling]);
-
   // Bootstrap — detect daemon, then fan out independent fetches so each
   // entry-view tab can render the moment its own data lands. Earlier this
   // was one Promise.all behind a global "Loading workspace…" placeholder,
@@ -811,10 +555,6 @@ function AppInner() {
         setProjectsLoading(false);
         setPromptTemplatesLoading(false);
         setDaemonConfigLoaded(true);
-        // Composio hydration also depends on the daemon. With no daemon
-        // we just keep whatever localStorage already held; drop the
-        // skeleton so the Settings → Connectors input reflects state.
-        setComposioConfigLoading(false);
         return;
       }
 
@@ -823,22 +563,12 @@ function AppInner() {
         signal: agentStreamAbort.signal,
         onAgent: (agent) => {
           if (cancelled || !isCurrentAgentStreamRequest(agentRequestId)) return;
-          setAgents((current) =>
-            mergeAmrModelsIntoAgents(
-              upsertAgent(current, agent),
-              amrModelsRef.current,
-            ),
-          );
+          setAgents((current) => upsertAgent(current, agent));
         },
       })
         .then((list) => {
           if (cancelled || !isCurrentAgentStreamRequest(agentRequestId)) return;
-          setAgents(
-            mergeAmrModelsIntoAgents(
-              orderAgentsByRegistry(list),
-              amrModelsRef.current,
-            ),
-          );
+          setAgents(orderAgentsByRegistry(list));
         })
         .catch((err) => {
           if (
@@ -907,31 +637,8 @@ function AppInner() {
         setAppVersionInfo(info);
       });
 
-      // Daemon-persisted config + composio config + media provider config land
-      // together so the welcome-modal decision and daemon-backed settings
-      // apply in one merge, avoiding a flash where local-only state is shown
-      // before daemon overrides it.
-      void Promise.all([
-        fetchDaemonConfig(),
-        fetchComposioConfigFromDaemon(),
-        fetchMediaProvidersFromDaemon(),
-      ]).then(([
-        daemonConfig,
-        daemonComposioConfig,
-        daemonMediaProvidersResult,
-      ]) => {
+      void fetchDaemonConfig().then((daemonConfig) => {
         if (cancelled) return;
-        const daemonMediaProvidersLoaded =
-          daemonMediaProvidersResult.status === 'ok'
-            ? daemonMediaProvidersResult.providers
-            : null;
-        setDaemonMediaProviders(daemonMediaProvidersLoaded);
-        setDaemonMediaProvidersFetchState(daemonMediaProvidersResult.status);
-        setMediaProvidersNotice(
-          daemonMediaProvidersResult.status === 'error'
-            ? t('settings.mediaProviderLoadError')
-            : null,
-        );
         // Compute the next config outside the setConfig updater so we can
         // both (a) call navigate() after setConfig returns — calling it
         // inside the updater would trigger a Router setState during React's
@@ -940,36 +647,12 @@ function AppInner() {
         // the next render. latestPersistedConfigRef is kept in sync with
         // the rendered config and is safe to read here.
         const baseConfig = latestPersistedConfigRef.current;
-        const migratedLocalMediaProviders = shouldSyncLocalMediaProvidersToDaemon(
-          baseConfig.mediaProviders,
-          daemonMediaProvidersLoaded,
-        );
-        const next = mergeDaemonMediaProviders(
-          clearStaleAmrModelChoiceOnProfileChange(
-            baseConfig,
-            mergeDaemonConfig(baseConfig, daemonConfig),
-          ),
-          daemonMediaProvidersLoaded,
-        );
-        const hasLocalComposioKey = Boolean(next.composio?.apiKey?.trim());
-        if (!hasLocalComposioKey && daemonComposioConfig) {
-          next.composio = daemonComposioConfig;
-        }
+        const next = mergeDaemonConfig(baseConfig, daemonConfig);
         saveConfig(next);
-        if (
-          daemonMediaProvidersResult.status === 'ok' &&
-          migratedLocalMediaProviders &&
-          hasAnyConfiguredProvider(next.mediaProviders)
-        ) {
-          void syncMediaProvidersToDaemon(next.mediaProviders, {
-            daemonProviders: daemonMediaProvidersLoaded,
-          });
-        }
         // Migrate localStorage prefs to daemon on first boot with the new
         // endpoint. If daemon already had values the merge above used them;
         // writing back is idempotent and keeps both sides in sync.
         void syncConfigToDaemon(next);
-        void syncComposioConfigToDaemon(next.composio);
         latestPersistedConfigRef.current = next;
         setConfig(next);
 
@@ -983,12 +666,6 @@ function AppInner() {
           navigate({ kind: 'home', view: 'onboarding' }, { replace: true });
         }
         setDaemonConfigLoaded(true);
-        // Composio key hydration is part of this same daemon-config
-        // fetch — by the time we land here the daemon has either
-        // returned the saved-key shape (apiKeyConfigured + tail) or
-        // it errored and we kept whatever localStorage held. Either
-        // way it is safe to drop the skeleton.
-        setComposioConfigLoading(false);
       });
     })();
     return () => {
@@ -1009,13 +686,12 @@ function AppInner() {
   // user's previous choice, so we only fill an empty slot.
   //
   // First-run onboarding is the one time we must NOT do this: the onboarding
-  // flow is the sole authority for the initial agent pick (AMR is the
-  // recommended default there), and AMR (vela) detection is asynchronous. If
-  // this fallback fires during onboarding while AMR is still being detected it
-  // snaps the slot to the registry-first *detected* agent (Claude) and
-  // persists it to the daemon, which then races and clobbers the user's AMR
-  // selection on the next launch. Gate on onboardingCompleted so this only
-  // backfills an empty slot for returning users.
+  // flow is the sole authority for the initial agent pick, and agent
+  // detection is asynchronous. If this fallback fires during onboarding it
+  // snaps the slot to the registry-first *detected* agent and persists it to
+  // the daemon, which then races and clobbers the user's selection on the
+  // next launch. Gate on onboardingCompleted so this only backfills an empty
+  // slot for returning users.
   useEffect(() => {
     if (!daemonConfigLoaded || agentsLoading) return;
     if (config.onboardingCompleted !== true) return;
@@ -1115,92 +791,23 @@ function AppInner() {
     return ok;
   }, [refreshTemplates]);
 
-  const reloadMediaProvidersFromDaemon = useCallback(async () => {
-    const result = await fetchMediaProvidersFromDaemon();
-    if (result.status !== 'ok') {
-      setDaemonMediaProvidersFetchState('error');
-      setMediaProvidersNotice(
-        t('settings.mediaProviderLoadError'),
-      );
-      return null;
-    }
-    setDaemonMediaProviders(result.providers);
-    setDaemonMediaProvidersFetchState('ok');
-    setMediaProvidersNotice(null);
-    setConfig((prev) => {
-      const merged = mergeDaemonMediaProviders(prev, result.providers);
-      saveConfig(merged);
-      return merged;
-    });
-    return result.providers;
-  }, []);
-
   /**
    * Autosave-driven persistence path. The settings dialog calls this on
    * every committed edit (via a debounced effect) so localStorage and
-   * the daemon stay in lock-step with the user's draft. We deliberately
-   * do NOT touch the Composio secret here — it has its own gesture
-   * (handleConfigPersistComposioKey) so partial keys never leave the
-   * browser. Onboarding is also left alone; the dialog's close path
-   * is the canonical "I'm done" signal.
+   * the daemon stay in lock-step with the user's draft. Onboarding is
+   * left alone; the dialog's close path is the canonical "I'm done"
+   * signal.
    */
-  const handleConfigPersist = useCallback(async (
-    next: AppConfig,
-    options?: { forceMediaProviderSync?: boolean },
-  ) => {
-    // Strip the in-flight Composio secret before anything hits disk so
-    // a half-typed key can't survive in localStorage. If the dialog is
-    // closing, preserve any onboarding completion that the close gesture
-    // already committed so an unmount autosave cannot re-open the welcome flow.
+  const handleConfigPersist = useCallback(async (next: AppConfig) => {
+    // If the dialog is closing, preserve any onboarding completion that
+    // the close gesture already committed so an unmount autosave cannot
+    // re-open the welcome flow.
     const persisted = buildPersistedConfig(next, configRef.current);
     latestPersistedConfigRef.current = persisted;
     saveConfig(persisted);
     setConfig(persisted);
-    const shouldSyncMediaProviders =
-      daemonMediaProvidersFetchState === 'ok'
-      && shouldSyncMediaProvidersOnSave(persisted.mediaProviders, {
-        force: options?.forceMediaProviderSync,
-      });
-    await Promise.all([
-      shouldSyncMediaProviders
-        ? syncMediaProvidersToDaemon(persisted.mediaProviders, {
-            force: options?.forceMediaProviderSync,
-            daemonProviders: daemonMediaProviders,
-            throwOnError: options?.forceMediaProviderSync,
-          })
-        : Promise.resolve(),
-      syncConfigToDaemon(persisted, { throwOnError: true }),
-    ]);
-  }, [daemonMediaProviders, daemonMediaProvidersFetchState]);
-
-  /**
-   * Explicit Composio API-key save. Called from the section-local
-   * "Save key" button so secrets never ride the autosave keystroke
-   * loop. Once the daemon confirms, we normalize the saved config
-   * (strip the secret, store apiKeyConfigured + apiKeyTail) and feed
-   * it back into local state so the saved-key badge appears.
-   */
-  const handleConfigPersistComposioKey = useCallback(
-    async (composio: AppConfig['composio']) => {
-      const next = await persistComposioConfigChange(config, composio);
-      setConfig((curr) => {
-        const merged: AppConfig = { ...curr, composio: next.composio };
-        saveConfig(merged);
-        return merged;
-      });
-    },
-    [config],
-  );
-
-  const handleModeChange = useCallback(
-    (mode: AppConfig['mode']) => {
-      const next = { ...latestPersistedConfigRef.current, mode };
-      latestPersistedConfigRef.current = next;
-      saveConfig(next);
-      setConfig(next);
-    },
-    [],
-  );
+    await syncConfigToDaemon(persisted, { throwOnError: true });
+  }, []);
 
   // Quick theme switch from the settings dropdown in the entry view.
   // Skips the full SettingsDialog round-trip so the appearance flip
@@ -1255,33 +862,6 @@ function AppInner() {
     [],
   );
 
-  // BYOK protocol switch — also flips `mode` to 'api' so the user does
-  // not have to take a second step after picking a provider from the
-  // inline switcher. The helper preserves any per-protocol fields the
-  // user had previously configured for the target protocol.
-  const handleApiProtocolChange = useCallback(
-    (protocol: ApiProtocol) => {
-      const next = switchApiProtocolConfig(config, protocol);
-      saveConfig(next);
-      void syncConfigToDaemon(next);
-      setConfig(next);
-    },
-    [config],
-  );
-
-  // BYOK model picker — patches `model` (and the per-protocol shadow
-  // copy) without touching apiKey/baseUrl so the user can swap models
-  // mid-session without retyping their key.
-  const handleApiModelChange = useCallback(
-    (model: string) => {
-      const next = updateCurrentApiProtocolConfig(config, { model });
-      saveConfig(next);
-      void syncConfigToDaemon(next);
-      setConfig(next);
-    },
-    [config],
-  );
-
   const handleChangeDefaultDesignSystem = useCallback(
     (designSystemId: string | null) => {
       const next = { ...config, designSystemId };
@@ -1295,11 +875,10 @@ function AppInner() {
   const refreshAgents = useCallback(
     async (options?: { throwOnError?: boolean; agentCliEnv?: AppConfig['agentCliEnv'] }) => {
       if (options && Object.prototype.hasOwnProperty.call(options, 'agentCliEnv')) {
-        const nextConfig = clearStaleAmrModelChoiceOnProfileChange(config, {
+        const nextConfig = {
           ...config,
           agentCliEnv: options.agentCliEnv ?? {},
-        });
-        amrModelsRef.current = null;
+        };
         saveConfig(nextConfig);
         await syncConfigToDaemon(nextConfig);
         setConfig(nextConfig);
@@ -1310,17 +889,12 @@ function AppInner() {
         const next = await fetchAgentsStream({
           onAgent: (agent) => {
             if (!isCurrentAgentStreamRequest(agentRequestId)) return;
-            setAgents((current) =>
-              mergeAmrModelsIntoAgents(
-                upsertAgent(current, agent),
-                amrModelsRef.current,
-              ),
-            );
+            setAgents((current) => upsertAgent(current, agent));
           },
         });
         const ordered = orderAgentsByRegistry(next);
         if (isCurrentAgentStreamRequest(agentRequestId)) {
-          setAgents(mergeAmrModelsIntoAgents(ordered, amrModelsRef.current));
+          setAgents(ordered);
           setAgentsLoading(false);
         }
         return ordered;
@@ -1361,21 +935,16 @@ function AppInner() {
   useEffect(() => {
     const handleAppConfigChanged = () => {
       void fetchDaemonConfig().then((daemonConfig) => {
-        const next = clearStaleAmrModelChoiceOnProfileChange(
-          latestPersistedConfigRef.current,
-          mergeDaemonConfig(latestPersistedConfigRef.current, daemonConfig),
-        );
+        const next = mergeDaemonConfig(latestPersistedConfigRef.current, daemonConfig);
         latestPersistedConfigRef.current = next;
         saveConfig(next);
         setConfig(next);
-        amrModelsRef.current = null;
-        restartAmrPolling();
         void refreshAgents();
       });
     };
     window.addEventListener(APP_CONFIG_CHANGED_EVENT, handleAppConfigChanged);
     return () => window.removeEventListener(APP_CONFIG_CHANGED_EVENT, handleAppConfigChanged);
-  }, [refreshAgents, restartAmrPolling]);
+  }, [refreshAgents]);
 
   const handleCreateProject = useCallback(
     async (
@@ -1541,16 +1110,6 @@ function AppInner() {
             `od:auto-send-first:${result.project.id}`,
             '1',
           );
-          if (input.amrGatePrechecked) {
-            window.sessionStorage.setItem(
-              `od:auto-send-amr-gate-ok:${result.project.id}`,
-              '1',
-            );
-          } else {
-            window.sessionStorage.removeItem(
-              `od:auto-send-amr-gate-ok:${result.project.id}`,
-            );
-          }
           if (firstMessageAttachments.length > 0) {
             window.sessionStorage.setItem(
               `od:auto-send-attachments:${result.project.id}`,
@@ -2043,31 +1602,16 @@ function AppInner() {
 
   const openSettings = useCallback((
     section: SettingsSection = 'execution',
-    opts?: { highlight?: SettingsHighlight },
   ) => {
-    if (section === 'composio' || section === 'mcpClient' || section === 'integrations') {
-      setIntegrationInitialTab(
-        section === 'composio'
-          ? 'connectors'
-          : section === 'mcpClient'
-            ? 'mcp'
-            : 'use-everywhere',
-      );
+    if (section === 'mcpClient' || section === 'integrations') {
+      setIntegrationInitialTab(section === 'mcpClient' ? 'mcp' : 'use-everywhere');
       navigate({ kind: 'home', view: 'integrations' });
       return;
     }
     setSettingsWelcome(false);
     setSettingsInitialSection(section);
-    setSettingsHighlight(opts?.highlight ?? null);
     setSettingsOpen(true);
   }, []);
-
-  // Entry point from the failed-run AMR nudge: open Settings on the execution
-  // section and flag the AMR agent card for a one-shot scroll-into-view +
-  // highlight (and a sign-in coachmark when not yet authorized).
-  const openAmrSettings = useCallback(() => {
-    openSettings('execution', { highlight: 'amr' });
-  }, [openSettings]);
 
   const openPetSettings = useCallback(() => {
     setSettingsWelcome(false);
@@ -2087,7 +1631,7 @@ function AppInner() {
   }, []);
 
   const openConnectorIntegrations = useCallback(() => {
-    setIntegrationInitialTab('connectors');
+    setIntegrationInitialTab('mcp');
     navigate({ kind: 'home', view: 'integrations' });
   }, []);
 
@@ -2263,8 +1807,6 @@ function AppInner() {
           ]);
         }}
         onSystemsRefresh={refreshDesignSystems}
-        config={config}
-        onOpenConnectorsTab={() => openSettings('composio')}
       />
     );
   } else if (route.kind === 'design-system-detail') {
@@ -2298,14 +1840,11 @@ function AppInner() {
         designTemplates={designTemplates}
         designSystems={designSystems}
         daemonLive={daemonLive}
-        onModeChange={handleModeChange}
         onAgentChange={handleAgentChange}
         onAgentModelChange={handleAgentModelChange}
-        onApiModelChange={handleApiModelChange}
         onRefreshAgents={refreshAgents}
         onThemeChange={handleThemeChange}
         onOpenSettings={openSettings}
-        onOpenAmrSettings={openAmrSettings}
         onOpenMcpSettings={openMcpSettings}
         onBrowsePlugins={openPluginRegistry}
         onOpenConnectors={openConnectorIntegrations}
@@ -2339,16 +1878,10 @@ function AppInner() {
         agents={agents}
         agentsLoading={agentsLoading}
         config={config}
-        providerModelsCache={providerModelsCache}
-        onProviderModelsCacheChange={setProviderModelsCache}
         integrationInitialTab={integrationInitialTab}
-        composioConfigLoading={composioConfigLoading}
         daemonLive={daemonLive}
-        onModeChange={handleModeChange}
         onAgentChange={handleAgentChange}
         onAgentModelChange={handleAgentModelChange}
-        onApiProtocolChange={handleApiProtocolChange}
-        onApiModelChange={handleApiModelChange}
         onConfigPersist={handleConfigPersist}
         onSkillsRefresh={refreshSkills}
         onSkillsChanged={handleSkillsChanged}
@@ -2376,7 +1909,6 @@ function AppInner() {
         }}
         onOpenDesignSystem={(id: string) => navigate({ kind: 'design-system-detail', designSystemId: id })}
         onDesignSystemsRefresh={refreshDesignSystems}
-        onPersistComposioKey={handleConfigPersistComposioKey}
         onOpenSettings={openSettings}
         onCompleteOnboarding={handleCompleteOnboarding}
       />
@@ -2415,10 +1947,7 @@ function AppInner() {
           appVersionInfo={appVersionInfo}
           welcome={settingsWelcome}
           initialSection={settingsInitialSection}
-          initialHighlight={settingsHighlight}
-          composioConfigLoading={composioConfigLoading}
           onPersist={handleConfigPersist}
-          onPersistComposioKey={handleConfigPersistComposioKey}
           onClose={() => {
             // Closing the dialog is the canonical "I'm done" gesture
             // now that there is no global Save button. We mark
@@ -2433,20 +1962,12 @@ function AppInner() {
               setConfig(next);
             }
             setSettingsOpen(false);
-            setSettingsHighlight(null);
           }}
           onRefreshAgents={refreshAgents}
-          onAmrLoginStatusChange={handleAmrLoginStatusChange}
-          daemonMediaProviders={daemonMediaProviders}
-          daemonMediaProvidersFetchState={daemonMediaProvidersFetchState}
-          mediaProvidersNotice={mediaProvidersNotice}
-          onReloadMediaProviders={reloadMediaProvidersFromDaemon}
           onProjectsRefresh={refreshProjects}
           onSkillsChanged={handleSkillsChanged}
           onDesignSystemsChanged={handleDesignSystemsChanged}
           onDesignSystemImportRebuildJob={handleDesignSystemImportRebuildJob}
-          providerModelsCache={providerModelsCache}
-          onProviderModelsCacheChange={setProviderModelsCache}
         />
       ) : null}
       </AnimatePresence>

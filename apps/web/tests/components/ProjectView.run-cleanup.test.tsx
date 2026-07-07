@@ -414,13 +414,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-1', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -489,13 +488,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-1', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -581,13 +579,12 @@ afterEach(() => {
       <ProjectView
         project={projectOne as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -609,13 +606,12 @@ afterEach(() => {
       <ProjectView
         project={projectTwo as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -650,13 +646,12 @@ afterEach(() => {
       <ProjectView
         project={projectOne as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -712,13 +707,12 @@ afterEach(() => {
             pendingPrompt: 'design a landing page for a coffee shop',
           } as never}
           routeFileName={null}
-          config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+          config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
           agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
           skills={[]}
         designTemplates={[]}
           designSystems={[]}
           daemonLive
-          onModeChange={() => {}}
           onAgentChange={() => {}}
           onAgentModelChange={() => {}}
           onRefreshAgents={() => {}}
@@ -792,13 +786,12 @@ afterEach(() => {
           updatedAt: 1,
         } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -862,13 +855,12 @@ afterEach(() => {
         designSystemId: null,
       } as never,
       routeFileName: null,
-      config: { mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never,
+      config: { agentId: 'agent-1', notifications: undefined, agentModels: {} } as never,
       agents: [{ id: 'agent-1', name: 'OpenCode', models: [] } as never],
       skills: [],
       designTemplates: [],
       designSystems: [],
       daemonLive: true,
-      onModeChange: () => {},
       onAgentChange: () => {},
       onAgentModelChange: () => {},
       onRefreshAgents: () => {},
@@ -955,13 +947,12 @@ afterEach(() => {
             designSystemId: null,
           } as never}
           routeFileName={null}
-          config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+          config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
           agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
           skills={[]}
           designTemplates={[]}
           designSystems={[]}
           daemonLive
-          onModeChange={() => {}}
           onAgentChange={() => {}}
           onAgentModelChange={() => {}}
           onRefreshAgents={() => {}}
@@ -1046,13 +1037,12 @@ afterEach(() => {
             metadata: { kind: 'prototype', linkedDirs: ['/Users/me/reference-a', '/Users/me/reference-b'] },
           } as never}
           routeFileName={null}
-          config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+          config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
           agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
           skills={[]}
           designTemplates={[]}
           designSystems={[]}
           daemonLive
-          onModeChange={() => {}}
           onAgentChange={() => {}}
           onAgentModelChange={() => {}}
           onRefreshAgents={() => {}}
@@ -1108,13 +1098,12 @@ afterEach(() => {
           designSystemId: null,
         } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -1231,13 +1220,12 @@ afterEach(() => {
           },
         } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -1318,13 +1306,12 @@ afterEach(() => {
           },
         } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -1402,13 +1389,12 @@ afterEach(() => {
           },
         } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -1453,13 +1439,12 @@ afterEach(() => {
           pendingPrompt: 'design a landing page for a coffee shop',
         } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -1518,13 +1503,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-phantom', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -1604,13 +1588,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-aborted', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -1665,13 +1648,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-auth-expired', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -1740,13 +1722,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-resumable', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -1850,13 +1831,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-1', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -1927,13 +1907,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-1', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -2008,13 +1987,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-stale-succeeded-failed-status', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -2087,13 +2065,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-flaky-reattach', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -2178,13 +2155,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-reattach-slow-status-probe', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -2256,13 +2232,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-live-flaky', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -2332,13 +2307,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-live-partial-recoverable', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -2417,13 +2391,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-live-slow-status-probe', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -2521,13 +2494,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-null-status-retry', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -2614,13 +2586,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-reattach-terminal-success', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -2730,13 +2701,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-reattach-code-only-generic-disconnect', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -2822,13 +2792,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-reattach-terminal-failed', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -2938,13 +2907,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-reattach-terminal-partial-success', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -3018,13 +2986,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-live-terminal-success', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -3119,13 +3086,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-live-terminal-partial-success', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -3215,13 +3181,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-reattach-canceled', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -3308,13 +3273,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-live-terminal-failed', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -3381,13 +3345,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-live-success-comments', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -3477,13 +3440,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-spurious-succeeded', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -3560,13 +3522,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-spurious-canceled', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -3667,13 +3628,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-legacy-disconnect-partial', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -3752,13 +3712,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-recover-failed', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -3853,13 +3812,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-1', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -3950,13 +3908,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-reattach-endedat-succeeded', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -4050,13 +4007,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-reattach-endedat-canceled', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -4126,13 +4082,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-live-endedat-succeeded', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -4233,13 +4188,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-reload-active-endedat', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -4322,13 +4276,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-conv-endedat-succeeded', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -4413,13 +4366,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-both-endedat-failed', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}
@@ -4549,13 +4501,12 @@ afterEach(() => {
       <ProjectView
         project={{ id: 'project-recoverable-artifact-endedat', name: 'Project', skillId: null, designSystemId: null } as never}
         routeFileName={null}
-        config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
+        config={{ agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
         skills={[]}
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={() => {}}
         onAgentChange={() => {}}
         onAgentModelChange={() => {}}
         onRefreshAgents={() => {}}

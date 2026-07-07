@@ -261,10 +261,10 @@ describe('renderMarkdown', () => {
   });
 
   it('renders ![alt](url) as <img> for relative BYOK image URLs', () => {
-    const out = html('Here is your cat: ![cute kitten](/api/byok-image/abc-123.png)');
+    const out = html('Here is your cat: ![cute kitten](/api/generated-image/abc-123.png)');
     expect(out).toContain('<img');
     expect(out).toContain('class="md-image"');
-    expect(out).toContain('src="/api/byok-image/abc-123.png"');
+    expect(out).toContain('src="/api/generated-image/abc-123.png"');
     expect(out).toContain('alt="cute kitten"');
     expect(out).toContain('loading="lazy"');
     expect(out).toContain('referrerPolicy="no-referrer"');
@@ -274,7 +274,7 @@ describe('renderMarkdown', () => {
   });
 
   it('renders ![](url) with empty alt text', () => {
-    const out = html('![](/api/byok-image/abc.png)');
+    const out = html('![](/api/generated-image/abc.png)');
     expect(out).toContain('<img');
     expect(out).toContain('alt=""');
   });
@@ -307,12 +307,12 @@ describe('renderMarkdown', () => {
   });
 
   it('keeps regular [text](url) links working alongside image syntax', () => {
-    const out = html('Click [here](https://example.com) and look ![image](/api/byok-image/a.png)');
+    const out = html('Click [here](https://example.com) and look ![image](/api/generated-image/a.png)');
     expect(out).toContain('<a class="md-link"');
     expect(out).toContain('href="https://example.com"');
     expect(out).toContain('>here</a>');
     expect(out).toContain('<img');
-    expect(out).toContain('src="/api/byok-image/a.png"');
+    expect(out).toContain('src="/api/generated-image/a.png"');
   });
 
   it('preserves bold + italic + code after the image regex addition', () => {

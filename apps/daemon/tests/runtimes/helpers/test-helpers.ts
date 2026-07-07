@@ -12,7 +12,6 @@ import { join } from 'node:path';
 import {
   AGENT_DEFS,
   applyAgentLaunchEnv,
-  buildLiveArtifactsMcpServersForAgent,
   checkPromptArgvBudget,
   checkWindowsCmdShimCommandLineBudget,
   checkWindowsDirectExeCommandLineBudget,
@@ -29,7 +28,6 @@ export {
   assert,
   AGENT_DEFS,
   applyAgentLaunchEnv,
-  buildLiveArtifactsMcpServersForAgent,
   checkPromptArgvBudget,
   checkWindowsCmdShimCommandLineBudget,
   checkWindowsDirectExeCommandLineBudget,
@@ -72,35 +70,8 @@ export function minimalAgentDef(
   };
 }
 
-export const amp = requireAgent('amp');
 export const claude = requireAgent('claude');
-export const codex = requireAgent('codex');
-export const hermes = requireAgent('hermes');
-export const kimi = requireAgent('kimi');
 export const copilot = requireAgent('copilot');
-export const cursorAgent = requireAgent('cursor-agent');
-export const kiro = requireAgent('kiro');
-export const kilo = requireAgent('kilo');
-export const vibe = requireAgent('vibe');
-export const devin = requireAgent('devin');
-export const pi = requireAgent('pi');
-export const deepseek = requireAgent('deepseek');
-export const qoder = requireAgent('qoder');
-export const qwen = requireAgent('qwen');
-export const opencode = requireAgent('opencode');
-export const mimo = requireAgent('mimo');
-export const grokBuild = requireAgent('grok-build');
-export const aider = requireAgent('aider');
-export const antigravity = requireAgent('antigravity');
-export const codebuddy = requireAgent('codebuddy');
-export const deepseekMaxPromptArgBytes = (() => {
-  assert.ok(
-    deepseek.maxPromptArgBytes !== undefined,
-    'deepseek must define maxPromptArgBytes for argv budget tests',
-  );
-  return deepseek.maxPromptArgBytes;
-})();
-const originalDisablePlugins = process.env.OD_CODEX_DISABLE_PLUGINS;
 const originalPath = process.env.PATH;
 const originalHome = process.env.HOME;
 const originalAgentHome = process.env.OD_AGENT_HOME;
@@ -113,11 +84,6 @@ const originalFetch = globalThis.fetch;
 const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
 
 afterEach(() => {
-  if (originalDisablePlugins == null) {
-    delete process.env.OD_CODEX_DISABLE_PLUGINS;
-  } else {
-    process.env.OD_CODEX_DISABLE_PLUGINS = originalDisablePlugins;
-  }
   process.env.PATH = originalPath;
   if (originalHome == null) {
     delete process.env.HOME;

@@ -28,11 +28,7 @@ const fetchChatRunStatus = vi.fn();
 const listActiveChatRuns = vi.fn();
 const listProjectRuns = vi.fn();
 const reattachDaemonRun = vi.fn();
-const fetchVelaLoginStatus = vi.fn();
-const fetchAmrWalletSnapshot = vi.fn();
-const launchAntigravityOauth = vi.fn();
 const streamViaDaemon = vi.fn();
-const streamMessage = vi.fn();
 const saveMessage = vi.fn();
 const createConversation = vi.fn();
 const patchConversation = vi.fn();
@@ -50,18 +46,10 @@ vi.mock('../../src/i18n', () => ({
   useT: () => (key: string) => key,
 }));
 
-vi.mock('../../src/providers/anthropic', () => ({
-  streamMessage: (...args: unknown[]) => streamMessage(...args),
-}));
-
 vi.mock('../../src/providers/daemon', () => ({
   GENERIC_DAEMON_DISCONNECT_CODE: 'GENERIC_DAEMON_DISCONNECT',
   GENERIC_DAEMON_DISCONNECT_MESSAGE: 'daemon stream disconnected before run completed',
   fetchChatRunStatus: (...args: unknown[]) => fetchChatRunStatus(...args),
-  fetchVelaLoginStatus: (...args: unknown[]) => fetchVelaLoginStatus(...args),
-  fetchAmrWalletSnapshot: (...args: unknown[]) => fetchAmrWalletSnapshot(...args),
-  formatVelaBalanceUsd: (raw: string | null | undefined) => (raw == null ? null : `$${raw}`),
-  launchAntigravityOauth: (...args: unknown[]) => launchAntigravityOauth(...args),
   listActiveChatRuns: (...args: unknown[]) => listActiveChatRuns(...args),
   listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
   reattachDaemonRun: (...args: unknown[]) => reattachDaemonRun(...args),
@@ -123,8 +111,6 @@ vi.mock('../../src/components/FileWorkspace', () => ({
     streaming,
     messages,
     onRetry,
-    onAuthorizeAndRetry,
-    onLaunchTerminalAuth,
     onSendBoardCommentAttachments,
     onCommentModeChange,
     onFocusModeChange,
@@ -132,8 +118,6 @@ vi.mock('../../src/components/FileWorkspace', () => ({
     streaming: boolean;
     messages?: ChatMessage[];
     onRetry?: (message: ChatMessage) => void;
-    onAuthorizeAndRetry?: (message: ChatMessage) => void;
-    onLaunchTerminalAuth?: () => void;
     onSendBoardCommentAttachments: (attachments: unknown[]) => void;
     onCommentModeChange?: (active: boolean) => void;
     onFocusModeChange?: (focused: boolean) => void;
@@ -142,29 +126,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
       [...(messages ?? [])]
         .reverse()
         .find((message) => message.role === 'assistant' && message.runStatus === 'failed') ?? null;
-    const errorCode = failedAssistant?.events
-      ?.filter((event) => event.kind === 'status' && event.label === 'error')
-      .map((event) => (event as { code?: string }).code ?? null)
-      .filter(Boolean)
-      .at(-1) ?? null;
-    const showAuthorizeAction = failedAssistant?.agentId === 'amr' && errorCode === 'AMR_AUTH_REQUIRED';
-    const showLaunchTerminalAction =
-      failedAssistant?.agentId === 'antigravity'
-      && (errorCode === 'AGENT_AUTH_REQUIRED' || errorCode === 'RATE_LIMITED');
-    const showSwitchToAmrPromotion =
-      failedAssistant?.agentId !== 'amr'
-      && failedAssistant?.agentId !== 'antigravity'
-      && (errorCode === 'AGENT_AUTH_REQUIRED' || errorCode === 'UNAUTHORIZED' || errorCode === 'RATE_LIMITED');
-    const showRetryAction = Boolean(
-      failedAssistant && onRetry && (
-        errorCode == null
-        || errorCode === 'AMR_INSUFFICIENT_BALANCE'
-        || errorCode === 'UPSTREAM_UNAVAILABLE'
-        || showLaunchTerminalAction
-        || showSwitchToAmrPromotion
-        || (!showAuthorizeAction && !showLaunchTerminalAction)
-      ),
-    );
+    const showRetryAction = Boolean(failedAssistant && onRetry);
     return (
       <>
       <output data-testid="workspace-streaming-state">{streaming ? 'streaming' : 'idle'}</output>
@@ -198,37 +160,6 @@ vi.mock('../../src/components/FileWorkspace', () => ({
           }}
         >
           retry
-        </button>
-      ) : null}
-      {showAuthorizeAction && onAuthorizeAndRetry ? (
-        <button
-          type="button"
-          data-testid="workspace-authorize"
-          onClick={() => {
-            if (failedAssistant) onAuthorizeAndRetry(failedAssistant);
-          }}
-        >
-          authorize
-        </button>
-      ) : null}
-      {showSwitchToAmrPromotion && onAuthorizeAndRetry ? (
-        <button
-          type="button"
-          data-testid="workspace-switch-amr"
-          onClick={() => {
-            if (failedAssistant) onAuthorizeAndRetry(failedAssistant);
-          }}
-        >
-          switch to amr
-        </button>
-      ) : null}
-      {showLaunchTerminalAction && onLaunchTerminalAuth ? (
-        <button
-          type="button"
-          data-testid="workspace-launch-terminal"
-          onClick={() => onLaunchTerminalAuth()}
-        >
-          launch terminal
         </button>
       ) : null}
     </>
@@ -454,10 +385,6 @@ vi.mock('../../src/components/ChatPane', () => ({
 }));
 
 const config: AppConfig = {
-  mode: 'daemon',
-  apiKey: '',
-  baseUrl: '',
-  model: '',
   agentId: 'agent-1',
   agentModels: {},
   skillId: null,
@@ -588,21 +515,6 @@ describe('ProjectView conversation run isolation', () => {
       signal: null,
     });
     reattachDaemonRun.mockImplementation(async () => new Promise<void>(() => {}));
-    fetchVelaLoginStatus.mockResolvedValue({ loggedIn: false });
-    // Positive wallet balance so the pre-run AMR balance gate lets sends
-    // through; the gate's own behavior is covered in
-    // tests/runtime/amr-balance-gate.test.ts.
-    fetchAmrWalletSnapshot.mockResolvedValue({
-      status: 'available',
-      profile: 'prod',
-      user: null,
-      balanceUsd: '10.00',
-      updatedAt: null,
-      fetchedAt: '2026-07-02T00:00:00.000Z',
-      stale: false,
-      source: 'vela_api',
-    });
-    launchAntigravityOauth.mockResolvedValue({ ok: true });
     streamViaDaemon.mockImplementation(async () => {});
   });
 

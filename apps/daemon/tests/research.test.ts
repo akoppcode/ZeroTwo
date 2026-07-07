@@ -1,6 +1,3 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { searchResearch, ResearchError } from '../src/research/index.js';
@@ -13,29 +10,19 @@ describe('research search', () => {
   const originalEnv = Object.fromEntries(
     TAVILY_ENV_KEYS.map((key) => [key, process.env[key]]),
   );
-  let projectRoot: string | null = null;
-
-  afterEach(async () => {
+  afterEach(() => {
     vi.unstubAllGlobals();
     for (const key of TAVILY_ENV_KEYS) {
       if (originalEnv[key] == null) delete process.env[key];
       else process.env[key] = originalEnv[key];
     }
-    const dir = projectRoot;
-    projectRoot = null;
-    if (dir) await rm(dir, { recursive: true, force: true });
   });
-
-  async function tempProjectRoot() {
-    projectRoot = await mkdtemp(path.join(tmpdir(), 'od-research-project-'));
-    return projectRoot;
-  }
 
   it('requires a Tavily API key', async () => {
     for (const key of TAVILY_ENV_KEYS) delete process.env[key];
 
     await expect(
-      searchResearch({ projectRoot: await tempProjectRoot(), query: 'EV trends' }),
+      searchResearch({ query: 'EV trends' }),
     ).rejects.toMatchObject({
       code: 'TAVILY_API_KEY_MISSING',
       status: 400,
@@ -63,7 +50,6 @@ describe('research search', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const findings = await searchResearch({
-      projectRoot: await tempProjectRoot(),
       query: 'EV market 2025 trends',
       maxSources: 50,
     });

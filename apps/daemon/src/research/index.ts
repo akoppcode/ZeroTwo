@@ -3,7 +3,6 @@ import type {
   ResearchFindings,
   ResearchSource,
 } from '@open-design/contracts/api/research';
-import { resolveProviderConfig } from '../media/config.js';
 import { tavilySearch, TavilyError } from './tavily.js';
 
 const DEFAULT_MAX_SOURCES = 5;
@@ -22,7 +21,6 @@ export class ResearchError extends Error {
 
 export interface SearchResearchInput {
   query: string;
-  projectRoot: string;
   maxSources?: number;
   providers?: string[];
   requestInit?: Pick<RequestInit, 'dispatcher'>;
@@ -52,10 +50,10 @@ export async function searchResearch(
     );
   }
 
-  const cfg = await resolveProviderConfig(input.projectRoot, 'tavily');
-  if (!cfg.apiKey) {
+  const apiKey = process.env.OD_TAVILY_API_KEY || process.env.TAVILY_API_KEY || '';
+  if (!apiKey) {
     throw new ResearchError(
-      'Tavily API key not configured (Settings -> Tavily Search)',
+      'Tavily API key not configured (set OD_TAVILY_API_KEY or TAVILY_API_KEY)',
       400,
       'TAVILY_API_KEY_MISSING',
     );
@@ -65,12 +63,11 @@ export async function searchResearch(
   let sources: ResearchSource[] = [];
   try {
     const out = await tavilySearch({
-      apiKey: cfg.apiKey,
+      apiKey,
       query,
       searchDepth: 'basic',
       maxResults: maxSources,
       includeAnswer: true,
-      ...(cfg.baseUrl ? { baseUrl: cfg.baseUrl } : {}),
       ...(input.requestInit ? { requestInit: input.requestInit } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
     });

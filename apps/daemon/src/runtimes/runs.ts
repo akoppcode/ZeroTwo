@@ -2,7 +2,6 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { normalizeMediaExecutionPolicyForRun } from '../media/policy.js';
 import {
   normalizeRunToolBundleForRun,
   summarizeRunToolBundle,
@@ -67,9 +66,7 @@ export function createChatRunService({
           : null,
       pluginId:
         typeof meta.pluginId === 'string' && meta.pluginId ? meta.pluginId : null,
-      mediaExecution: normalizeMediaExecutionPolicyForRun(meta.mediaExecution),
       toolBundle: normalizeRunToolBundleForRun(meta.toolBundle),
-      browserUse: meta.browserUse && typeof meta.browserUse === 'object' ? meta.browserUse : null,
       status: 'queued',
       createdAt: now,
       updatedAt: now,
@@ -78,7 +75,6 @@ export function createChatRunService({
       clients: new Set(),
       waiters: new Set(),
       child: null,
-      acpSession: null,
       childPid: null,
       processGroupId: null,
       childExitObservedAt: null,
@@ -190,10 +186,8 @@ export function createChatRunService({
     resumable: run.resumable ?? false,
     eventsLogPath: run.eventsLogPath ?? null,
     workspace: projectWorkspaceProvenance(run.projectMetadata),
-    mediaExecution: run.mediaExecution ?? normalizeMediaExecutionPolicyForRun(null),
     toolBundle: summarizeRunToolBundle(run.toolBundle),
     ...(run.promptCache ? { promptCache: run.promptCache } : {}),
-    ...(run.browserUse ? { browserUse: run.browserUse } : {}),
   });
 
   const finish = (run, status, code: number | null = null, signal: string | null = null) => {
@@ -369,28 +363,6 @@ export function createChatRunService({
       return statusBody(run);
     }
 
-    // Prefer RPC-level abort for agents that support it (pi, ACP adapters).
-    // If the adapter does not exit within its grace window, fall back to
-    // process signals and finally SIGKILL the process group.
-    if (run.acpSession?.abort) {
-      try {
-        run.acpSession.abort();
-      } catch {
-        // Signal fallback below owns eventual process termination.
-      }
-      const graceMs = Number(process.env.PI_ABORT_GRACE_MS) || 3000;
-      if (await waitForChildExit(run.child, graceMs)) {
-        return finishCanceledFromChildState(run, 'SIGTERM');
-      }
-      killChild(run, 'SIGTERM');
-      if (await waitForChildExit(run.child, graceMs)) {
-        return finishCanceledFromChildState(run, 'SIGTERM');
-      }
-      killChild(run, 'SIGKILL');
-      await waitForChildExit(run.child, forceWaitMs());
-      return finishCanceledFromChildState(run, 'SIGKILL');
-    }
-
     killChild(run, 'SIGTERM');
     if (await waitForChildExit(run.child, cancelGraceMs())) {
       return finishCanceledFromChildState(run, 'SIGTERM');
@@ -407,13 +379,6 @@ export function createChatRunService({
       run.updatedAt = Date.now();
       clearPendingRetryRestart(run);
       closeRunStdin(run);
-      if (run.acpSession?.abort) {
-        try {
-          run.acpSession.abort();
-        } catch {
-          // Process signals below are the shutdown fallback.
-        }
-      }
       killChild(run, 'SIGTERM');
       finish(run, 'canceled', null, 'SIGTERM');
       if (run.child && !(await waitForChildExit(run.child, graceMs))) {

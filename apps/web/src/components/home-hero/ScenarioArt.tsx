@@ -3,8 +3,8 @@
 // Each create-rail card used to show a single line icon, which reads the same
 // for every scenario at a glance. These mini-mockups instead *depict* the
 // artifact the card produces — a browser window for Prototype, a slide stack
-// for Slide deck, a page for Document, a waveform for Audio — so the user can
-// recognize the card by shape, like the reference design rails do.
+// for Slide deck, a page for Document — so the user can recognize the card by
+// shape, like the reference design rails do.
 //
 // Two-tone, token-driven, no hardcoded colors: neutral ink for structure
 // (`--text-muted`) plus a single `--accent` highlight per illustration so the
@@ -146,44 +146,6 @@ function LiveArtifactArt() {
   );
 }
 
-function ImageArt() {
-  // Picture frame with an accent sun and a mountain ridge.
-  return (
-    <Frame>
-      <rect x="8" y="8" width="44" height="26" rx="4" stroke={INK} strokeWidth="2" />
-      <circle cx="19" cy="16" r="3" fill={ACCENT} />
-      <path d="M11 31 L22 20 L29 26 L37 17 L49 31" stroke={INK} strokeWidth="2" />
-    </Frame>
-  );
-}
-
-function VideoArt() {
-  // Media player: accent play glyph over a timeline scrubber.
-  return (
-    <Frame>
-      <rect x="6" y="7" width="48" height="28" rx="4" stroke={INK} strokeWidth="2" />
-      <path d="M26 15 V25 L35 20 Z" fill={ACCENT} />
-      <line x1="11" y1="30" x2="49" y2="30" stroke={INK} strokeWidth="2" />
-      <circle cx="22" cy="30" r="2" fill={INK} />
-    </Frame>
-  );
-}
-
-function AudioArt() {
-  // Waveform: vertical bars rising to an accent peak at center.
-  return (
-    <Frame>
-      <line x1="12" y1="17" x2="12" y2="25" stroke={INK} strokeWidth="3" />
-      <line x1="18" y1="13" x2="18" y2="29" stroke={INK} strokeWidth="3" />
-      <line x1="24" y1="9" x2="24" y2="33" stroke={INK} strokeWidth="3" />
-      <line x1="30" y1="6" x2="30" y2="36" stroke={ACCENT} strokeWidth="3" />
-      <line x1="36" y1="11" x2="36" y2="31" stroke={INK} strokeWidth="3" />
-      <line x1="42" y1="14" x2="42" y2="28" stroke={INK} strokeWidth="3" />
-      <line x1="48" y1="17" x2="48" y2="25" stroke={INK} strokeWidth="3" />
-    </Frame>
-  );
-}
-
 const ART_BY_CHIP: Record<string, () => ReactElement> = {
   prototype: PrototypeArt,
   wireframe: WireframeArt,
@@ -193,9 +155,6 @@ const ART_BY_CHIP: Record<string, () => ReactElement> = {
   'create-brand-kit': BrandKitArt,
   hyperframes: HyperFramesArt,
   'live-artifact': LiveArtifactArt,
-  image: ImageArt,
-  video: VideoArt,
-  audio: AudioArt,
 };
 
 interface ScenarioArtProps {

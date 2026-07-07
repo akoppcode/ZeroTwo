@@ -27,27 +27,20 @@ import {
 import { readCurrentAppVersionInfo } from './app-version.js';
 import { agentCliEnvForAgent, readAppConfig } from './app-config.js';
 import { spawnEnvForAgent } from './agents.js';
-import { collectBrowserUseDiscoveryFacts } from './browser-use-diagnostics.js';
 
 interface ResolvedAgentHomes {
-  amrOpenCodeHome: string | null;
   claudeConfigDir: string | null;
-  codexHome: string | null;
-  openCodeXdgDataHome: string | null;
 }
 
-// Resolve each agent CLI's effective home (OPENCODE_TEST_HOME / CLAUDE_CONFIG_DIR
-// / CODEX_HOME) exactly as a real run would, by running the live
-// `spawnEnvForAgent` resolver over the user's app-config overrides. This makes
-// the diagnostics sweep honor `agentCliEnv.<agent>.*` relocations instead of
-// only looking under the hardcoded defaults, and cannot drift from the spawn
-// path. Returns nulls on any failure; the collector then falls back to defaults.
+// Resolve the agent CLI's effective home (CLAUDE_CONFIG_DIR) exactly as a real
+// run would, by running the live `spawnEnvForAgent` resolver over the user's
+// app-config overrides. This makes the diagnostics sweep honor
+// `agentCliEnv.<agent>.*` relocations instead of only looking under the
+// hardcoded defaults, and cannot drift from the spawn path. Returns nulls on
+// any failure; the collector then falls back to defaults.
 async function resolveAgentHomes(dataDir: string | null | undefined): Promise<ResolvedAgentHomes> {
   const empty: ResolvedAgentHomes = {
-    amrOpenCodeHome: null,
     claudeConfigDir: null,
-    codexHome: null,
-    openCodeXdgDataHome: null,
   };
   if (!dataDir) return empty;
   try {
@@ -63,14 +56,7 @@ async function resolveAgentHomes(dataDir: string | null | undefined): Promise<Re
       return trimmed && trimmed.length > 0 ? trimmed : null;
     };
     return {
-      amrOpenCodeHome: clean(envFor('amr').OPENCODE_TEST_HOME),
       claudeConfigDir: clean(envFor('claude').CLAUDE_CONFIG_DIR),
-      codexHome: clean(envFor('codex').CODEX_HOME),
-      // OpenCode resolves its data/log dir from XDG_DATA_HOME; sandbox mode
-      // rewrites that (sandbox-mode.ts), so read the EFFECTIVE value from the
-      // opencode spawn env rather than the host's, or the sweep misses the
-      // logs in a sandboxed runtime.
-      openCodeXdgDataHome: clean(envFor('opencode').XDG_DATA_HOME),
     };
   } catch {
     return empty;
@@ -84,7 +70,7 @@ export interface DiagnosticsHandlerOptions {
   projectRoot: string;
   /** Directory containing per-run event logs at <runsDir>/<runId>/events.jsonl. */
   runsDir?: string | null;
-  /** Open Design data dir (OD_DATA_DIR), used to locate the AMR OpenCode home. */
+  /** Open Design data dir (OD_DATA_DIR), used to resolve agent CLI homes. */
   dataDir?: string | null;
 }
 
@@ -151,18 +137,13 @@ export function createDiagnosticsExportHandler(options: DiagnosticsHandlerOption
       const versionInfo = await readCurrentAppVersionInfo().catch(() => null);
       const home = homedir();
       const agentHomes = await resolveAgentHomes(options.dataDir);
-      const browserUse = collectBrowserUseDiscoveryFacts();
       const runEventSources = await buildRunEventLogSources(options.runsDir);
       const sources = [
         ...buildSidecarLogSources(options.runtime),
         ...runEventSources,
         ...(await buildAgentCliLogSources({
           homeDir: home,
-          dataDir: options.dataDir ?? null,
-          amrOpenCodeHome: agentHomes.amrOpenCodeHome,
           claudeConfigDir: agentHomes.claudeConfigDir,
-          codexHome: agentHomes.codexHome,
-          xdgDataHome: agentHomes.openCodeXdgDataHome ?? process.env.XDG_DATA_HOME ?? null,
         })),
       ];
       const username = safeUsername();
@@ -197,7 +178,6 @@ export function createDiagnosticsExportHandler(options: DiagnosticsHandlerOption
             mode: options.runtime?.mode ?? null,
             base: options.runtime?.base ?? null,
             projectRoot: options.projectRoot,
-            browserUse,
           },
           warnings: warnings.length > 0 ? warnings : undefined,
         },

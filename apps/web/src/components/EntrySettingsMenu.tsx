@@ -40,8 +40,6 @@ const XIAOHONGSHU_URL =
 
 export type EntrySettingsSection =
   | 'execution'
-  | 'media'
-  | 'composio'
   | 'orbit'
   | 'integrations'
   | 'mcpClient'

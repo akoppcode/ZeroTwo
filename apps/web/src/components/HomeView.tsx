@@ -17,7 +17,6 @@ import type {
   McpServerConfig,
   InstalledPluginRecord,
   ProjectKind,
-  AudioVoiceOption,
   WorkspaceContextItem,
 } from '@open-design/contracts';
 import { DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID } from '@open-design/contracts';
@@ -52,12 +51,6 @@ import {
   localizeSkillName,
   localizeSkillPrompt,
 } from '../i18n/content';
-import { fetchElevenLabsVoiceOptions } from '../providers/elevenlabs-voices';
-import { IMAGE_MODELS } from '../media/models';
-import {
-  mergeAihubmixImageModels,
-  useAIHubMixImageModels,
-} from '../media/aihubmix-image-models';
 import {
   dirExists,
   fetchRecentLinkedDirs,
@@ -83,13 +76,6 @@ import { consumePendingHomeChip, HOME_CHIP_INTENT_EVENT } from '../runtime/home-
 import { navigate } from '../router';
 import { setPendingDesignSystemCreateEntry } from '../analytics/ds-create-entry';
 import { workspaceContextLinkedDirs } from './workspace-context';
-import {
-  buildHomeMediaComposer,
-  homeMediaSurfaceForChipId,
-  metadataForHomeMediaComposer,
-  normalizeHomeMediaInputs,
-  type HomeComposerMediaSurface,
-} from './home-hero/media-surfaces';
 import {
   buildPluginAuthoringInputs,
   buildPluginAuthoringPromptForInputs,
@@ -134,7 +120,6 @@ export interface ActivePlugin {
   // kind defaults to the historical 'prototype' value.
   projectKind: ProjectKind | null;
   chipId: string | null;
-  mediaSurface: HomeComposerMediaSurface | null;
   projectMetadata: ProjectMetadata | null;
   editableInputNames: string[];
   preserveInputFields: boolean;
@@ -142,11 +127,9 @@ export interface ActivePlugin {
   // In that mode we never push the rendered useCase.query into the
   // textarea — the user keeps full control over the prompt and the
   // plugin preset cards are the explicit opt-in for a starter
-  // sentence. Without this flag the media composer
-  // effect (which fires on external list reloads like ElevenLabs
-  // voices) and updateActiveInputs (fires on inline form edits)
-  // would back-fill the textarea, defeating the suppression that
-  // the chip click set up.
+  // sentence. Without this flag updateActiveInputs (fires on inline
+  // form edits) would back-fill the textarea, defeating the
+  // suppression that the chip click set up.
   suppressPromptSync: boolean;
   // True when the user explicitly picked THIS plugin — an example-prompt preset
   // card or a Community card / detail modal — rather than a type chip binding
@@ -215,7 +198,7 @@ interface Props {
   designSystems?: DesignSystemSummary[];
   defaultDesignSystemId?: string | null;
   // `'blocked'` means the shell refused the submit but already surfaced its
-  // own UI (e.g. the AMR balance gate dialog): keep the draft, show no error.
+  // own UI: keep the draft, show no error.
   onSubmit: (
     payload: PluginLoopSubmit,
   ) => Promise<boolean | 'blocked' | void> | boolean | 'blocked' | void;
@@ -428,17 +411,6 @@ export function HomeView({
   // Composer in-flight guard: disables the send button, shows Sending…, and
   // swallows repeat clicks across the whole async create tail.
   const [sending, setSending] = useState(false);
-  const [elevenLabsVoices, setElevenLabsVoices] = useState<AudioVoiceOption[]>([]);
-  const [elevenLabsVoicesLoading, setElevenLabsVoicesLoading] = useState(false);
-  // Live AIHubMix image catalogue merged into the home media composer's model
-  // picker (replaces the static aihubmix seeds when the fetch resolves).
-  const aihubmixImageModels = useAIHubMixImageModels();
-  const composerImageModels = useMemo(
-    () => mergeAihubmixImageModels(IMAGE_MODELS, aihubmixImageModels),
-    [aihubmixImageModels],
-  );
-  const [elevenLabsVoicesLoaded, setElevenLabsVoicesLoaded] = useState(false);
-  const [elevenLabsVoicesError, setElevenLabsVoicesError] = useState<string | null>(null);
   const [detailsRecord, setDetailsRecord] = useState<InstalledPluginRecord | null>(null);
   const [detailsSkill, setDetailsSkill] = useState<SkillSummary | null>(null);
   const [pendingReplacement, setPendingReplacement] = useState<PendingReplacement | null>(null);
@@ -526,90 +498,6 @@ export function HomeView({
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (active?.mediaSurface !== 'audio' || active.inputs.model !== 'elevenlabs-v3') return;
-    if (elevenLabsVoicesLoaded) return;
-    const controller = new AbortController();
-    setElevenLabsVoicesLoading(true);
-    setElevenLabsVoicesError(null);
-    void fetchElevenLabsVoiceOptions(controller.signal)
-      .then((voices) => {
-        if (controller.signal.aborted) return;
-        setElevenLabsVoices(voices);
-        setElevenLabsVoicesLoaded(true);
-      })
-      .catch((err) => {
-        if (controller.signal.aborted) return;
-        setElevenLabsVoices([]);
-        setElevenLabsVoicesLoaded(true);
-        setElevenLabsVoicesError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (controller.signal.aborted) return;
-        setElevenLabsVoicesLoading(false);
-      });
-    return () => controller.abort();
-  }, [active?.mediaSurface, active?.inputs.model, elevenLabsVoicesLoaded]);
-
-  const elevenLabsVoiceWarning = useMemo(() => {
-    if (active?.mediaSurface !== 'audio' || active.inputs.model !== 'elevenlabs-v3') return null;
-    if (elevenLabsVoicesError) return elevenLabsVoicesError;
-    if (elevenLabsVoicesLoaded && elevenLabsVoices.length === 0) {
-      return 'No configured ElevenLabs voices were returned. Using Rachel (default).';
-    }
-    return null;
-  }, [
-    active?.mediaSurface,
-    active?.inputs.model,
-    elevenLabsVoicesError,
-    elevenLabsVoicesLoaded,
-    elevenLabsVoices.length,
-  ]);
-
-  useEffect(() => {
-    if (!active?.mediaSurface) return;
-    const composer = buildHomeMediaComposer(
-      active.mediaSurface,
-      promptTemplates,
-      active.inputs,
-      elevenLabsVoices,
-      {
-        elevenLabsVoiceWarning,
-        elevenLabsVoicesLoading,
-        imageModels: composerImageModels,
-      },
-    );
-    const nextRendered = renderPluginBriefTemplate(composer.queryTemplate, composer.inputs);
-    // When the plugin was bound through a type chip the user owns the
-    // textarea; never back-fill from this effect even if external
-    // lists (ElevenLabs voices, prompt templates) reload after the
-    // chip click. lastRenderedPrompt stays null in that mode so we
-    // don't mis-detect "the user hasn't typed" via the empty-string
-    // branch either.
-    if (
-      !active.suppressPromptSync &&
-      (prompt === active.lastRenderedPrompt || prompt.trim().length === 0)
-    ) {
-      setPrompt(nextRendered);
-      setPromptEditedByUser(false);
-    }
-    setActive((prev) => {
-      if (!prev?.mediaSurface) return prev;
-      return {
-        ...prev,
-        inputs: composer.inputs,
-        inputFields: composer.fields,
-        queryTemplate: composer.queryTemplate,
-        editableInputNames: composer.editableFieldNames,
-        inputsValid: pluginInputsAreValid(composer.fields, composer.inputs),
-        result: inputsEqual(prev.result?.appliedPlugin?.inputs, composer.inputs) ? prev.result : null,
-        lastRenderedPrompt: prev.suppressPromptSync ? prev.lastRenderedPrompt : nextRendered,
-        projectMetadata: metadataForHomeMediaComposer(prev.mediaSurface, composer.inputs, promptTemplates),
-      };
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promptTemplates, elevenLabsVoices, elevenLabsVoiceWarning, elevenLabsVoicesLoading, composerImageModels]);
 
   useEffect(() => {
     if (!pendingPromptFocusEndRef.current) return;
@@ -783,7 +671,6 @@ export function HomeView({
       inputs?: Record<string, unknown>;
       inputFields?: InputFieldSpec[];
       queryTemplate?: string | null;
-      mediaSurface?: HomeComposerMediaSurface | null;
       projectMetadata?: ProjectMetadata | null;
       editableInputNames?: string[];
       preserveInputFields?: boolean;
@@ -861,7 +748,6 @@ export function HomeView({
       lastRenderedPrompt: suppressPromptUpdate ? null : optimisticPrompt,
       projectKind: options?.projectKind ?? null,
       chipId: options?.chipId ?? null,
-      mediaSurface: options?.mediaSurface ?? null,
       projectMetadata: homeCreateProjectMetadata(
         options?.projectKind ?? null,
         optimisticInputs,
@@ -980,7 +866,6 @@ export function HomeView({
       inputs?: Record<string, unknown>;
       inputFields?: InputFieldSpec[];
       queryTemplate?: string | null;
-      mediaSurface?: HomeComposerMediaSurface | null;
       projectMetadata?: ProjectMetadata | null;
       editableInputNames?: string[];
       preserveInputFields?: boolean;
@@ -1245,20 +1130,15 @@ export function HomeView({
     );
     if (!extracted) return;
     const nextInputs = { ...active.inputs, ...extracted };
-    const normalizedInputs = active.mediaSurface
-      ? normalizeHomeMediaInputs(active.mediaSurface, nextInputs, promptTemplates, elevenLabsVoices, composerImageModels)
-      : nextInputs;
-    const inputsValid = pluginInputsAreValid(active.inputFields, normalizedInputs);
-    const inputsChanged = !inputsEqual(active.inputs, normalizedInputs);
+    const inputsValid = pluginInputsAreValid(active.inputFields, nextInputs);
+    const inputsChanged = !inputsEqual(active.inputs, nextInputs);
     setActive({
       ...active,
-      inputs: normalizedInputs,
+      inputs: nextInputs,
       inputsValid,
-      projectMetadata: active.mediaSurface
-        ? metadataForHomeMediaComposer(active.mediaSurface, normalizedInputs, promptTemplates)
-        : homeCreateProjectMetadata(active.projectKind, normalizedInputs, active.projectMetadata),
+      projectMetadata: homeCreateProjectMetadata(active.projectKind, nextInputs, active.projectMetadata),
       result:
-        inputsChanged && !inputsEqual(active.result?.appliedPlugin?.inputs, normalizedInputs)
+        inputsChanged && !inputsEqual(active.result?.appliedPlugin?.inputs, nextInputs)
           ? null
           : active.result,
       lastRenderedPrompt: nextPrompt,
@@ -1350,25 +1230,12 @@ export function HomeView({
 
   function updateActiveInputs(next: Record<string, unknown>) {
     if (!active) return;
-    const normalized = active.mediaSurface
-      ? normalizeHomeMediaInputs(active.mediaSurface, next, promptTemplates, elevenLabsVoices, composerImageModels)
-      : next;
-    const mediaComposer = active.mediaSurface
-      ? buildHomeMediaComposer(active.mediaSurface, promptTemplates, normalized, elevenLabsVoices, {
-          elevenLabsVoiceWarning,
-          elevenLabsVoicesLoading,
-          imageModels: composerImageModels,
-        })
-      : null;
-    const inputFields = mediaComposer?.fields ?? active.inputFields;
-    const queryTemplate = mediaComposer?.queryTemplate ?? active.queryTemplate;
-    const projectMetadata = active.mediaSurface
-      ? metadataForHomeMediaComposer(active.mediaSurface, normalized, promptTemplates)
-      : homeCreateProjectMetadata(active.projectKind, normalized, active.projectMetadata);
-    const inputsValid = pluginInputsAreValid(inputFields, normalized);
+    const queryTemplate = active.queryTemplate;
+    const projectMetadata = homeCreateProjectMetadata(active.projectKind, next, active.projectMetadata);
+    const inputsValid = pluginInputsAreValid(active.inputFields, next);
     const nextRendered =
       queryTemplate !== null
-        ? renderPluginBriefTemplate(queryTemplate, normalized)
+        ? renderPluginBriefTemplate(queryTemplate, next)
         : active.lastRenderedPrompt;
     if (
       !active.suppressPromptSync &&
@@ -1381,13 +1248,10 @@ export function HomeView({
     }
     setActive({
       ...active,
-      inputs: normalized,
-      inputFields,
-      queryTemplate,
+      inputs: next,
       projectMetadata,
-      editableInputNames: mediaComposer?.editableFieldNames ?? active.editableInputNames,
       inputsValid,
-      result: inputsEqual(active.result?.appliedPlugin?.inputs, normalized) ? active.result : null,
+      result: inputsEqual(active.result?.appliedPlugin?.inputs, next) ? active.result : null,
       lastRenderedPrompt: active.suppressPromptSync ? active.lastRenderedPrompt : nextRendered,
     });
   }
@@ -1421,35 +1285,7 @@ export function HomeView({
       ) {
         const record = plugins.find((p) => p.id === action.pluginId);
         if (record) {
-          const mediaSurface = homeMediaSurfaceForChipId(chip.id);
           setPromptEditedByUser(prompt.trim().length > 0);
-          if (mediaSurface) {
-            const composer = buildHomeMediaComposer(
-              mediaSurface,
-              promptTemplates,
-              action.inputs,
-              elevenLabsVoices,
-              {
-                elevenLabsVoiceWarning,
-                elevenLabsVoicesLoading,
-                imageModels: composerImageModels,
-              },
-            );
-            void usePlugin(record, undefined, {
-              projectKind: composer.projectKind,
-              chipId: chip.id,
-              inputs: composer.inputs,
-              inputFields: composer.fields,
-              queryTemplate: composer.queryTemplate,
-              mediaSurface,
-              projectMetadata: metadataForHomeMediaComposer(mediaSurface, composer.inputs, promptTemplates),
-              editableInputNames: composer.editableFieldNames,
-              preserveInputFields: true,
-              suppressPromptUpdate: true,
-              deferApply: true,
-            });
-            return;
-          }
           void usePlugin(record, undefined, {
             projectKind: action.projectKind,
             chipId: chip.id,
@@ -1626,39 +1462,6 @@ export function HomeView({
           );
           return;
         }
-        const mediaSurface = homeMediaSurfaceForChipId(chip.id);
-        if (mediaSurface) {
-          const composer = buildHomeMediaComposer(
-            mediaSurface,
-            promptTemplates,
-            chip.action.inputs,
-            elevenLabsVoices,
-            {
-              elevenLabsVoiceWarning,
-              elevenLabsVoicesLoading,
-              imageModels: composerImageModels,
-            },
-          );
-          requestActivePlugin(record, undefined, {
-            projectKind: composer.projectKind,
-            chipId: chip.id,
-            inputs: composer.inputs,
-            inputFields: composer.fields,
-            queryTemplate: composer.queryTemplate,
-            mediaSurface,
-            projectMetadata: metadataForHomeMediaComposer(mediaSurface, composer.inputs, promptTemplates),
-            editableInputNames: composer.editableFieldNames,
-            preserveInputFields: true,
-            // Media chips are a mode switch, just like Prototype and
-            // Slide deck: they no longer surface inline model/ratio/duration
-            // settings (the agent asks for those during the run), and they
-            // leave the textarea alone until the user picks a concrete
-            // template/preset or types their own prompt.
-            suppressPromptUpdate: true,
-            replaceWithoutConfirmation: true,
-          });
-          return;
-        }
         const pluginOptions = {
           projectKind: chip.action.projectKind,
           chipId: chip.id,
@@ -1829,20 +1632,17 @@ export function HomeView({
       // the user's selection — the plugin's `designSystem` input is only the
       // apply-template hint and is kept in sync via handleDesignSystemChange.
       const submittedDesignSystemId = designSystemId;
-      // Composer inputs are forwarded as-is; the deferred footer/media fields are
+      // Composer inputs are forwarded as-is; the deferred footer fields are
       // stripped from this set just below to form the run-facing inputs.
       const submittedApplyInputs = submittedActive ? submittedActive.inputs : defaultInputs;
       // Inputs forwarded to the run AND used to build the run-facing snapshot:
-      // drop every now-hidden footer/media setting so the first-turn
-      // question-form flow collects them instead of inheriting a baked-in
-      // default (`ratio: 16:9`, `duration: 5`, `audioType: speech`, …). The
+      // drop every now-hidden footer setting so the first-turn question-form
+      // flow collects them instead of inheriting a baked-in default. The
       // snapshot is resolved from these stripped inputs too — the daemon renders
       // `## Plugin inputs` from `snapshot.inputs` and tells the agent not to
       // re-ask about anything listed there, so leaving the deferred defaults in
       // the snapshot would suppress the discovery flow even though
-      // `onSubmit.pluginInputs` was stripped. Stripping only removes non-required
-      // fields (`subject`/`style`/`aspect`/`mediaKind` stay), so the
-      // od-media-generation apply still validates.
+      // `onSubmit.pluginInputs` was stripped.
       const submittedPluginInputs = submittedActive
         ? stripArtifactFooterInputs(submittedApplyInputs)
         : defaultInputs;
@@ -1912,13 +1712,11 @@ export function HomeView({
       const contextLinkedDirs = contextLinkedDirCandidates;
       const submittedProjectKind =
         submittedActive?.projectKind ?? fallbackProjectKind ?? projectKindForSkill(activeSkill) ?? 'other';
-      const submittedProjectMetadata = submittedActive?.mediaSurface
-        ? metadataForHomeMediaComposer(submittedActive.mediaSurface, submittedActive.inputs, promptTemplates)
-        : homeCreateProjectMetadata(
-            submittedProjectKind,
-            submittedActive?.inputs ?? null,
-            submittedActive?.projectMetadata ?? fallbackProjectMetadata ?? null,
-          );
+      const submittedProjectMetadata = homeCreateProjectMetadata(
+        submittedProjectKind,
+        submittedActive?.inputs ?? null,
+        submittedActive?.projectMetadata ?? fallbackProjectMetadata ?? null,
+      );
       // Scenario plugins (chips / preset cards) and explicit skill picks are
       // mutually exclusive routing sources. In Design mode, free-form prompts
       // route through the default design router; in Ask mode they stay plain
@@ -1965,8 +1763,8 @@ export function HomeView({
         setError('Failed to start the run. Make sure the daemon is reachable, then try again.');
         return;
       }
-      // Blocked-and-handled (AMR balance gate): the shell already shows its
-      // dialog. Keep the composer draft and staged contexts for the retry.
+      // Blocked-and-handled: the shell already surfaced its own UI. Keep the
+      // composer draft and staged contexts for the retry.
       if (accepted === 'blocked') return;
       // Create accepted — now it is safe to spend the one-shot marker.
       if (examplePromptToSend) localStorage.setItem(examplePromptKey, '1');
@@ -2355,22 +2153,13 @@ export function shouldShowActivePluginChip(active: ActivePlugin | null): boolean
 // Prototype/deck-specific settings (fidelity, slide count, speaker notes) are
 // no longer promoted into the home composer footer — the agent asks for those
 // via the first-turn discovery flow, so the prototype/deck footer keeps only
-// the design-system picker. Media surfaces (image/video/audio/hyperframes)
-// now defer the same way: image/video keep only the design-system picker and
-// audio/hyperframes keep nothing, with model / ratio / resolution / duration /
-// audio type collected by the agent via question-form during the run instead
-// of inline pre-flight controls.
+// the design-system picker. Plugin-seeded defaults for these names must be
+// stripped before submission — otherwise the run arrives with baked-in
+// defaults and the first-turn question-form flow has nothing left to ask.
 const ARTIFACT_FOOTER_FIELD_NAMES = new Set([
   'fidelity',
   'slideCount',
   'speakerNotes',
-  // Media surfaces (image/video/audio/hyperframes) defer the same way. These
-  // were dropped from the footer but `buildHomeMediaComposer` still seeds them
-  // (`model: gpt-image-2`, `ratio: 16:9`, `duration: 5`, `audioType: speech`,
-  // …) so they must be stripped before submission — otherwise the run arrives
-  // with baked-in defaults and the first-turn question-form flow has nothing
-  // left to ask. `subject` / `style` / `aspect` / `mediaKind` are intentionally
-  // NOT listed: the od-media-generation apply still validates against them.
   'model',
   'ratio',
   'resolution',

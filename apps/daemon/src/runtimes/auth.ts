@@ -1,141 +1,25 @@
 import { execAgentFile } from './invocation.js';
-import { readCodexProviderEnvKey } from '../codex-config-normalize.js';
 import type { RuntimeAgentDef, RuntimeEnv } from './types.js';
 
 export type AgentAuthProbeResult = {
   status: 'ok' | 'missing' | 'unknown';
   message?: string;
   // Output captured from the probe child process (e.g.
-  // `cursor-agent status`). Exposed so callers like the connection
-  // test layer can fold the probe's own stderr/exit context into their
-  // structured diagnostics — the probe runs before the smoke spawn,
-  // so without this the diagnostics block would otherwise drop the
-  // probe output entirely.
+  // `claude auth status`). Exposed so callers can fold the probe's own
+  // stderr/exit context into their structured diagnostics — the probe
+  // runs before the smoke spawn, so without this the diagnostics block
+  // would otherwise drop the probe output entirely.
   stdoutTail?: string;
   stderrTail?: string;
   exitCode?: number | null;
   signal?: string | null;
 };
 
-const CURSOR_AUTH_GUIDANCE =
-  'Cursor Agent is not authenticated. Run `cursor-agent login`, then `cursor-agent status`, and retry. For automation, ensure CURSOR_API_KEY is set in the Open Design process environment.';
-
-const DEEPSEEK_AUTH_GUIDANCE =
-  'DeepSeek TUI is installed but is not authenticated. Add or verify your API key in `~/.deepseek/config.toml` as `api_key = "..."`, or expose DEEPSEEK_API_KEY to the Open Design daemon process, then retry. If Open Design is launched outside an interactive shell, shell rc files such as ~/.zshrc may not be loaded.';
-
-// agy's print mode (`-p`) detects a missing OAuth token, prints the
-// Google sign-in URL to stdout, waits 30s for completion, then exits
-// "Error: authentication timed out." That URL points at a callback page
-// that asks the user to paste the resulting auth code BACK into agy —
-// which only works in the interactive TUI. So in OD's chat, surfacing
-// the raw URL is a dead end (no input field to paste the code into).
-// Instead we ask the user to run `agy` in a terminal once, which opens
-// the browser, completes OAuth, and writes the credentials to the
-// system keyring — both `-p` and TUI invocations read from there
-// afterward, so the chat run can succeed on retry.
-const ANTIGRAVITY_AUTH_GUIDANCE =
-  'Antigravity needs to sign in. The agy CLI\'s keyring entry has expired or been cleared, and `-p` print mode cannot complete OAuth on its own (it has no field to paste the auth code into).\n\nFix: open a terminal and run `agy` once — it will open Google sign-in in your browser, accept the redirect, and store the token in your system keyring. After you finish, return here and retry this chat. You only need to do this once; the keyring entry persists across both terminal and Open Design runs.';
-
-// agy's account-level quota is per-model (consumer accounts get a
-// separate quota for Gemini 3 Pro vs Flash vs Claude vs GPT-OSS), and
-// when exhausted the upstream returns
-//   RESOURCE_EXHAUSTED (code 429): Individual quota reached. Contact
-//   your administrator to enable overages. Resets in <H>h<M>m<S>s.
-// to the `--log-file`. Print mode emits nothing on stdout/stderr, so
-// without log inspection the daemon misreads it as missing-OAuth.
-// Guidance points the user at agy's TUI Switch-Model picker because
-// (a) different models have separate quotas, and (b) we can't drive
-// the picker from OD until upstream issue #35 ships a `--model`
-// flag — see antigravity.ts notes.
-const ANTIGRAVITY_QUOTA_GUIDANCE =
-  'Antigravity returned "RESOURCE_EXHAUSTED: Individual quota reached" for the current model. Each Antigravity model (Gemini 3 Pro / Flash, Claude 4.6, GPT-OSS) has its own quota.\n\nFix: open `agy` in a terminal and use its Switch Model picker (the menu at the bottom of the TUI) to pick a model with available quota, then retry here. Open Design uses whatever model you pick in agy\'s TUI when the Settings model picker is left on "Default". Quotas reset automatically on Antigravity\'s schedule.';
-
-const REASONIX_AUTH_GUIDANCE =
-  'DeepSeek Reasonix is installed but is not authenticated. Add your API key in `~/.reasonix/config.json` under `apiKey`, or expose DEEPSEEK_API_KEY to the Open Design daemon process, then retry. If Open Design is launched outside an interactive shell, shell rc files such as ~/.zshrc may not be loaded.';
-
 const CLAUDE_AUTH_GUIDANCE =
   'Claude Code is installed but is not authenticated. Run `claude auth login` or open `claude` and complete login in a terminal, then rescan. If Open Design was launched outside an interactive shell, your shell rc files (e.g. ~/.zshrc) may not be loaded into its environment.';
 
-export function cursorAuthGuidance(): string {
-  return CURSOR_AUTH_GUIDANCE;
-}
-
-export function deepseekAuthGuidance(): string {
-  return DEEPSEEK_AUTH_GUIDANCE;
-}
-
-export function antigravityAuthGuidance(): string {
-  return ANTIGRAVITY_AUTH_GUIDANCE;
-}
-
-export function antigravityQuotaGuidance(): string {
-  return ANTIGRAVITY_QUOTA_GUIDANCE;
-}
-
-export function reasonixAuthGuidance(): string {
-  return REASONIX_AUTH_GUIDANCE;
-}
-
 export function claudeAuthGuidance(): string {
   return CLAUDE_AUTH_GUIDANCE;
-}
-
-export function isCursorAuthFailureText(text: string): boolean {
-  const value = String(text || '');
-  if (!value.trim()) return false;
-  return (
-    /authentication required/i.test(value) ||
-    /not authenticated/i.test(value) ||
-    /not logged in/i.test(value) ||
-    /unauthenticated/i.test(value) ||
-    /agent login/i.test(value) ||
-    /cursor_api_key/i.test(value)
-  );
-}
-
-// agy's plain-mode output when no keyring credentials are available:
-//   - Top of stdout: "Authentication required. Please visit the URL to log in: <URL>"
-//   - Tail of stdout: "Waiting for authentication (timeout 30s)..."
-//                      "Error: authentication timed out."
-// The same TUI text is logged by `agy --log-file` as
-//   "You are not logged into Antigravity" and
-//   "error getting token source: You are not logged into Antigravity"
-// (confirmed via the `--log-file` dump on a cleared keyring). Any of
-// these is sufficient signal — match conservatively so the regex
-// doesn't fire on prose containing the word "authentication" by accident.
-export function isAntigravityAuthFailureText(text: string): boolean {
-  const value = String(text || '');
-  if (!value.trim()) return false;
-  return (
-    /authentication required.*please visit/i.test(value) ||
-    /authentication timed out/i.test(value) ||
-    /not logged into antigravity/i.test(value) ||
-    /accounts\.google\.com\/o\/oauth2\/auth.*antigravity/i.test(value)
-  );
-}
-
-export function isDeepSeekAuthFailureText(text: string): boolean {
-  const value = String(text || '');
-  if (!value.trim()) return false;
-  return (
-    /KEY=<your-key>/i.test(value) ||
-    /api_key\s*=\s*["']<your-key>["']/i.test(value) ||
-    (/~\/\.deepseek\/config\.toml/i.test(value) && /api[_ -]?key|KEY=/i.test(value)) ||
-    (/DEEPSEEK_API_KEY/i.test(value) &&
-      /auth|api[_ -]?key|missing|not set|required|unauthorized/i.test(value))
-  );
-}
-
-export function isReasonixAuthFailureText(text: string): boolean {
-  const value = String(text || '');
-  if (!value.trim()) return false;
-  return (
-    /~\/\.reasonix\/config\.json/i.test(value) &&
-    /api[_ -]?key|missing|not set|required|unauthorized|invalid/i.test(value)
-  ) || (
-    /DEEPSEEK_API_KEY/i.test(value) &&
-    /auth|missing|not set|required|unauthorized|invalid/i.test(value)
-  );
 }
 
 export function isClaudeAuthFailureText(text: string): boolean {
@@ -172,44 +56,15 @@ export function classifyAgentAuthFailure(
       message: claudeAuthGuidance(),
     };
   }
-  if (agentId === 'cursor-agent') {
-    if (!isCursorAuthFailureText(text)) return null;
-    return {
-      status: 'missing',
-      message: cursorAuthGuidance(),
-    };
-  }
-  if (agentId === 'deepseek') {
-    if (!isDeepSeekAuthFailureText(text)) return null;
-    return {
-      status: 'missing',
-      message: deepseekAuthGuidance(),
-    };
-  }
-  if (agentId === 'antigravity') {
-    if (!isAntigravityAuthFailureText(text)) return null;
-    return {
-      status: 'missing',
-      message: antigravityAuthGuidance(),
-    };
-  }
-  if (agentId === 'reasonix') {
-    if (!isReasonixAuthFailureText(text)) return null;
-    return {
-      status: 'missing',
-      message: reasonixAuthGuidance(),
-    };
-  }
   return null;
 }
 
 // Model-service failure classes that map a CLI agent's raw error text to a
-// structured API error code. `classifyAgentAuthFailure` only covers the two
-// agents (cursor-agent, deepseek) that ship a tailored sign-in hint; every
-// other CLI agent (Claude Code, codex, …) used to collapse auth / quota /
-// upstream failures into the generic `AGENT_EXECUTION_FAILED`. This agent-
-// agnostic, text-based classifier recovers the specific class so the chat
-// shows an accurate reason — and so the hosted-AMR nudge can key off it.
+// structured API error code. `classifyAgentAuthFailure` only covers claude,
+// which ships a tailored sign-in hint; every other CLI agent used to collapse
+// auth / quota / upstream failures into the generic `AGENT_EXECUTION_FAILED`.
+// This agent-agnostic, text-based classifier recovers the specific class so
+// the chat shows an accurate reason.
 export type AgentServiceFailureCode =
   | 'AGENT_AUTH_REQUIRED'
   | 'RATE_LIMITED'
@@ -238,7 +93,7 @@ const AGENT_AUTH_FAILURE_RE = new RegExp(
   'i',
 );
 
-// Quota / rate limit / billing balance — the wall the hosted gateway avoids.
+// Quota / rate limit / billing balance.
 const AGENT_RATE_FAILURE_RE = new RegExp(
   `(\\b(rate[ _-]?limit|too many requests|quota|insufficient[ _-]?(?:quota|balance|credit|funds)|credit balance is too low|exceeded your current quota|usage limit|session limit|limit reached|billing (?:hard )?limit)\\b|${STATUS_CTX}429\\b)`,
   'i',
@@ -291,10 +146,10 @@ function withProbeTails(
 }
 
 // Default generic sign-in hint for adapters that declare an `authProbe`
-// but ship no tailored guidance (cursor / deepseek / antigravity / reasonix
-// each have their own via `classifyAgentAuthFailure`). Kept agent-agnostic
-// so a newly-onboarded CLI gets an actionable banner the moment it opts into
-// auth probing, without bespoke copy.
+// but ship no tailored guidance (claude has its own via
+// `classifyAgentAuthFailure`; copilot uses this generic flow). Kept
+// agent-agnostic so the adapter gets an actionable banner the moment it opts
+// into auth probing, without bespoke copy.
 function genericAuthGuidance(agentName: string): string {
   return `${agentName} appears to be installed but is not authenticated. Sign in with the CLI in a terminal, then rescan. If Open Design was launched outside an interactive shell, your shell rc files (e.g. ~/.zshrc) may not be loaded into its environment.`;
 }
@@ -302,33 +157,9 @@ function genericAuthGuidance(agentName: string): string {
 // Agents that ship a bespoke auth-failure classifier + tailored sign-in hint
 // via `classifyAgentAuthFailure`. For these, a null result is authoritative
 // ("authenticated"); we must NOT second-guess it with the broad generic
-// regex (e.g. cursor-agent's healthy `status` output mentions "login" in
-// ways the generic matcher would misread). The generic classifier is only a
-// fallback for adapters with no tailored classifier of their own.
-const TAILORED_AUTH_AGENTS = new Set([
-  'claude',
-  'cursor-agent',
-  'deepseek',
-  'antigravity',
-  'reasonix',
-]);
-
-function hasNonEmptyEnv(env: RuntimeEnv, keys: string[]): boolean {
-  return keys.some((key) => {
-    const value = env[key];
-    return typeof value === 'string' && value.trim().length > 0;
-  });
-}
-
-function hasProbeSatisfyingApiKey(agentId: string, env: RuntimeEnv): boolean {
-  if (agentId === 'codex') {
-    return hasNonEmptyEnv(env, ['CODEX_API_KEY', 'OPENAI_API_KEY']);
-  }
-  if (agentId === 'claude') {
-    return hasNonEmptyEnv(env, ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']);
-  }
-  return false;
-}
+// regex. The generic classifier is only a fallback for adapters with no
+// tailored classifier of their own.
+const TAILORED_AUTH_AGENTS = new Set(['claude']);
 
 // Classify an auth-probe's combined output into a missing-auth result, or
 // null when the output does not look like an auth failure. Agents with a
@@ -354,6 +185,8 @@ function classifyProbedAuthFailure(
 // status/whoami command) and classify the result. Returns null when the
 // adapter declares no `authProbe` — those agents are never actively probed;
 // their auth status is inferred only from a real chat failure's error text.
+// Auth state comes exclusively from the CLI's own login state — there is no
+// API-key short-circuit (Zero Two is subscription-login only).
 export async function probeAgentAuthStatus(
   def: Pick<RuntimeAgentDef, 'id' | 'name' | 'authProbe'>,
   resolvedBin: string,
@@ -361,23 +194,8 @@ export async function probeAgentAuthStatus(
 ): Promise<AgentAuthProbeResult | null> {
   const probe = def.authProbe;
   if (!probe) return null;
-  // Local profiles inherit a base adapter's authProbe but run under the profile
-  // id; use the base adapter's classifier identity when present so its tailored
-  // auth parsing / API-key short-circuit is preserved instead of falling
-  // through to the generic classifier (#4456).
   const classifierId = probe.classifierAgentId ?? def.id;
   const agentName = def.name || def.id;
-  if (hasProbeSatisfyingApiKey(classifierId, env)) return { status: 'ok' };
-  // Codex custom providers authenticate via a provider-specific `env_key` (e.g.
-  // AZURE_OPENAI_API_KEY) declared in config.toml, even when `codex login
-  // status` (a ChatGPT/OpenAI-login check) exits non-zero. Honor that key so a
-  // working custom-provider install isn't misreported as missing auth (#4456).
-  if (classifierId === 'codex') {
-    const providerEnvKey = await readCodexProviderEnvKey(env);
-    if (providerEnvKey && hasNonEmptyEnv(env, [providerEnvKey])) {
-      return { status: 'ok' };
-    }
-  }
   try {
     const { stdout, stderr } = await execAgentFile(resolvedBin, probe.args, {
       env,

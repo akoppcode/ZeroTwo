@@ -9,19 +9,10 @@ import { I18nProvider } from '../../src/i18n';
 import type { AppConfig } from '../../src/types';
 
 const baseConfig: AppConfig = {
-  mode: 'api',
-  apiKey: '',
-  apiProtocol: 'anthropic',
-  apiVersion: '',
-  baseUrl: 'https://api.anthropic.com',
-  model: 'claude-sonnet-4-5',
-  apiProviderBaseUrl: 'https://api.anthropic.com',
-  apiProtocolConfigs: {},
   agentId: null,
   skillId: null,
   designSystemId: null,
   onboardingCompleted: true,
-  mediaProviders: {},
   agentModels: {},
   agentCliEnv: {},
 };

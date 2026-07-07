@@ -70,8 +70,6 @@ import type {
   NextStepActionClickProps,
   QuestionsFormClickProps,
   RunFailedToastClickProps,
-  AmrAuthResultProps,
-  AmrEntryClickProps,
   RunFailedToastSurfaceViewProps,
   ChatPanelResourcesPopoverClickProps,
   ChatPanelMessageQueueClickProps,
@@ -99,9 +97,6 @@ import type {
   SettingsSidebarClickProps,
   SettingsExecutionModeTabClickProps,
   SettingsLocalCliClickProps,
-  SettingsByokProviderOptionClickProps,
-  SettingsByokFieldClickProps,
-  SettingsMediaProvidersClickProps,
   SettingsConnectorsClickProps,
   SettingsLanguageClickProps,
   SettingsAppearanceClickProps,
@@ -122,9 +117,6 @@ import type {
   ArtifactDeployResultProps,
   FeedbackSubmitResultProps,
   SettingsViewProps,
-  SettingsCliTestResultProps,
-  SettingsByokModelsFetchResultProps,
-  SettingsByokTestResultProps,
   SettingsConnectorAuthResultProps,
   OnboardingClickProps,
   OnboardingRuntimeScanResultProps,
@@ -247,31 +239,6 @@ export function trackQuestionsFormSurfaceView(
   props: QuestionsFormSurfaceViewProps,
 ): void {
   send(track, 'surface_view', props);
-}
-
-export function trackRunFailedToastGoAmrClick(
-  track: Track,
-  props: RunFailedToastClickProps,
-): void {
-  send(track, 'ui_click', props);
-}
-
-export function trackAmrEntryClick(
-  track: Track,
-  props: AmrEntryClickProps,
-): void {
-  send(track, 'ui_click', props);
-}
-
-// Fired exactly once per AMR sign-in attempt when the login poll settles.
-// Call sites go through analytics/amr-auth.ts, which owns the
-// begin/resolve dedupe — do not call this wrapper directly from
-// components, or concurrent pollers will double-report one attempt.
-export function trackAmrAuthResult(
-  track: Track,
-  props: AmrAuthResultProps,
-): void {
-  send(track, 'amr_auth_result', props);
 }
 
 // ---- ui_click (home) -----------------------------------------------------
@@ -788,27 +755,6 @@ export function trackSettingsLocalCliClick(
   send(track, 'ui_click', props);
 }
 
-export function trackSettingsByokProviderOptionClick(
-  track: Track,
-  props: SettingsByokProviderOptionClickProps,
-): void {
-  send(track, 'ui_click', props);
-}
-
-export function trackSettingsByokFieldClick(
-  track: Track,
-  props: SettingsByokFieldClickProps,
-): void {
-  send(track, 'ui_click', props);
-}
-
-export function trackSettingsMediaProvidersClick(
-  track: Track,
-  props: SettingsMediaProvidersClickProps,
-): void {
-  send(track, 'ui_click', props);
-}
-
 export function trackSettingsConnectorsClick(
   track: Track,
   props: SettingsConnectorsClickProps,
@@ -960,27 +906,6 @@ export function trackSettingsView(
   props: SettingsViewProps,
 ): void {
   send(track, 'settings_view', props);
-}
-
-export function trackSettingsCliTestResult(
-  track: Track,
-  props: SettingsCliTestResultProps,
-): void {
-  send(track, 'settings_cli_test_result', props);
-}
-
-export function trackSettingsByokTestResult(
-  track: Track,
-  props: SettingsByokTestResultProps,
-): void {
-  send(track, 'settings_byok_test_result', props);
-}
-
-export function trackSettingsByokModelsFetchResult(
-  track: Track,
-  props: SettingsByokModelsFetchResultProps,
-): void {
-  send(track, 'settings_byok_models_fetch_result', props);
 }
 
 export function trackSettingsConnectorAuthResult(

@@ -15,8 +15,6 @@ import {
 } from '@open-design/contracts/analytics';
 import { fetchHostEditors, openProjectInEditor } from '../providers/registry';
 import { useAnalytics } from '../analytics/provider';
-import { getResolvedDeviceId } from '../analytics/client';
-import { amrHandoffDeviceId, attributedAmrUrl, recordAmrEntry } from '../analytics/amr-attribution';
 import { trackHandoffClick } from '../analytics/events';
 import { useT } from '../i18n';
 import { copyToClipboard } from '../lib/copy-to-clipboard';
@@ -26,7 +24,6 @@ import { AgentIcon } from './AgentIcon';
 
 const PREFERRED_EDITOR_KEY = 'open-design:preferred-editor';
 const PREFERRED_FRAMEWORK_KEY = 'open-design:handoff-framework';
-const AMR_WEBSITE_URL = 'https://open-design.ai/amr';
 const PROJECT_PATH_COPY_ID = 'project-path';
 
 type HandoffTab = 'editor' | 'cli';
@@ -58,52 +55,13 @@ interface CliTarget {
 }
 
 const CLI_ORDER = [
-  'amr',
   'claude',
-  'codex',
-  'opencode',
-  'cursor-agent',
-  'gemini',
-  'qwen',
-  'qoder',
   'copilot',
-  'grok-build',
-  'deepseek',
-  'kimi',
-  'hermes',
-  'devin',
-  'kiro',
-  'kilo',
-  'vibe',
-  'antigravity',
-  'aider',
-  'trae-cli',
-  'pi',
-  'reasonix',
 ];
 
 const FALLBACK_CLI_TARGETS: CliTarget[] = [
-  { id: 'amr', name: 'Open Design', bin: 'vela', available: false },
   { id: 'claude', name: 'Claude Code', bin: 'claude', available: false },
-  { id: 'codex', name: 'Codex CLI', bin: 'codex', available: false },
-  { id: 'opencode', name: 'OpenCode', bin: 'opencode-cli', available: false },
-  { id: 'cursor-agent', name: 'Cursor Agent', bin: 'cursor-agent', available: false },
-  { id: 'qwen', name: 'Qwen Code', bin: 'qwen', available: false },
-  { id: 'qoder', name: 'Qoder CLI', bin: 'qodercli', available: false },
   { id: 'copilot', name: 'GitHub Copilot CLI', bin: 'copilot', available: false },
-  { id: 'grok-build', name: 'Grok Build', bin: 'grok', available: false },
-  { id: 'deepseek', name: 'DeepSeek TUI', bin: 'deepseek', available: false },
-  { id: 'kimi', name: 'Kimi CLI', bin: 'kimi', available: false },
-  { id: 'hermes', name: 'Hermes', bin: 'hermes', available: false },
-  { id: 'devin', name: 'Devin for Terminal', bin: 'devin', available: false },
-  { id: 'kiro', name: 'Kiro CLI', bin: 'kiro-cli', available: false },
-  { id: 'kilo', name: 'Kilo', bin: 'kilo', available: false },
-  { id: 'vibe', name: 'Mistral Vibe CLI', bin: 'vibe-acp', available: false },
-  { id: 'antigravity', name: 'Antigravity', bin: 'agy', available: false },
-  { id: 'aider', name: 'Aider', bin: 'aider', available: false },
-  { id: 'trae-cli', name: 'Trae CLI', bin: 'traecli', available: false },
-  { id: 'pi', name: 'Pi', bin: 'pi', available: false },
-  { id: 'reasonix', name: 'DeepSeek Reasonix', bin: 'reasonix', available: false },
 ];
 
 interface Props {
@@ -116,8 +74,6 @@ interface Props {
   // Undefined when no artifact tab is active.
   artifactId?: string;
   artifactKind?: TrackingArtifactKind;
-  metricsConsent?: boolean;
-  installationId?: string | null;
   // Optional fallback "always open in OS file manager" — falls back to the
   // existing shell.openPath bridge in case the daemon catalogue is empty
   // (highly unlikely on macOS / Win / Linux but harmless to support).
@@ -161,7 +117,7 @@ function writePreferredFramework(id: string): void {
 }
 
 function cliDisplayName(agent: Pick<CliTarget, 'id' | 'name'>): string {
-  return agent.id === 'amr' ? 'Open Design' : agent.name;
+  return agent.name;
 }
 
 function mergeCliTargets(agents: AgentInfo[] | undefined): CliTarget[] {
@@ -293,8 +249,6 @@ export function HandoffButton({
   agents,
   artifactId,
   artifactKind,
-  metricsConsent = false,
-  installationId,
   onRequestRevealInFinder,
 }: Props) {
   const t = useT();
@@ -329,23 +283,6 @@ export function HandoffButton({
   const [error, setError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const copiedTimerRef = useRef<number | null>(null);
-
-  const handleAmrWebsiteClick = (event: ReactMouseEvent<HTMLAnchorElement>) => {
-    fireHandoff({ element: 'amr_website', handoff_tab: 'cli' });
-    const attribution = recordAmrEntry(analytics.track, 'handoff_amr_website', new Date(), {
-      metricsConsent,
-    });
-    const deviceId = amrHandoffDeviceId({
-      metricsConsent,
-      resolvedDeviceId: getResolvedDeviceId(),
-      installationId,
-    });
-    event.currentTarget.href = attributedAmrUrl(
-      AMR_WEBSITE_URL,
-      attribution,
-      deviceId,
-    );
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -758,17 +695,6 @@ export function HandoffButton({
             </section>
           ) : (
             <section className="handoff-menu-block" role="tabpanel">
-              <a
-                className="handoff-amr-link"
-                href={AMR_WEBSITE_URL}
-                target="_blank"
-                rel="noreferrer"
-                onClick={handleAmrWebsiteClick}
-              >
-                <AgentIcon id="amr" size={18} />
-                <span>{t('handoff.amrWebsite')}</span>
-                <Icon name="external-link" size={12} />
-              </a>
               <div className="handoff-framework-row" role="group" aria-label={t('handoff.framework')}>
                 <span className="handoff-framework-label">{t('handoff.framework')}</span>
                 {FRAMEWORKS.map((framework) => (

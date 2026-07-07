@@ -142,16 +142,6 @@ export function resolveSandboxRuntimeConfigFromEnv(
   );
 }
 
-export function sandboxAgentProfilesConfigPath(
-  config: SandboxRuntimeConfig,
-): string {
-  return path.join(
-    config.roots.agentHomeDir,
-    '.open-design',
-    'agents.local.json',
-  );
-}
-
 export function ensureSandboxRuntimeDirs(config: SandboxRuntimeConfig): void {
   if (!config.enabled) return;
   for (const dir of new Set(Object.values(config.roots))) {
@@ -167,9 +157,7 @@ export function applySandboxRuntimeEnv(
 
   const env: NodeJS.ProcessEnv = { ...baseEnv };
   const { roots } = config;
-  const codexHome = path.join(roots.agentHomeDir, '.codex');
   const claudeConfigDir = path.join(roots.configDir, 'claude');
-  const opencodeHome = path.join(roots.agentHomeDir, '.opencode');
   const npmUserConfig = path.join(roots.toolConfigDir, 'npmrc');
 
   env[SANDBOX_MODE_ENV] = '1';
@@ -184,10 +172,7 @@ export function applySandboxRuntimeEnv(
   env.TMPDIR = roots.tempDir;
   env.TEMP = roots.tempDir;
   env.TMP = roots.tempDir;
-  env.CODEX_HOME = codexHome;
   env.CLAUDE_CONFIG_DIR = claudeConfigDir;
-  env.OPENCODE_TEST_HOME = opencodeHome;
-  env.OD_AGENT_PROFILES_CONFIG = sandboxAgentProfilesConfigPath(config);
   env.NPM_CONFIG_USERCONFIG = npmUserConfig;
   env.npm_config_userconfig = npmUserConfig;
 

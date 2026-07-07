@@ -11,7 +11,6 @@ import { resolvePackagedNamespacePaths } from "../src/paths.js";
 
 function fakeConfig(root: string, appVersion = "1.2.3-beta.4"): PackagedConfig {
   return {
-    amrProfile: null,
     appVersion,
     daemonCliEntry: null,
     daemonSidecarEntry: null,

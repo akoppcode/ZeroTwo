@@ -28,7 +28,6 @@ import {
   fetchChatRunStatus,
   GENERIC_DAEMON_DISCONNECT_CODE,
   GENERIC_DAEMON_DISCONNECT_MESSAGE,
-  fetchVelaLoginStatus,
   listActiveChatRuns,
   listProjectRuns,
   reattachDaemonRun,
@@ -55,10 +54,6 @@ import { useProjectFileEvents, type ProjectEvent } from '../providers/project-ev
 import { claimProjectTurnIndex, claimRunTurnIndex } from '../analytics/identity';
 import { useCoalescedCallback } from '../hooks/useCoalescedCallback';
 import {
-  type AmrWalletSnapshot,
-  type ByokMediaDefaults,
-  type ByokChatProviderConfig,
-  type ByokChatProtocol,
   type ResearchOptions,
 } from '@open-design/contracts';
 import {
@@ -92,20 +87,12 @@ import {
   canAutoRenameProjectFromPrompt,
   summarizeProjectNameFromPrompt,
 } from '../utils/projectName';
-import {
-  apiProtocolAgentId,
-  apiProtocolModelLabel,
-  usesAnthropicProxy,
-} from '../utils/apiProtocol';
 import { playSound, showCompletionNotification } from '../utils/notifications';
 import { randomUUID } from '../utils/uuid';
 import { DEFAULT_NOTIFICATIONS } from '../state/config';
 import type { TodoItem } from '../runtime/todos';
 import { appendErrorStatusEvent, removeErrorStatusEvent } from '../runtime/chat-events';
 import { RESUME_CONTINUE_PROMPT } from '../runtime/resume';
-import { checkAmrBalanceGate } from '../runtime/amr-balance-gate';
-import { AmrBalanceDialog } from './AmrBalanceDialog';
-import { AmrLowBalanceDialog, type AmrLowBalanceDecision } from './AmrLowBalanceDialog';
 import {
   cancelBrandExtraction,
   continueBrandExtraction,
@@ -198,7 +185,6 @@ import {
   queuedSlideNavTarget,
   removeAttachedComment,
 } from '../comments';
-import { historyWithApiAttachmentContext } from '../api-attachment-context';
 import { filterImplicitProducedFiles } from '../produced-files';
 import { AvatarMenu } from './AvatarMenu';
 import { EntrySettingsMenu } from './EntrySettingsMenu';
@@ -223,7 +209,6 @@ import {
 import { buildRepoImportPrompt, designSystemNeedsRepoConnect } from './design-system-github-evidence';
 import { isDesignSystemProject, resolveProjectDesignSystemId } from './design-system-project';
 import { collectReferencedJsxNames } from '../runtime/jsx-module-refs';
-import { KNOWN_PROVIDERS } from '../state/config';
 import { DESIGN_SYSTEM_TAB, FileWorkspace, type BrowserOpenRequest } from './FileWorkspace';
 import {
   type PluginFolderAgentAction,
@@ -234,26 +219,12 @@ import type { SettingsSection } from './SettingsDialog';
 import { Toast } from './Toast';
 import { BrandReadyPrompt } from './BrandReadyPrompt';
 import { useDesignMdState } from '../hooks/useDesignMdState';
-import { useFinalizeProject } from '../hooks/useFinalizeProject';
 import { useProjectDetail } from '../hooks/useProjectDetail';
 import { useTerminalLaunch } from '../hooks/useTerminalLaunch';
 import { buildContinueInCliToast } from '../lib/build-continue-in-cli-toast';
 import { buildClipboardPrompt } from '../lib/build-clipboard-prompt';
 import { copyToClipboard } from '../lib/copy-to-clipboard';
-import { effectiveMaxTokens } from '../state/maxTokens';
 import { effectiveAgentModelChoice } from './agentModelSelection';
-import { mediaExecutionPolicyForProjectMetadata } from '../media/execution-policy';
-import { mediaModelProviderId } from '../media/models';
-import { byokProviderRequiresApiKey } from '../utils/byokProvider';
-import {
-  useByokImageModelOptions,
-  useByokVideoModelOptions,
-  useByokSpeechModelOptions,
-} from '../media/aihubmix-image-models';
-import {
-  buildFinalizeCredentialsMissingToast,
-  buildFinalizeRequest,
-} from '../lib/resolve-finalize-request';
 
 type BrandBrowserSnapshot =
   | { status: 'ready'; html: string; css: string; baseUrl: string }
@@ -277,13 +248,9 @@ type ProjectChatSendMeta = ChatSendMeta & {
    *  success (tracking spec C14/C15). Daemon mode only. */
   dsEnrichment?: boolean;
   /** Marks a send replayed from the queued-sends drain. Its payload already
-   *  lives in the queue item, so a pre-run block (e.g. the AMR balance gate)
-   *  must NOT re-queue it — only pause further drains. */
+   *  lives in the queue item, so a pre-run block must NOT re-queue it — only
+   *  pause further drains. */
   queueDrain?: boolean;
-  /** The Open Design Cloud balance gate already ran for this exact send at
-   *  the home submit (with any soft warning answered there); skip re-gating
-   *  so the user is never double-prompted for one task. */
-  amrGatePrechecked?: boolean;
 };
 
 export function mergeSavedPreviewComment(current: PreviewComment[], saved: PreviewComment): PreviewComment[] {
@@ -385,22 +352,19 @@ interface Props {
   // below.
   skills: SkillSummary[];
   // All known design templates (unfiltered). Required so projects created
-  // from the Templates surface keep composing the template body in API
-  // mode even when the user later disables the template in Settings.
+  // from the Templates surface keep resolving the template body even when
+  // the user later disables the template in Settings.
   designTemplates: SkillSummary[];
   designSystems: DesignSystemSummary[];
   daemonLive: boolean;
-  onModeChange: (mode: AppConfig['mode']) => void;
   onAgentChange: (id: string) => void;
   onAgentModelChange: (
     id: string,
     choice: { model?: string; reasoning?: string },
   ) => void;
-  onApiModelChange?: (model: string) => void;
   onRefreshAgents: () => void;
   onThemeChange?: (theme: AppConfig['theme']) => void;
   onOpenSettings: (section?: SettingsSection) => void;
-  onOpenAmrSettings?: () => void;
   onOpenMcpSettings?: () => void;
   onBrowsePlugins?: () => void;
   onOpenConnectors?: () => void;
@@ -458,10 +422,6 @@ const MAX_CHAT_PANEL_WIDTH = 720;
 const COMMENT_INSPECTOR_PANEL_WIDTH = 320;
 const MIN_WORKSPACE_PANEL_WIDTH = 400;
 const SPLIT_RESIZE_HANDLE_WIDTH = 8;
-const BYOK_OPENCODE_UNAVAILABLE_MESSAGE =
-  'BYOK API runs require OpenCode. Install OpenCode, then rescan local agents in Settings before retrying.';
-const BEDROCK_BYOK_UNSUPPORTED_MESSAGE =
-  'AWS Bedrock BYOK chat requires AWS credential signing and is not supported by the current API-key proxy.';
 const CHAT_PANEL_KEYBOARD_STEP = 16;
 const DESIGN_SYSTEM_AUDIT_AUTO_REPAIR_ATTEMPTS = 2;
 // Trailing-debounce window for the canonical (daemon + SQLite) tab-state write.
@@ -794,12 +754,6 @@ function autoSendContextKey(projectId: string): string {
   return `od:auto-send-context:${projectId}`;
 }
 
-/** Set by the home create flow when its submit already ran the Open Design
- * Cloud balance gate — the first auto-send must not re-prompt the user. */
-function autoSendAmrGateOkKey(projectId: string): string {
-  return `od:auto-send-amr-gate-ok:${projectId}`;
-}
-
 function designSystemAuditAutoRepairKey(projectId: string): string {
   return `od:design-system-audit-auto-repair:${projectId}`;
 }
@@ -835,7 +789,6 @@ function clearAutoSendSession(projectId: string): void {
     window.sessionStorage.removeItem(autoSendFirstMessageKey(projectId));
     window.sessionStorage.removeItem(autoSendAttachmentsKey(projectId));
     window.sessionStorage.removeItem(autoSendContextKey(projectId));
-    window.sessionStorage.removeItem(autoSendAmrGateOkKey(projectId));
   } catch {
     /* ignore */
   }
@@ -1117,143 +1070,6 @@ function applySplitChatPanelWidth(
     `${width}px ${SPLIT_RESIZE_HANDLE_WIDTH}px ${workspacePanelTrack}`;
 }
 
-// The media model the user picked in the New Project → Media dialog, keyed by
-// surface. For BYOK providers (AIHubMix) media is produced by the generate_*
-// chat tools whose default model comes from the per-request byok*Model field —
-// NOT the `od media generate` dispatcher — so without this seed the dialog pick
-// is dropped and the conversation falls back to the Settings default. Returns
-// undefined for non-media projects (and when the field is empty) so callers fall
-// back to the Settings default exactly as before. The daemon re-validates the id
-// against the active provider's registry, so a mismatched pick is safely ignored.
-function projectMediaModelSeed(
-  metadata: ProjectMetadata | null | undefined,
-  surface: 'image' | 'video' | 'speech',
-): string | undefined {
-  if (!metadata) return undefined;
-  if (surface === 'image' && metadata.kind === 'image') {
-    return metadata.imageModel?.trim() || undefined;
-  }
-  if (surface === 'video' && metadata.kind === 'video') {
-    return metadata.videoModel?.trim() || undefined;
-  }
-  if (surface === 'speech' && metadata.kind === 'audio' && metadata.audioKind === 'speech') {
-    return metadata.audioModel?.trim() || undefined;
-  }
-  return undefined;
-}
-
-function projectMediaVoiceSeed(
-  metadata: ProjectMetadata | null | undefined,
-): string | undefined {
-  if (metadata?.kind === 'audio' && metadata.audioKind === 'speech') {
-    return metadata.voice?.trim() || undefined;
-  }
-  return undefined;
-}
-
-// Carry the creation-time model pick into the conversation ONLY when it belongs
-// to the active BYOK provider. Guards against clobbering a user's Settings
-// default with a model from a different provider — e.g. a SenseAudio user whose
-// image project was created with the dialog's default `gpt-image-2` keeps their
-// configured SenseAudio model instead of being forced to the registry default.
-// AIHubMix's live (`aihubmix-` prefixed) ids resolve via mediaModelProviderId
-// without waiting on the async catalogue, so the AIHubMix path still seeds.
-function byokModelSeedForProtocol(
-  metadata: ProjectMetadata | null | undefined,
-  surface: 'image' | 'video' | 'speech',
-  protocol: string | undefined,
-): string | undefined {
-  const picked = projectMediaModelSeed(metadata, surface);
-  if (!picked) return undefined;
-  return mediaModelProviderId(picked) === protocol ? picked : undefined;
-}
-
-function firstNonBlank(...values: Array<string | null | undefined>): string {
-  return values.find((value) => value?.trim())?.trim() ?? '';
-}
-
-function byokMediaDefaultsForRun(input: {
-  imageModelOverride: string;
-  videoModelOverride: string;
-  speechModelOverride: string;
-  speechVoiceOverride: string;
-  config: Pick<AppConfig, 'byokImageModel' | 'byokVideoModel' | 'byokSpeechModel' | 'byokSpeechVoice'>;
-  imageModelOptions: readonly { id: string }[];
-  videoModelOptions: readonly { id: string }[];
-  speechModelOptions: readonly { id: string }[];
-}): ByokMediaDefaults {
-  const imageModel = firstNonBlank(
-    input.imageModelOverride,
-    input.config.byokImageModel,
-    input.imageModelOptions[0]?.id,
-  );
-  const videoModel = firstNonBlank(
-    input.videoModelOverride,
-    input.config.byokVideoModel,
-    input.videoModelOptions[0]?.id,
-  );
-  const speechModel = firstNonBlank(
-    input.speechModelOverride,
-    input.config.byokSpeechModel,
-    input.speechModelOptions[0]?.id,
-  );
-  const speechVoice = firstNonBlank(
-    input.speechVoiceOverride,
-    input.config.byokSpeechVoice,
-  );
-  return {
-    ...(imageModel ? { imageModel } : {}),
-    ...(videoModel ? { videoModel } : {}),
-    ...(speechModel ? { speechModel } : {}),
-    ...(speechVoice ? { speechVoice } : {}),
-  };
-}
-
-function byokOpenCodeProviderFromConfig(
-  config: AppConfig,
-): ByokChatProviderConfig | undefined {
-  const selectedProvider = selectedKnownProviderForConfig(config);
-  if (
-    !isOpenCodeByokChatProtocol(config.apiProtocol) ||
-    (byokProviderRequiresApiKey(config.apiProtocol, selectedProvider, config.baseUrl) && !config.apiKey.trim())
-  ) {
-    return undefined;
-  }
-  return {
-    protocol: config.apiProtocol,
-    apiKey: config.apiKey.trim(),
-    baseUrl: config.baseUrl,
-    ...(selectedProvider?.requiresApiKey === false ? { requiresApiKey: false } : {}),
-    apiVersion:
-      config.apiProtocol === 'azure'
-        ? config.apiVersion ?? ''
-        : '',
-  };
-}
-
-function selectedKnownProviderForConfig(config: AppConfig) {
-  if (!config.apiProtocol) return undefined;
-  return KNOWN_PROVIDERS.find(
-    (provider) =>
-      provider.protocol === config.apiProtocol &&
-      provider.baseUrl === config.baseUrl &&
-      (config.apiProviderBaseUrl == null || provider.baseUrl === config.apiProviderBaseUrl),
-  );
-}
-
-function isOpenCodeByokChatProtocol(
-  protocol: AppConfig['apiProtocol'],
-): protocol is ByokChatProtocol {
-  return (
-    protocol === 'anthropic' ||
-    protocol === 'openai' ||
-    protocol === 'azure' ||
-    protocol === 'google' ||
-    protocol === 'ollama' ||
-    protocol === 'senseaudio' ||
-    protocol === 'aihubmix'
-  );
-}
 
 function projectEventToAgentEvent(evt: ProjectEvent): LiveArtifactEventItem['event'] | null {
   if (evt.type === 'file-changed') return null;
@@ -1304,14 +1120,11 @@ export function ProjectView({
   designTemplates,
   designSystems,
   daemonLive,
-  onModeChange,
   onAgentChange,
   onAgentModelChange,
-  onApiModelChange,
   onRefreshAgents,
   onThemeChange,
   onOpenSettings,
-  onOpenAmrSettings,
   onOpenMcpSettings,
   onBrowsePlugins,
   onOpenConnectors,
@@ -1476,40 +1289,6 @@ export function ProjectView({
   const [commentInspectorActive, setCommentInspectorActive] = useState(false);
   const commentInspectorPortalId = useId();
   const leftInspectorActive = commentInspectorActive;
-  // Per-session override for the BYOK chat's generate_image tool. Seeded once
-  // from the New Project → Media model pick (project.metadata.imageModel) — but
-  // only when that pick belongs to the active BYOK provider (see
-  // byokModelSeedForProtocol) — falling back to the Settings default
-  // (config.byokImageModel) otherwise. Subsequent selections live only in this
-  // component's state — page refresh / project switch resets to this seed.
-  // Persistent defaults live in Settings → BYOK → Image generation model.
-  const [byokImageModelOverride, setByokImageModelOverride] = useState<string>(
-    () => byokModelSeedForProtocol(project.metadata, 'image', config.apiProtocol) ?? config.byokImageModel ?? '',
-  );
-  // Same per-session override for the BYOK chat's generate_video tool, seeded
-  // from the project's videoModel pick (provider-gated), then Settings.
-  const [byokVideoModelOverride, setByokVideoModelOverride] = useState<string>(
-    () => byokModelSeedForProtocol(project.metadata, 'video', config.apiProtocol) ?? config.byokVideoModel ?? '',
-  );
-  // Same per-session overrides for the BYOK chat's generate_speech tool (model +
-  // voice), seeded from the project's speech pick (provider-gated), then Settings.
-  const [byokSpeechModelOverride, setByokSpeechModelOverride] = useState<string>(
-    () => byokModelSeedForProtocol(project.metadata, 'speech', config.apiProtocol) ?? config.byokSpeechModel ?? '',
-  );
-  // Voice only carries when the speech model itself is carried (same provider),
-  // so a cross-provider voice id never leaks into the request.
-  const [byokSpeechVoiceOverride, setByokSpeechVoiceOverride] = useState<string>(
-    () => (byokModelSeedForProtocol(project.metadata, 'speech', config.apiProtocol)
-      ? projectMediaVoiceSeed(project.metadata)
-      : undefined) ?? config.byokSpeechVoice ?? '',
-  );
-  // Live model option lists (same hooks the composer/Settings pickers use) so
-  // the chat "default" (no explicit pick) resolves to the FIRST catalogue model
-  // shown in the dropdown — not a hardcoded id. The daemon keeps its own
-  // fallback for when the catalogue hasn't loaded.
-  const byokImageModelOptionsPV = useByokImageModelOptions(config.apiProtocol);
-  const byokVideoModelOptionsPV = useByokVideoModelOptions(config.apiProtocol);
-  const byokSpeechModelOptionsPV = useByokSpeechModelOptions(config.apiProtocol);
   // PR #974 round 7 (mrcfps @ useDesignMdState.ts:131): counter that
   // bumps on file-changed SSE events, live_artifact* events, and the
   // chat streaming-completion edge so the staleness chip stays in sync
@@ -1517,11 +1296,10 @@ export function ProjectView({
   // keeps working post-finalize. The hook treats it as a dep and
   // recomputes whenever it changes.
   const [designMdRefreshKey, setDesignMdRefreshKey] = useState(0);
-  // ----- Continue in CLI / Finalize design package wiring (#451) -----
-  // The toast surface is shared between Finalize errors and the
-  // success/fallback toasts emitted from handleContinueInCli.
+  // ----- Continue in CLI wiring (#451) -----
+  // The toast surface hosts the success/fallback toasts emitted from
+  // handleContinueInCli.
   const designMdState = useDesignMdState(project.id, designMdRefreshKey);
-  const finalize = useFinalizeProject(project.id);
   const terminalLauncher = useTerminalLaunch();
   const [projectActionsToast, setProjectActionsToast] = useState<{
     message: string;
@@ -1582,30 +1360,6 @@ export function ProjectView({
   const autoOpenedBrandDesignSystemRef = useRef<string | null>(null);
   const brandEmptyTranscriptRetriesRef = useRef<Map<string, number>>(new Map());
   const [chatSeed, setChatSeed] = useState<{ id: string; value: string } | null>(null);
-  // Hard block from the pre-run balance gate (empty wallet or signed out);
-  // non-null renders the AmrBalanceDialog. `conversationId` remembers whose
-  // queue to resume when the dialog resolves (sign-in done / recharge landed).
-  const [amrBalanceGateBlock, setAmrBalanceGateBlock] = useState<
-    {
-      reason: 'insufficient' | 'signed_out';
-      snapshot: AmrWalletSnapshot;
-      conversationId: string;
-    } | null
-  >(null);
-  // Soft low-balance warning holding a pending send: the dialog resolves the
-  // promise the gate is awaiting ('proceed' continues the very same send).
-  const [amrLowBalanceWarn, setAmrLowBalanceWarn] = useState<
-    { snapshot: AmrWalletSnapshot; resolve: (decision: AmrLowBalanceDecision) => void } | null
-  >(null);
-  // Conversations with a balance-gate check currently in flight. Sends that
-  // arrive during the check queue instead of racing a duplicate run through
-  // the not-yet-busy window the gate's await opens.
-  const amrGateInFlightConversationsRef = useRef<Set<string>>(new Set());
-  // Conversations whose queue auto-drain is paused because the balance gate
-  // blocked a send. Without the pause, every unrelated re-run of the drain
-  // effect would re-hit the wallet endpoint and re-pop the dialog. Lifted by
-  // the next send that passes the gate.
-  const amrGatePausedQueueConversationsRef = useRef<Set<string>>(new Set());
   const [autoAuditRepairSeed, setAutoAuditRepairSeed] =
     useState<{ id: string; value: string } | null>(null);
   const [chatPanelWidth, setChatPanelWidth] = useState(readSavedChatPanelWidth);
@@ -3042,24 +2796,18 @@ export function ProjectView({
     agentId: string | undefined;
     agentName: string | undefined;
   }>(() => {
-    if (config.mode === 'daemon') {
-      const selectedAgent = config.agentId ? agentsById.get(config.agentId) : null;
-      const selectedAgentChoice = config.agentId
-        ? config.agentModels?.[config.agentId]
-        : undefined;
-      const effectiveChoice = effectiveAgentModelChoice(selectedAgent, selectedAgentChoice);
-      return {
-        agentId: config.agentId ?? undefined,
-        agentName: agentModelDisplayName(
-          config.agentId,
-          selectedAgent?.name,
-          effectiveChoice?.model,
-        ),
-      };
-    }
+    const selectedAgent = config.agentId ? agentsById.get(config.agentId) : null;
+    const selectedAgentChoice = config.agentId
+      ? config.agentModels?.[config.agentId]
+      : undefined;
+    const effectiveChoice = effectiveAgentModelChoice(selectedAgent, selectedAgentChoice);
     return {
-      agentId: apiProtocolAgentId(config.apiProtocol),
-      agentName: apiProtocolModelLabel(config.apiProtocol, config.model),
+      agentId: config.agentId ?? undefined,
+      agentName: agentModelDisplayName(
+        config.agentId,
+        selectedAgent?.name,
+        effectiveChoice?.model,
+      ),
     };
   }, [config, agentsById]);
 
@@ -3270,8 +3018,8 @@ export function ProjectView({
   );
 
   // `code` is the structured API error code (e.g. AGENT_AUTH_REQUIRED); it
-  // rides along on the error status event so AssistantMessage can render the
-  // hosted-AMR nudge for model/auth/quota failures on non-AMR agents.
+  // rides along on the error status event so AssistantMessage can surface
+  // model/auth/quota failures with the right guidance.
   const appendAssistantErrorEvent = useCallback(
     (messageId: string, message: string, code?: string) => {
       if (!message) return;
@@ -3490,7 +3238,7 @@ export function ProjectView({
   }, [activeConversationId, daemonLive]);
 
   useEffect(() => {
-    if (config.mode !== 'daemon' || !daemonLive || !activeConversationId || streaming) return;
+    if (!daemonLive || !activeConversationId || streaming) return;
     let cancelled = false;
     const reattachConversationId = activeConversationId;
 
@@ -4372,7 +4120,6 @@ export function ProjectView({
     };
   }, [
     daemonLive,
-    config.mode,
     activeConversationId,
     currentProject.metadata,
     streaming,
@@ -4397,7 +4144,7 @@ export function ProjectView({
   ]);
 
   useEffect(() => {
-    if (config.mode !== 'daemon' || !daemonLive || !activeConversationId) return;
+    if (!daemonLive || !activeConversationId) return;
     if (!currentConversationHasRecoverableArtifact) return;
     let cancelled = false;
     let recovering = false;
@@ -4532,7 +4279,6 @@ export function ProjectView({
     };
   }, [
     daemonLive,
-    config.mode,
     activeConversationId,
     project.id,
     currentConversationHasRecoverableArtifact,
@@ -4703,92 +4449,6 @@ export function ProjectView({
         });
         return false;
       }
-      // Open Design Cloud pre-run balance gate: a definitively insufficient
-      // wallet blocks the run BEFORE any message is persisted or a daemon run
-      // spawned, surfacing the subscription dialog instead of a mid-run
-      // AMR_INSUFFICIENT_BALANCE failure. Sends the home submit already gated
-      // (amrGatePrechecked) pass straight through — the user answered there.
-      if (config.mode === 'daemon' && config.agentId === 'amr' && !meta?.amrGatePrechecked) {
-        const gateConversationId = activeConversationId;
-        // The gate's await opens a window where the conversation is not yet
-        // marked busy. A second send arriving during that window behaves like
-        // a busy conversation: it queues instead of racing a duplicate run.
-        if (amrGateInFlightConversationsRef.current.has(gateConversationId)) {
-          if (retryTarget) return false;
-          queueChatSendForCurrentConversation({
-            conversationId: gateConversationId,
-            prompt,
-            attachments: effectiveAttachments,
-            commentAttachments,
-            meta: { ...(meta ?? {}), sessionMode: runSessionMode },
-          });
-          return false;
-        }
-        amrGateInFlightConversationsRef.current.add(gateConversationId);
-        try {
-          const gate = await checkAmrBalanceGate();
-          // A blocked send parks in the conversation queue with its FULL
-          // payload (prompt, attachments, comment context) — the composer
-          // already cleared itself, and a text-only draft restore would
-          // silently drop staged attachments. Retries keep their error card
-          // and queue drains already have their queue item, so both skip the
-          // re-queue. The pause keeps queued items from re-hitting the gate
-          // (and re-popping a dialog) on every unrelated state change; any
-          // later send that passes the gate lifts it, and a manual "run now"
-          // on a queued item bypasses it deliberately.
-          const queueGateSend = () => {
-            if (!retryTarget && !meta?.queueDrain) {
-              queueChatSendForCurrentConversation({
-                conversationId: gateConversationId,
-                prompt,
-                attachments: effectiveAttachments,
-                commentAttachments,
-                meta: { ...(meta ?? {}), sessionMode: runSessionMode },
-              });
-            }
-          };
-          const parkBlockedSend = () => {
-            queueGateSend();
-            amrGatePausedQueueConversationsRef.current.add(gateConversationId);
-          };
-          // The await may have raced a conversation switch; re-run the entry
-          // guard before touching any state so this stale closure can't write
-          // the old conversation's messages into the now-visible view. The
-          // composer has already cleared, so keep the full payload queued for
-          // the original conversation instead of dropping it.
-          if (messagesConversationIdRef.current !== activeConversationId) {
-            queueGateSend();
-            return false;
-          }
-          if (gate.kind === 'hard') {
-            setAmrBalanceGateBlock({
-              reason: gate.reason,
-              snapshot: gate.snapshot,
-              conversationId: gateConversationId,
-            });
-            parkBlockedSend();
-            return false;
-          }
-          if (gate.kind === 'soft') {
-            // Low balance: pause THIS send while the reminder dialog waits
-            // for a decision. 'proceed' resumes the very same send below —
-            // a continuation, not a re-submit.
-            const decision = await new Promise<AmrLowBalanceDecision>((resolve) => {
-              setAmrLowBalanceWarn({ snapshot: gate.snapshot, resolve });
-            });
-            setAmrLowBalanceWarn(null);
-            // Same conversation-switch guard for the dialog-open window; the
-            // payload is parked (not sent) so nothing is lost either way.
-            if (decision !== 'proceed' || messagesConversationIdRef.current !== activeConversationId) {
-              parkBlockedSend();
-              return false;
-            }
-          }
-          amrGatePausedQueueConversationsRef.current.delete(gateConversationId);
-        } finally {
-          amrGateInFlightConversationsRef.current.delete(gateConversationId);
-        }
-      }
       setChatSeed(null);
       const runConversationId = activeConversationId;
       setError(null);
@@ -4813,31 +4473,20 @@ export function ProjectView({
           chatAttachmentsFromPreviewCommentImages(attachment.imageAttachments),
         ),
       );
-      const selectedAgent =
-        config.mode === 'daemon' && config.agentId
-          ? agentsById.get(config.agentId)
-          : null;
-      const selectedAgentChoice =
-        config.mode === 'daemon' && config.agentId
-          ? config.agentModels?.[config.agentId]
-          : undefined;
+      const selectedAgent = config.agentId ? agentsById.get(config.agentId) : null;
+      const selectedAgentChoice = config.agentId
+        ? config.agentModels?.[config.agentId]
+        : undefined;
       const effectiveSelectedAgentChoice = effectiveAgentModelChoice(
         selectedAgent,
         selectedAgentChoice,
       );
-      const assistantAgentId =
-        config.mode === 'daemon'
-          ? config.agentId ?? undefined
-          : apiProtocolAgentId(config.apiProtocol);
-      const assistantAgentName =
-        config.mode === 'daemon'
-          ? agentModelDisplayName(
-              config.agentId,
-              selectedAgent?.name,
-              effectiveSelectedAgentChoice?.model,
-            )
-          : apiProtocolModelLabel(config.apiProtocol, config.model);
-      const byokOpenCodeProvider = byokOpenCodeProviderFromConfig(config);
+      const assistantAgentId = config.agentId ?? undefined;
+      const assistantAgentName = agentModelDisplayName(
+        config.agentId,
+        selectedAgent?.name,
+        effectiveSelectedAgentChoice?.model,
+      );
       const preTurnFileNames = projectFiles.map((f) => f.name);
       const assistantId = randomUUID();
       const assistantMsg: ChatMessage = {
@@ -4848,7 +4497,7 @@ export function ProjectView({
         agentName: assistantAgentName,
         events: [],
         createdAt: startedAt,
-        runStatus: config.mode === 'daemon' ? 'running' : undefined,
+        runStatus: 'running',
         startedAt,
         preTurnFileNames,
       };
@@ -4893,17 +4542,15 @@ export function ProjectView({
         : [...nextHistory, assistantMsg];
       setMessages(nextVisibleMessages);
       markStreamingConversation(runConversationId);
-      updateConversationLatestRun(config.mode === 'daemon' ? 'running' : 'queued');
+      updateConversationLatestRun('running');
       setArtifact(null);
       savedArtifactRef.current = null;
       onTouchProject();
       if (!retryTarget) persistMessage(userMsg);
-      // Intentionally do NOT persist `assistantMsg` here. In daemon mode it
-      // starts as runStatus='running' with no runId, which the source-level
-      // guard treats as a phantom — the first DB write happens inside
-      // `onRunCreated` (below) once POST /api/runs returns a runId. In API
-      // mode there is no runStatus, and the buffered text path will persist
-      // as soon as the first delta lands.
+      // Intentionally do NOT persist `assistantMsg` here. It starts as
+      // runStatus='running' with no runId, which the source-level guard
+      // treats as a phantom — the first DB write happens inside
+      // `onRunCreated` (below) once POST /api/runs returns a runId.
       persistMessage(assistantMsg);
       if (runCommentAttachments.length > 0) {
         void patchAttachedStatuses(runCommentAttachments, 'applying');
@@ -5245,43 +4892,6 @@ export function ProjectView({
               setArtifact((prev) => (prev ? { ...prev, html: ev.fullContent } : null));
             }
           }
-          const emptyApiResponse =
-            config.mode === 'api' &&
-            !fullText.trim() &&
-            !streamedText.trim() &&
-            !liveHtml.trim();
-          if (emptyApiResponse) {
-            const endedAt = Date.now();
-            const diagnostic = t('assistant.emptyResponseMessage');
-            updateMessageById(
-              assistantId,
-              (prev) => ({
-                ...prev,
-                endedAt,
-                runStatus: 'failed',
-                events: [
-                  ...(prev.events ?? []),
-                  { kind: 'status', label: 'empty_response', detail: config.model },
-                  { kind: 'text', text: diagnostic },
-                ],
-              }),
-              true,
-              { telemetryFinalized: true },
-            );
-            if (runCommentAttachments.length > 0) {
-              void patchAttachedStatuses(runCommentAttachments, 'failed');
-            }
-            const ownsCurrentRun = clearCurrentRunStreamingMarker(
-              runConversationId,
-              controller,
-              cancelController,
-            );
-            if (ownsCurrentRun) updateConversationLatestRun('failed', endedAt);
-            void refreshProjectFiles();
-            onProjectsRefresh();
-            clearTraceTouchedFilePaths();
-            return;
-          }
           const endedAt = Date.now();
           let finalRunStatus: ChatMessage['runStatus'] = 'succeeded';
           updateAssistant((prev) => {
@@ -5394,7 +5004,7 @@ export function ProjectView({
             updateAssistant((prev) => ({
               ...prev,
               endedAt,
-              runStatus: config.mode === 'api' || prev.runId || isActiveRunStatus(prev.runStatus)
+              runStatus: prev.runId || isActiveRunStatus(prev.runStatus)
                 ? 'failed'
                 : prev.runStatus,
               resumable,
@@ -5543,321 +5153,136 @@ export function ProjectView({
         },
       };
 
-      if (config.mode === 'daemon') {
-        if (!config.agentId) {
-          handlers.onError(new Error('Pick a local agent first (top bar).'));
-          return true;
-        }
-        const choice = effectiveSelectedAgentChoice;
-        const daemonByokOpenCode = config.agentId === 'byok-opencode';
-        if (daemonByokOpenCode && !agentsById.get('byok-opencode')?.available) {
-          handlers.onError(new Error(BYOK_OPENCODE_UNAVAILABLE_MESSAGE));
-          return true;
-        }
-        // v2 analytics: when the active project is a DS workspace
-        // (created by `prepareCreatedDesignSystemProject`, identifiable
-        // by `metadata.importedFrom === 'design-system'`), every run
-        // started from this composer is a DS-variant run. Pass
-        // analyticsHints so the daemon emits run_created /
-        // run_finished under `page_name=design_system_project`,
-        // `area=design_system_generation`, `project_kind=design_system`.
-        // The first-ever message into a DS workspace is the auto-sent
-        // generation kickoff (entry_from=`onboarding_design_system` is
-        // the doc's name for "DS create flow handed off to the agent");
-        // subsequent messages are review-driven regenerations
-        // (`regenerate_from_review`). Use `messages.length === 0` —
-        // truer than autoSendFirstMessageRef which races StrictMode
-        // remounts + sessionStorage clears.
-        const isDesignSystemWorkspaceProject =
-          project.metadata?.importedFrom === 'design-system';
-        const dsEntryFrom: 'onboarding_design_system' | 'regenerate_from_review' =
-          messages.length === 0
-            ? 'onboarding_design_system'
-            : 'regenerate_from_review';
-        const dsAnalyticsHints = isDesignSystemWorkspaceProject
-          ? {
-              entryFrom: dsEntryFrom,
-              projectKind: 'design_system' as const,
-              designSystemRunContext: {
-                origin: 'manual_create' as const,
-              },
-            }
-          : undefined;
-        // A caller-supplied entry_from (e.g. 'resume_continue' from the
-        // resumable-failure Continue action) overrides the DS default so the
-        // run is attributed to the affordance that started it.
-        //
-        // Session-dimension hints are stamped on every real run creation (this
-        // path only runs for non-queued sends): claim the next 0-based turn
-        // index for this browser session, and flag whether the project already
-        // had a generated artifact (project-scoped) so the run reads as an edit
-        // rather than a first creation.
-        const sessionTurn = claimRunTurnIndex();
-        // Per-project run turn index (project-lifetime, localStorage-backed):
-        // "within THIS project, which prompt / follow-up is this?". Sibling to
-        // the session-wide `sessionTurn` above — claimed together per real run
-        // so run_created / run_finished carry both the session-global and the
-        // project-scoped sequence.
-        const projectTurn = claimProjectTurnIndex(project.id);
-        const hasExistingArtifact = projectFilesRef.current.some(
-          (file) => Boolean(file.artifactManifest),
-        );
-        const runAnalyticsHints = {
-          ...(dsAnalyticsHints ?? {}),
-          ...(meta?.entryFrom ? { entryFrom: meta.entryFrom } : {}),
-          ...(sessionTurn
-            ? { turnIndex: sessionTurn.turnIndex, isFirstRun: sessionTurn.isFirstRun }
-            : {}),
-          ...(projectTurn ? { projectTurnIndex: projectTurn.projectTurnIndex } : {}),
-          ...(meta?.dsEnrichment ? { dsEnrichment: true } : {}),
-          hasExistingArtifact,
-          runtimeType: daemonByokOpenCode
-            ? ('byok' as const)
-            : config.agentId === 'amr'
-              ? ('amr_cloud' as const)
-              : ('local_cli' as const),
-        };
-        void streamViaDaemon({
-          agentId: config.agentId,
-          history: nextHistory,
-          signal: controller.signal,
-          cancelSignal: cancelController.signal,
-          handlers,
-          projectId: project.id,
-          conversationId: runConversationId,
-          assistantMessageId: assistantId,
-          clientRequestId: randomUUID(),
-          skillId: project.skillId ?? null,
-          skillIds: Array.isArray(meta?.skillIds) ? meta.skillIds : [],
-          context: runContext,
-          designSystemId: projectDesignSystemId ?? null,
-          attachments: runAttachments.map((a) => a.path),
-          commentAttachments: runCommentAttachments,
-          sessionMode: runSessionMode,
-          appliedPluginSnapshotId:
-            meta?.appliedPluginSnapshotId ?? meta?.appliedPluginSnapshot?.snapshotId ?? null,
-          research: meta?.research,
-          mediaExecution: mediaExecutionPolicyForProjectMetadata(project.metadata),
-          model: daemonByokOpenCode ? config.model : choice?.model ?? null,
-          reasoning: daemonByokOpenCode ? null : choice?.reasoning ?? null,
-          ...(daemonByokOpenCode && byokOpenCodeProvider
-            ? { byokProvider: byokOpenCodeProvider }
-            : {}),
-          ...(daemonByokOpenCode
-            ? {
-                byokMediaDefaults: byokMediaDefaultsForRun({
-                  imageModelOverride: byokImageModelOverride,
-                  videoModelOverride: byokVideoModelOverride,
-                  speechModelOverride: byokSpeechModelOverride,
-                  speechVoiceOverride: byokSpeechVoiceOverride,
-                  config,
-                  imageModelOptions: byokImageModelOptionsPV,
-                  videoModelOptions: byokVideoModelOptionsPV,
-                  speechModelOptions: byokSpeechModelOptionsPV,
-                }),
-              }
-            : {}),
-          titleGeneration: isFirstTurn ? { enabled: true } : undefined,
-          locale,
-          ...(runAnalyticsHints ? { analyticsHints: runAnalyticsHints } : {}),
-          onRunCreated: (runId) => {
-            const pinnedAssistant = {
-              ...latestAssistantMsg,
-              runId,
-              runStatus: 'queued' as const,
-            };
-            latestAssistantMsg = pinnedAssistant;
-            currentRunId = runId;
-            // The view may already be on a different project/conversation;
-            // pin the daemon run to the original row so returning can reattach.
-            void saveMessage(project.id, runConversationId, pinnedAssistant);
-            updateMessageById(assistantId, (prev) => ({ ...prev, runId, runStatus: 'queued' }));
-          },
-          onRunStatus: (runStatus) => {
-            const endedAt = isTerminalRunStatus(runStatus) ? Date.now() : undefined;
-            const runMayFinalize =
-              !supersededRunsRef.current.has(controller);
-            updateMessageById(
-              assistantId,
-              (prev) => ({
-                ...prev,
-                runStatus,
-                endedAt: endedAt === undefined ? prev.endedAt : prev.endedAt ?? endedAt,
-              }),
-              true,
-              runStatus === 'canceled' ? { telemetryFinalized: true } : undefined,
-            );
-            if (!runMayFinalize) return;
-            updateConversationLatestRun(runStatus, endedAt);
-            if (isTerminalRunStatus(runStatus)) {
-              clearCurrentRunStreamingMarker(runConversationId, controller, cancelController);
-              scheduleConversationMessageRefresh(runConversationId);
-              if (runStatus !== 'succeeded') clearTraceTouchedFilePaths();
-            }
-          },
-          onRunEventId: (lastRunEventId) => {
-            updateMessageById(assistantId, (prev) => ({ ...prev, lastRunEventId }));
-            persistAssistantSoon();
-          },
-        });
-        return true;
-      } else {
-        if (config.apiProtocol === 'bedrock') {
-          handlers.onError(new Error(BEDROCK_BYOK_UNSUPPORTED_MESSAGE));
-          return true;
-        }
-        if (!agentsById.get('byok-opencode')?.available) {
-          handlers.onError(new Error(BYOK_OPENCODE_UNAVAILABLE_MESSAGE));
-          return true;
-        }
-        // Mirror the daemon chat-route memory hook for BYOK chats. The
-        // CLI path runs `extractFromMessage` BEFORE composing the prompt
-        // (so an explicit "remember: X" / "我是 X" marker in this turn's
-        // user message lands in memory in time for this turn's system
-        // prompt), then queues `extractWithLLM` on child close (so the
-        // small-model pass picks up implicit facts from the full
-        // user+assistant exchange). BYOK chats never hit that route, so
-        // we replicate both phases here against `/api/memory/extract`.
-        // Without this, the Memory tab / model picker is a no-op for
-        // BYOK users even though the UI saves model + index + entries
-        // for that mode.
-        const userText = (userMsg.content ?? '').trim();
-        // Snapshot the live BYOK chat config so the daemon can run
-        // "Same as chat" memory extraction against the same vendor /
-        // key / baseUrl / apiVersion the user is chatting with. The
-        // daemon never persists BYOK creds itself, so this per-call
-        // signal is the only way `pickProvider()` can avoid falling
-        // through to env / media-config (which is wrong for BYOK)
-        // when no explicit memory model override is set. The picker
-        // re-syncs an *explicit* override when chat config drifts;
-        // this snapshot covers the implicit "Same as chat" default.
-        const byokChatProvider = byokOpenCodeProvider
-          ? {
-              provider: byokOpenCodeProvider.protocol,
-              apiKey: byokOpenCodeProvider.apiKey,
-              baseUrl: byokOpenCodeProvider.baseUrl,
-              apiVersion: byokOpenCodeProvider.apiVersion,
-            }
-          : undefined;
-        if (userText.length > 0) {
-          try {
-            await fetch('/api/memory/extract', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                userMessage: userText,
-                projectId: project.id,
-                conversationId: runConversationId,
-                chatProvider: byokChatProvider,
-              }),
-            });
-          } catch {
-            // Best-effort: memory extraction must never block the
-            // chat. The daemon's SSE bus will catch up the Memory tab
-            // on the next event.
-          }
-        }
-        pushEvent({ kind: 'status', label: 'requesting', detail: config.model });
-        const byokOpenCodeHistory = await historyWithApiAttachmentContext(
-          historyWithCommentAttachmentContext(
-            historyWithWorkspaceContext(nextHistory, userMsg.id, runContext),
-            userMsg.id,
-          ),
-          userMsg.id,
-          project.id,
-          projectFiles,
-          { omitNativeImageAttachments: usesAnthropicProxy(config) },
-        );
-        // Session-dimension hints on the BYOK-OpenCode path too, so
-        // run_created / run_finished carry the same session-global and
-        // project-scoped run sequence on every runtime (cli / amr / byok).
-        const byokSessionTurn = claimRunTurnIndex();
-        const byokProjectTurn = claimProjectTurnIndex(project.id);
-        const byokHasExistingArtifact = projectFilesRef.current.some(
-          (file) => Boolean(file.artifactManifest),
-        );
-        void streamViaDaemon({
-          agentId: 'byok-opencode',
-          history: byokOpenCodeHistory,
-          signal: controller.signal,
-          cancelSignal: cancelController.signal,
-          handlers,
-          projectId: project.id,
-          conversationId: runConversationId,
-          assistantMessageId: assistantId,
-          clientRequestId: randomUUID(),
-          skillId: project.skillId ?? null,
-          skillIds: Array.isArray(meta?.skillIds) ? meta.skillIds : [],
-          context: runContext,
-          designSystemId: projectDesignSystemId ?? null,
-          attachments: runAttachments.map((a) => a.path),
-          commentAttachments: runCommentAttachments,
-          sessionMode: runSessionMode,
-          appliedPluginSnapshotId:
-            meta?.appliedPluginSnapshotId ?? meta?.appliedPluginSnapshot?.snapshotId ?? null,
-          research: meta?.research,
-          mediaExecution: mediaExecutionPolicyForProjectMetadata(project.metadata),
-          model: config.model,
-          reasoning: null,
-          ...(byokOpenCodeProvider ? { byokProvider: byokOpenCodeProvider } : {}),
-          byokMediaDefaults: byokMediaDefaultsForRun({
-            imageModelOverride: byokImageModelOverride,
-            videoModelOverride: byokVideoModelOverride,
-            speechModelOverride: byokSpeechModelOverride,
-            speechVoiceOverride: byokSpeechVoiceOverride,
-            config,
-            imageModelOptions: byokImageModelOptionsPV,
-            videoModelOptions: byokVideoModelOptionsPV,
-            speechModelOptions: byokSpeechModelOptionsPV,
-          }),
-          titleGeneration: isFirstTurn ? { enabled: true } : undefined,
-          locale,
-          analyticsHints: {
-            ...(meta?.entryFrom ? { entryFrom: meta.entryFrom } : {}),
-            ...(byokSessionTurn
-              ? { turnIndex: byokSessionTurn.turnIndex, isFirstRun: byokSessionTurn.isFirstRun }
-              : {}),
-            ...(byokProjectTurn ? { projectTurnIndex: byokProjectTurn.projectTurnIndex } : {}),
-            hasExistingArtifact: byokHasExistingArtifact,
-            runtimeType: 'byok',
-          },
-          onRunCreated: (runId) => {
-            const pinnedAssistant = {
-              ...latestAssistantMsg,
-              runId,
-              runStatus: 'queued' as const,
-            };
-            latestAssistantMsg = pinnedAssistant;
-            void saveMessage(project.id, runConversationId, pinnedAssistant);
-            updateMessageById(assistantId, (prev) => ({ ...prev, runId, runStatus: 'queued' }));
-          },
-          onRunStatus: (runStatus) => {
-            const endedAt = isTerminalRunStatus(runStatus) ? Date.now() : undefined;
-            const runMayFinalize = !supersededRunsRef.current.has(controller);
-            updateMessageById(
-              assistantId,
-              (prev) => ({
-                ...prev,
-                runStatus,
-                endedAt: endedAt === undefined ? prev.endedAt : prev.endedAt ?? endedAt,
-              }),
-              true,
-              runStatus === 'canceled' ? { telemetryFinalized: true } : undefined,
-            );
-            if (!runMayFinalize) return;
-            updateConversationLatestRun(runStatus, endedAt);
-            if (isTerminalRunStatus(runStatus)) {
-              clearCurrentRunStreamingMarker(runConversationId, controller, cancelController);
-              scheduleConversationMessageRefresh(runConversationId);
-            }
-          },
-          onRunEventId: (lastRunEventId) => {
-            updateMessageById(assistantId, (prev) => ({ ...prev, lastRunEventId }));
-            persistAssistantSoon();
-          },
-        });
+      if (!config.agentId) {
+        handlers.onError(new Error('Pick a local agent first (top bar).'));
         return true;
       }
+      const choice = effectiveSelectedAgentChoice;
+      // v2 analytics: when the active project is a DS workspace
+      // (created by `prepareCreatedDesignSystemProject`, identifiable
+      // by `metadata.importedFrom === 'design-system'`), every run
+      // started from this composer is a DS-variant run. Pass
+      // analyticsHints so the daemon emits run_created /
+      // run_finished under `page_name=design_system_project`,
+      // `area=design_system_generation`, `project_kind=design_system`.
+      // The first-ever message into a DS workspace is the auto-sent
+      // generation kickoff (entry_from=`onboarding_design_system` is
+      // the doc's name for "DS create flow handed off to the agent");
+      // subsequent messages are review-driven regenerations
+      // (`regenerate_from_review`). Use `messages.length === 0` —
+      // truer than autoSendFirstMessageRef which races StrictMode
+      // remounts + sessionStorage clears.
+      const isDesignSystemWorkspaceProject =
+        project.metadata?.importedFrom === 'design-system';
+      const dsEntryFrom: 'onboarding_design_system' | 'regenerate_from_review' =
+        messages.length === 0
+          ? 'onboarding_design_system'
+          : 'regenerate_from_review';
+      const dsAnalyticsHints = isDesignSystemWorkspaceProject
+        ? {
+            entryFrom: dsEntryFrom,
+            projectKind: 'design_system' as const,
+            designSystemRunContext: {
+              origin: 'manual_create' as const,
+            },
+          }
+        : undefined;
+      // A caller-supplied entry_from (e.g. 'resume_continue' from the
+      // resumable-failure Continue action) overrides the DS default so the
+      // run is attributed to the affordance that started it.
+      //
+      // Session-dimension hints are stamped on every real run creation (this
+      // path only runs for non-queued sends): claim the next 0-based turn
+      // index for this browser session, and flag whether the project already
+      // had a generated artifact (project-scoped) so the run reads as an edit
+      // rather than a first creation.
+      const sessionTurn = claimRunTurnIndex();
+      // Per-project run turn index (project-lifetime, localStorage-backed):
+      // "within THIS project, which prompt / follow-up is this?". Sibling to
+      // the session-wide `sessionTurn` above — claimed together per real run
+      // so run_created / run_finished carry both the session-global and the
+      // project-scoped sequence.
+      const projectTurn = claimProjectTurnIndex(project.id);
+      const hasExistingArtifact = projectFilesRef.current.some(
+        (file) => Boolean(file.artifactManifest),
+      );
+      const runAnalyticsHints = {
+        ...(dsAnalyticsHints ?? {}),
+        ...(meta?.entryFrom ? { entryFrom: meta.entryFrom } : {}),
+        ...(sessionTurn
+          ? { turnIndex: sessionTurn.turnIndex, isFirstRun: sessionTurn.isFirstRun }
+          : {}),
+        ...(projectTurn ? { projectTurnIndex: projectTurn.projectTurnIndex } : {}),
+        ...(meta?.dsEnrichment ? { dsEnrichment: true } : {}),
+        hasExistingArtifact,
+        runtimeType: 'local_cli' as const,
+      };
+      void streamViaDaemon({
+        agentId: config.agentId,
+        history: nextHistory,
+        signal: controller.signal,
+        cancelSignal: cancelController.signal,
+        handlers,
+        projectId: project.id,
+        conversationId: runConversationId,
+        assistantMessageId: assistantId,
+        clientRequestId: randomUUID(),
+        skillId: project.skillId ?? null,
+        skillIds: Array.isArray(meta?.skillIds) ? meta.skillIds : [],
+        context: runContext,
+        designSystemId: projectDesignSystemId ?? null,
+        attachments: runAttachments.map((a) => a.path),
+        commentAttachments: runCommentAttachments,
+        sessionMode: runSessionMode,
+        appliedPluginSnapshotId:
+          meta?.appliedPluginSnapshotId ?? meta?.appliedPluginSnapshot?.snapshotId ?? null,
+        research: meta?.research,
+        model: choice?.model ?? null,
+        reasoning: choice?.reasoning ?? null,
+        titleGeneration: isFirstTurn ? { enabled: true } : undefined,
+        locale,
+        ...(runAnalyticsHints ? { analyticsHints: runAnalyticsHints } : {}),
+        onRunCreated: (runId) => {
+          const pinnedAssistant = {
+            ...latestAssistantMsg,
+            runId,
+            runStatus: 'queued' as const,
+          };
+          latestAssistantMsg = pinnedAssistant;
+          currentRunId = runId;
+          // The view may already be on a different project/conversation;
+          // pin the daemon run to the original row so returning can reattach.
+          void saveMessage(project.id, runConversationId, pinnedAssistant);
+          updateMessageById(assistantId, (prev) => ({ ...prev, runId, runStatus: 'queued' }));
+        },
+        onRunStatus: (runStatus) => {
+          const endedAt = isTerminalRunStatus(runStatus) ? Date.now() : undefined;
+          const runMayFinalize =
+            !supersededRunsRef.current.has(controller);
+          updateMessageById(
+            assistantId,
+            (prev) => ({
+              ...prev,
+              runStatus,
+              endedAt: endedAt === undefined ? prev.endedAt : prev.endedAt ?? endedAt,
+            }),
+            true,
+            runStatus === 'canceled' ? { telemetryFinalized: true } : undefined,
+          );
+          if (!runMayFinalize) return;
+          updateConversationLatestRun(runStatus, endedAt);
+          if (isTerminalRunStatus(runStatus)) {
+            clearCurrentRunStreamingMarker(runConversationId, controller, cancelController);
+            scheduleConversationMessageRefresh(runConversationId);
+            if (runStatus !== 'succeeded') clearTraceTouchedFilePaths();
+          }
+        },
+        onRunEventId: (lastRunEventId) => {
+          updateMessageById(assistantId, (prev) => ({ ...prev, lastRunEventId }));
+          persistAssistantSoon();
+        },
+      });
+      return true;
     },
     [
       attachedComments,
@@ -5891,13 +5316,6 @@ export function ProjectView({
       scheduleProjectTimeout,
       onProjectsRefresh,
       onProjectChange,
-      byokImageModelOverride,
-      byokVideoModelOverride,
-      byokSpeechModelOverride,
-      byokSpeechVoiceOverride,
-      byokImageModelOptionsPV,
-      byokVideoModelOptionsPV,
-      byokSpeechModelOptionsPV,
     ],
   );
 
@@ -6051,17 +5469,6 @@ export function ProjectView({
     if (startingQueuedChatSendIdRef.current) return;
     if (!activeConversationId) return;
     if (messagesConversationIdRef.current !== activeConversationId) return;
-    // Queue paused by the balance gate: don't re-drain (and re-pop the
-    // dialog) on unrelated state churn while AMR is still the agent. The
-    // manual "run now" path below bypasses this deliberately, and switching
-    // agents makes the pause irrelevant.
-    if (
-      config.mode === 'daemon' &&
-      config.agentId === 'amr' &&
-      amrGatePausedQueueConversationsRef.current.has(activeConversationId)
-    ) {
-      return;
-    }
     const next = queuedChatSendsRef.current.find(
       (item) => item.conversationId === activeConversationId,
     );
@@ -6091,8 +5498,6 @@ export function ProjectView({
   }, [
     activeConversationId,
     armSlideNavForQueuedSend,
-    config.mode,
-    config.agentId,
     currentConversationBusy,
     queuedAutoStartTick,
     queuedChatSends,
@@ -6124,73 +5529,6 @@ export function ProjectView({
     },
     [currentConversationActionDisabled, handleSend],
   );
-
-  // "Switch to AMR & retry" from the failed-run card: switch the run to AMR,
-  // open Settings on the AMR controls so the user can sign in / authorize /
-  // top up, and arm an auto-retry that fires once AMR is selected AND signed
-  // in (see the effect below).
-  const [pendingAmrRetry, setPendingAmrRetry] = useState<ChatMessage | null>(null);
-  const handleSwitchToAmrAndRetry = useCallback(
-    (failedAssistant: ChatMessage) => {
-      if (currentConversationActionDisabled) return;
-      onModeChange('daemon');
-      onAgentChange('amr');
-      onOpenAmrSettings?.();
-      setPendingAmrRetry(failedAssistant);
-    },
-    [currentConversationActionDisabled, onModeChange, onAgentChange, onOpenAmrSettings],
-  );
-  // PR #3157: Antigravity's `agy -p` cannot complete OAuth on its own,
-  // so the auth banner offers a one-click "Sign in via terminal"
-  // button that POSTs to the daemon. The daemon opens a system
-  // Terminal running `agy` (osascript / x-terminal-emulator /
-  // `cmd /c start`); the user finishes Google sign-in there and then
-  // clicks Retry to redo the chat run. We don't auto-retry because
-  // the OAuth completion happens externally with no reliable signal
-  // back to the chat — the secondary Retry button on the same banner
-  // covers the manual case.
-  const handleLaunchAntigravityOauth = useCallback(async () => {
-    try {
-      const { launchAntigravityOauth } = await import('../providers/daemon');
-      const result = await launchAntigravityOauth();
-      if (!result.ok) {
-        // Surface the daemon-side reason so the user knows whether
-        // the spawn failed because of missing osascript / unsupported
-        // platform / etc. instead of silently swallowing it.
-        console.warn('[antigravity] oauth-launch failed:', result.error);
-      }
-    } catch (err) {
-      console.warn('[antigravity] oauth-launch threw:', err);
-    }
-  }, []);
-  // Poll the AMR login status while a retry is armed, rather than only reacting
-  // to the AmrLoginPill's status event — the user may close Settings (which
-  // unmounts the pill and stops its polling) before finishing sign-in in the
-  // browser. Polling here keeps working regardless of the pill's lifecycle.
-  // Fires once AMR is the selected agent AND the account is signed in.
-  useEffect(() => {
-    if (!pendingAmrRetry) return;
-    let cancelled = false;
-    const tryRetry = async () => {
-      if (cancelled) return;
-      if (!(config.mode === 'daemon' && config.agentId === 'amr')) return;
-      const status = await fetchVelaLoginStatus().catch(() => null);
-      if (cancelled || status?.loggedIn !== true) return;
-      setPendingAmrRetry(null);
-      handleRetry(pendingAmrRetry);
-    };
-    void tryRetry();
-    const interval = setInterval(() => void tryRetry(), 2000);
-    // Give up after a few minutes so we never poll forever.
-    const stop = setTimeout(() => {
-      if (!cancelled) setPendingAmrRetry(null);
-    }, 5 * 60 * 1000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-      clearTimeout(stop);
-    };
-  }, [pendingAmrRetry, config.mode, config.agentId, handleRetry]);
 
   useEffect(() => {
     if (!autoAuditRepairSeed) return;
@@ -6267,26 +5605,21 @@ export function ProjectView({
     [currentConversationActionDisabled, handleSend],
   );
 
-  const selectedPluginActionAgent =
-    config.mode === 'daemon' && config.agentId
-      ? agentsById.get(config.agentId)
-      : null;
-  const selectedPluginActionChoice =
-    config.mode === 'daemon' && config.agentId
-      ? config.agentModels?.[config.agentId]
-      : undefined;
+  const selectedPluginActionAgent = config.agentId
+    ? agentsById.get(config.agentId)
+    : null;
+  const selectedPluginActionChoice = config.agentId
+    ? config.agentModels?.[config.agentId]
+    : undefined;
   const effectiveSelectedPluginActionChoice = effectiveAgentModelChoice(
     selectedPluginActionAgent,
     selectedPluginActionChoice,
   );
-  const pluginWorkflowAgentName =
-    config.mode === 'daemon'
-      ? agentModelDisplayName(
-          config.agentId,
-          selectedPluginActionAgent?.name,
-          effectiveSelectedPluginActionChoice?.model,
-        )
-      : apiProtocolModelLabel(config.apiProtocol, config.model);
+  const pluginWorkflowAgentName = agentModelDisplayName(
+    config.agentId,
+    selectedPluginActionAgent?.name,
+    effectiveSelectedPluginActionChoice?.model,
+  );
 
   const handlePluginFolderAgentAction = useCallback(
     async (relativePath: string, action: PluginFolderAgentAction) => {
@@ -7219,7 +6552,7 @@ export function ProjectView({
         nonce: Date.now(),
       });
     } else {
-      onOpenSettings('composio');
+      onOpenSettings('integrations');
     }
   }, [githubConnected, onOpenSettings, designSystemProject, projectFiles]);
 
@@ -7456,29 +6789,22 @@ export function ProjectView({
   const autoSendAttachmentsRef = useRef<ChatAttachment[] | null>(null);
   const autoSendContextRef = useRef<RunContextSelection | null>(null);
   const autoSendFirstMessageRef = useRef(false);
-  const autoSendAmrGateOkRef = useRef(false);
   if (autoSendSeedRef.current === null) {
     let isAutoSend = false;
-    let amrGateOk = false;
     try {
       isAutoSend = Boolean(
         window.sessionStorage.getItem(autoSendFirstMessageKey(project.id)),
-      );
-      amrGateOk = Boolean(
-        window.sessionStorage.getItem(autoSendAmrGateOkKey(project.id)),
       );
     } catch {
       /* sessionStorage may be unavailable; treat as manual flow. */
     }
     autoSendFirstMessageRef.current = isAutoSend;
-    autoSendAmrGateOkRef.current = isAutoSend && amrGateOk;
     autoSendSeedRef.current = isAutoSend ? (project.pendingPrompt ?? '') : '';
     autoSendAttachmentsRef.current = isAutoSend ? readAutoSendAttachments(project.id) : [];
     autoSendContextRef.current = isAutoSend ? readAutoSendContext(project.id) : null;
   }
   const initialWorkspaceContexts = autoSendContextRef.current?.workspaceItems ?? [];
   const brandEnrichmentEligibleForProject =
-    config.mode === 'daemon' &&
     projectIsProgrammaticBrandExtraction &&
     !autoSendFirstMessageRef.current;
   const [initialDraft, setInitialDraft] = useState<
@@ -7767,7 +7093,7 @@ export function ProjectView({
   // skill bundle, refining the SAME registered design system in place. Shared by
   // the chat "Continue" affordance and the ready-toast "AI Optimize" nudge.
   const handleBrandEnrichment = useCallback(() => {
-    if (brandEnrichmentStarting || config.mode !== 'daemon') return;
+    if (brandEnrichmentStarting) return;
     const system = designSystemProject ?? activeDesignSystemSummary;
     const skillIds = installedBrandEnrichmentSkillIds(skills);
     trackDesignSystemEnrichClick(analytics.track, {
@@ -7795,7 +7121,6 @@ export function ProjectView({
     brandEnrichmentPromptSeed,
     brandEnrichmentPromptSeedCache,
     brandEnrichmentStarting,
-    config.mode,
     designSystemProject,
     handleSend,
     currentProject.metadata,
@@ -7877,24 +7202,9 @@ export function ProjectView({
     projectDuplicateStarting,
   ]);
 
-  // Continue in CLI / Finalize design package handlers + keyboard
-  // shortcut wiring. Close to the JSX so the data flow is easy to
-  // trace from the toolbar back to its sources.
-  const handleFinalize = useCallback(() => {
-    const request = buildFinalizeRequest(config);
-    if (!request) {
-      setProjectActionsToast(buildFinalizeCredentialsMissingToast(config));
-      return;
-    }
-    void finalize.trigger(request).then((result) => {
-      if (result) void designMdState.refresh();
-    });
-  }, [finalize, config, designMdState]);
-
-  const handleCancelFinalize = useCallback(() => {
-    finalize.cancel();
-  }, [finalize]);
-
+  // Continue in CLI handler + keyboard shortcut wiring. Close to the
+  // JSX so the data flow is easy to trace from the toolbar back to its
+  // sources.
   const handleContinueInCli = useCallback(async () => {
     const projectDir = projectDetail.resolvedDir;
     if (!projectDir) {
@@ -8019,18 +7329,6 @@ export function ProjectView({
     return designSystems.find((d) => d.title === normalized) ?? null;
   }, [activeDesignSystemSummary, activePluginSnapshot?.inputs, designSystems]);
 
-  // Lift finalize errors into the shared project-actions toast so the
-  // user sees both the daemon's category message and any upstream
-  // detail (per #450 verification commitment).
-  useEffect(() => {
-    if (finalize.error) {
-      setProjectActionsToast({
-        message: finalize.error.message,
-        details: finalize.error.details,
-      });
-    }
-  }, [finalize.error]);
-
   // ⌘+Shift+K (mac) / Ctrl+Shift+K (others) → Continue in CLI. Mirrors
   // the capture-phase, platform-gated pattern from FileWorkspace's
   // Quick Switcher shortcut. ⌘+Shift+K is free (⌘+P is the only
@@ -8105,9 +7403,6 @@ export function ProjectView({
     autoSendAttachmentsRef.current = [];
     void handleSend(seed, attachments, [], {
       ...(context ? { context } : {}),
-      // The home submit already gated this exact task (and the user answered
-      // any soft warning there); asking again would double-prompt.
-      ...(autoSendAmrGateOkRef.current ? { amrGatePrechecked: true } : {}),
     });
   }, [
     activeConversationId,
@@ -8144,7 +7439,6 @@ export function ProjectView({
         config={config}
         agents={agents}
         daemonLive={daemonLive}
-        onModeChange={onModeChange}
         onOpen={() => {
           trackComposerBarClick(analytics.track, {
             page_name: 'chat_panel',
@@ -8174,16 +7468,6 @@ export function ProjectView({
           });
           onAgentModelChange(agentId, choice);
         }}
-        onApiModelChange={(model) => {
-          trackComposerBarClick(analytics.track, {
-            page_name: 'chat_panel',
-            area: 'chat_composer',
-            element: 'agent_model_select',
-            model_id: model,
-            ...(project?.id ? { project_id: project.id } : {}),
-          });
-          onApiModelChange?.(model);
-        }}
         onOpenSettings={onOpenSettings}
         onRefreshAgents={onRefreshAgents}
         placement="up"
@@ -8197,9 +7481,9 @@ export function ProjectView({
         projectId={project.id}
         enabled={critiqueTheaterEnabled}
       />
-      {/* ProjectActionsToolbar removed per 00efdcba — hide finalize-design
-          toolbar from project header. Restore from cf1cd9bb if product
-          wants the Finalize + Continue-in-CLI buttons back in the chrome. */}
+      {/* ProjectActionsToolbar removed per 00efdcba — hide the project
+          actions toolbar from the project header. Restore from cf1cd9bb if
+          product wants the Continue-in-CLI button back in the chrome. */}
       <div
         ref={splitRef}
         className={[
@@ -8278,22 +7562,6 @@ export function ProjectView({
               onDeleteConversation={handleDeleteConversation}
               config={config}
               onOpenSettings={onOpenSettings}
-              showByokRecoveryAction={
-                config.mode === 'api' &&
-                daemonLive &&
-                (
-                  !config.apiKey.trim() ||
-                  !config.baseUrl.trim() ||
-                  !config.model.trim()
-                )
-              }
-              onSwitchToLocalCli={() => {
-                setError(null);
-                onModeChange('daemon');
-              }}
-              onOpenAmrSettings={onOpenAmrSettings}
-              onSwitchToAmrAndRetry={handleSwitchToAmrAndRetry}
-              onLaunchAntigravityOauth={handleLaunchAntigravityOauth}
               onOpenMcpSettings={onOpenMcpSettings}
               onBrowsePlugins={onBrowsePlugins}
               onOpenConnectors={onOpenConnectors}
@@ -8320,16 +7588,7 @@ export function ProjectView({
               onAdoptPet={onAdoptPetInline}
               onTogglePet={onTogglePet}
               onOpenPetSettings={onOpenPetSettings}
-              researchAvailable={config.mode === 'daemon'}
-              byokApiProtocol={config.apiProtocol}
-              byokImageModel={byokImageModelOverride}
-              onChangeByokImageModel={setByokImageModelOverride}
-              byokVideoModel={byokVideoModelOverride}
-              onChangeByokVideoModel={setByokVideoModelOverride}
-              byokSpeechModel={byokSpeechModelOverride}
-              onChangeByokSpeechModel={setByokSpeechModelOverride}
-              byokSpeechVoice={byokSpeechVoiceOverride}
-              onChangeByokSpeechVoice={setByokSpeechVoiceOverride}
+              researchAvailable
               projectMetadata={currentProject.metadata}
               onProjectMetadataChange={(metadata) => {
                 onProjectChange({ ...project, metadata });
@@ -8493,8 +7752,6 @@ export function ProjectView({
           artifactHtml={artifact?.html}
           conversationError={error}
           onRetry={handleRetry}
-          onAuthorizeAndRetry={handleSwitchToAmrAndRetry}
-          onLaunchTerminalAuth={handleLaunchAntigravityOauth}
           conversationId={activeConversationId}
           headerActions={(
             <>
@@ -8505,8 +7762,6 @@ export function ProjectView({
                 agents={agents}
                 artifactId={headerArtifact.artifact_id}
                 artifactKind={headerArtifact.artifact_kind}
-                metricsConsent={config.telemetry?.metrics === true}
-                installationId={config.installationId}
               />
               <EntrySettingsMenu
                 config={config}
@@ -8558,37 +7813,6 @@ export function ProjectView({
           system={contextDesignSystemDetails}
           initialViewId="kit"
           onClose={() => setContextDesignSystemDetails(null)}
-        />
-      ) : null}
-      {amrBalanceGateBlock ? (
-        <AmrBalanceDialog
-          reason={amrBalanceGateBlock.reason}
-          balanceUsd={amrBalanceGateBlock.snapshot.balanceUsd}
-          profile={amrBalanceGateBlock.snapshot.profile}
-          entrySource="chat_balance_gate_upgrade"
-          metricsConsent={config.telemetry?.metrics === true}
-          installationId={config.installationId}
-          onClose={() => setAmrBalanceGateBlock(null)}
-          onResolved={() => {
-            // Sign-in completed or the recharge landed: lift the balance
-            // pause and kick the drain so the parked send starts on its own
-            // (it still re-gates, so a half-measure recharge surfaces the
-            // soft reminder rather than silently failing mid-run).
-            const conversationId = amrBalanceGateBlock.conversationId;
-            setAmrBalanceGateBlock(null);
-            amrGatePausedQueueConversationsRef.current.delete(conversationId);
-            setQueuedAutoStartTick((tick) => tick + 1);
-          }}
-        />
-      ) : null}
-      {amrLowBalanceWarn ? (
-        <AmrLowBalanceDialog
-          balanceUsd={amrLowBalanceWarn.snapshot.balanceUsd}
-          profile={amrLowBalanceWarn.snapshot.profile}
-          entrySource="chat_low_balance_warn_recharge"
-          metricsConsent={config.telemetry?.metrics === true}
-          installationId={config.installationId}
-          onDecision={amrLowBalanceWarn.resolve}
         />
       ) : null}
       <AnimatePresence>

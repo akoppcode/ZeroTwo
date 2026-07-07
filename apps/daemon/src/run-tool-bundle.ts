@@ -132,23 +132,6 @@ export function validateRunToolBundleForAgent(
     return { ok: true };
   }
 
-  if (agent.externalMcpInjection === 'opencode-env-content' || agent.externalMcpInjection === 'mimo-env-content') {
-    return { ok: true };
-  }
-
-  if (agent.externalMcpInjection === 'acp-merge') {
-    const unsupported = servers.findIndex(
-      (server) => server.enabled && server.transport !== 'stdio',
-    );
-    if (unsupported === -1) return { ok: true };
-    return {
-      ok: false,
-      message:
-        `toolBundle.mcpServers[${unsupported}] uses ${servers[unsupported]?.transport} transport, ` +
-        `but ${agentLabel(agent)} only supports stdio run-scoped MCP servers`,
-    };
-  }
-
   return {
     ok: false,
     message: `${agentLabel(agent)} does not support run-scoped MCP tool bundles`,

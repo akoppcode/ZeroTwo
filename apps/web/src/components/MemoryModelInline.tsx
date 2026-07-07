@@ -1,22 +1,17 @@
 // Inline "Memory model" picker — sits right next to the chat model
-// dropdown (both in CLI mode and BYOK mode) inside Settings →
-// Execution mode.
+// dropdown inside Settings → Execution mode.
 //
 // Why one tiny dropdown instead of a separate panel:
 // User feedback was explicit — the memory extractor isn't a parallel
-// feature, it's "the same provider/CLI as chat, with a different (and
-// usually cheaper) model". So the picker is a single field that
-// borrows the surrounding chat picker's protocol, key, base URL, and
-// (for Azure) api-version automatically in BYOK mode; in Local CLI
-// mode the default path follows the selected CLI itself.
+// feature, it's "the same CLI as chat, with a different (and usually
+// cheaper) model". So the picker is a single field whose default path
+// follows the selected CLI itself.
 //
 // Three render branches:
 //   - "Same as chat" (default): clears the override on the daemon —
-//     auto-pick chooses a fast default on the chat protocol's key.
-//   - A suggested model: stores { provider: chatProtocol, model, ... }
-//     so the daemon calls the chat protocol's endpoint with the
-//     reduced model. In CLI mode the provider is derived from the
-//     selected agent/model only as metadata; the daemon can still run
+//     auto-pick chooses a fast default.
+//   - A suggested model: stores { provider, model, ... } derived from
+//     the selected agent/model as metadata; the daemon can still run
 //     the supported local CLI runner for "same as chat".
 //   - "Custom..." sentinel: opens a free-text input. Same persistence
 //     as the suggested branch.
@@ -40,44 +35,25 @@ import type {
   MemoryExtractionProvider,
   MemoryListResponse,
 } from '@open-design/contracts';
-import type { AgentModelOption, ApiProtocol, ExecMode } from '../types';
-import {
-  SUGGESTED_MODELS_BY_PROTOCOL,
-} from '../state/apiProtocols';
+import type { AgentModelOption } from '../types';
 import {
   CUSTOM_MODEL_SENTINEL,
   SearchableModelSelect,
 } from './modelOptions';
 
 interface Props {
-  mode: ExecMode;
-  // BYOK context (only meaningful when mode === 'api'). The picker
-  // copies these straight into the saved override so the daemon can
-  // call the API without a second round trip through the user.
-  apiProtocol: ApiProtocol;
-  chatApiKey: string;
-  chatBaseUrl: string;
-  chatApiVersion: string;
   // The chat model is shown next to the "Same as chat" pill so the
   // user can see what the auto-default picks today.
   chatModel: string;
-  // CLI context (only meaningful when mode === 'daemon'). Used to seed
-  // the dropdown options with the same model list the chat picker
-  // shows for the selected agent.
+  // Used to seed the dropdown options with the same model list the
+  // chat picker shows for the selected agent.
   cliModelOptions?: readonly string[];
-  // Live model catalogue for the current BYOK protocol (the same merged
-  // fetched+suggested list the chat picker above uses). When provided in API
-  // mode, the memory picker offers this dynamic list instead of the static
-  // suggestions, so e.g. AIHubMix shows its full live catalogue as a
-  // searchable dropdown. Falls back to SUGGESTED_MODELS_BY_PROTOCOL when empty.
-  apiModelOptions?: readonly AgentModelOption[];
   // The currently-selected CLI agent id. Used to derive a chat
-  // protocol family in CLI mode (claude → anthropic, codex → openai,
-  // gemini → google, …) so the dropdown's "Same as chat" label can
-  // show the actual provider the daemon will call, and so the user
-  // sees a clear "needs an X API key" hint instead of being surprised
-  // when extraction silently lands on whatever foreign vendor key
-  // happens to be in media-config.
+  // protocol family (claude → anthropic, copilot → openai) so the
+  // dropdown's "Same as chat" label can show the actual provider the
+  // daemon will call, and so the user sees a clear "needs an X API
+  // key" hint instead of being surprised when extraction silently
+  // lands on another vendor.
   cliAgentId?: string | null;
 }
 
@@ -85,11 +61,10 @@ interface Props {
 // reducer can switch between "clear override" and "let me type" cleanly.
 const SAME_AS_CHAT_SENTINEL = '__same_as_chat__';
 
-// Pattern-match a model id back to a provider/protocol. CLI mode has
-// no surrounding ApiProtocol to lean on, so we read the prefix the
+// Pattern-match a model id back to a provider/protocol. The CLI has
+// no surrounding API protocol to lean on, so we read the prefix the
 // same way the chat picker would: claude-* → Anthropic API, gemini-*
-// → Google Gemini, everything else → OpenAI-compatible (the lingua
-// franca of CLI agents — Codex, Qwen, DeepSeek, MiniMax all speak it).
+// → Google Gemini, everything else → OpenAI-compatible.
 function inferProviderFromModel(modelId: string): MemoryExtractionProvider {
   const id = modelId.trim().toLowerCase();
   if (id.startsWith('claude') || id.includes('/claude')) return 'anthropic';
@@ -107,32 +82,8 @@ function chatProtocolFromAgent(
   if (!agentId) return null;
   const id = agentId.trim().toLowerCase();
   if (id === 'claude') return 'anthropic';
-  if (id === 'gemini') return 'google';
-  if (
-    id === 'codex'
-    || id === 'opencode'
-    || id === 'qwen'
-    || id === 'deepseek'
-    || id === 'kimi'
-    || id === 'copilot'
-    || id === 'pi'
-    || id === 'kiro'
-    || id === 'kilo'
-    || id === 'vibe'
-    || id === 'devin'
-    || id === 'hermes'
-    || id === 'cursor-agent'
-    || id === 'qoder'
-  ) {
-    return 'openai';
-  }
+  if (id === 'copilot') return 'openai';
   return null;
-}
-
-function memoryProviderFromApiProtocol(
-  protocol: ApiProtocol,
-): MemoryExtractionProvider | null {
-  return protocol === 'bedrock' ? null : protocol;
 }
 
 function cliAgentLabel(agentId: string | null | undefined): string | null {
@@ -140,21 +91,7 @@ function cliAgentLabel(agentId: string | null | undefined): string | null {
   const id = agentId.trim().toLowerCase();
   const labels: Record<string, string> = {
     claude: 'Claude Code',
-    codex: 'Codex CLI',
-    gemini: 'Gemini CLI',
-    opencode: 'OpenCode',
-    qwen: 'Qwen Code',
-    qoder: 'Qoder CLI',
     copilot: 'GitHub Copilot CLI',
-    pi: 'Pi',
-    kiro: 'Kiro CLI',
-    kilo: 'Kilo',
-    vibe: 'Mistral Vibe CLI',
-    deepseek: 'DeepSeek TUI',
-    kimi: 'Kimi',
-    hermes: 'Hermes',
-    devin: 'Devin',
-    'cursor-agent': 'Cursor Agent',
   };
   return labels[id] ?? agentId;
 }
@@ -187,14 +124,8 @@ async function saveMemoryExtraction(
 }
 
 export function MemoryModelInline({
-  mode,
-  apiProtocol,
-  chatApiKey,
-  chatBaseUrl,
-  chatApiVersion,
   chatModel,
   cliModelOptions,
-  apiModelOptions,
   cliAgentId,
 }: Props) {
   const t = useT();
@@ -226,30 +157,20 @@ export function MemoryModelInline({
     return () => clearTimeout(id);
   }, [flash]);
 
-  // The protocol family used for metadata and explicit model overrides.
-  // BYOK: whatever protocol the chat picker has selected. CLI:
-  // derived from the agent id (claude → anthropic, codex → openai,
-  // …), while the "Same as chat" default can still run the selected
-  // local CLI directly on daemon-supported adapters.
-  const apiMemoryProvider = memoryProviderFromApiProtocol(apiProtocol);
+  // The protocol family used for metadata and explicit model overrides,
+  // derived from the agent id (claude → anthropic, copilot → openai),
+  // while the "Same as chat" default can still run the selected local
+  // CLI directly on daemon-supported adapters.
   const effectiveChatProtocol: MemoryExtractionProvider | null =
-    mode === 'api' ? apiMemoryProvider : chatProtocolFromAgent(cliAgentId);
-  const sameAsChatCliLabel =
-    mode === 'daemon' ? cliAgentLabel(cliAgentId) : null;
+    chatProtocolFromAgent(cliAgentId);
+  const sameAsChatCliLabel = cliAgentLabel(cliAgentId);
 
-  // The {id,label} option list fed to the searchable dropdown. In API mode we
-  // prefer the live catalogue passed from the chat picker (e.g. AIHubMix's full
-  // fetched list) and fall back to the static suggestions; in CLI mode we use
-  // the agent's advertised models.
-  const pickerModels = useMemo<AgentModelOption[]>(() => {
-    if (mode === 'api') {
-      if (apiModelOptions && apiModelOptions.length > 0) {
-        return apiModelOptions.map((m) => ({ id: m.id, label: m.label }));
-      }
-      return SUGGESTED_MODELS_BY_PROTOCOL[apiProtocol].map((id) => ({ id, label: id }));
-    }
-    return (cliModelOptions ?? []).map((id) => ({ id, label: id }));
-  }, [mode, apiProtocol, apiModelOptions, cliModelOptions]);
+  // The {id,label} option list fed to the searchable dropdown — the
+  // agent's advertised models.
+  const pickerModels = useMemo<AgentModelOption[]>(
+    () => (cliModelOptions ?? []).map((id) => ({ id, label: id })),
+    [cliModelOptions],
+  );
 
   // Plain id list — drives the "is the saved model a known option vs a custom
   // id" decision below.
@@ -268,30 +189,14 @@ export function MemoryModelInline({
       ? CUSTOM_MODEL_SENTINEL
       : savedModel;
 
-  // Build the override payload to PATCH for a given model id.
-  //   - BYOK: provider + key + baseUrl + apiVersion all come from the
-  //     surrounding chat config so the daemon can hit the API without
-  //     a second round-trip through the user.
-  //   - CLI: there's no browser-side chat key to borrow. We derive a
-  //     provider for metadata and for unsupported CLI adapters, while
-  //     the daemon can run supported Local CLIs directly when the
-  //     picker is on "Same as chat".
+  // Build the override payload to PATCH for a given model id. There's
+  // no browser-side chat key to borrow: we derive a provider for
+  // metadata and for unsupported CLI adapters, while the daemon can
+  // run supported Local CLIs directly when the picker is on "Same as
+  // chat".
   const buildOverride = useCallback(
     (modelId: string): MemoryExtractionConfigShape => {
       const trimmedModel = modelId.trim();
-      if (mode === 'api') {
-        const provider = memoryProviderFromApiProtocol(apiProtocol);
-        if (!provider) {
-          throw new Error('Memory extraction is not available for AWS Bedrock BYOK yet.');
-        }
-        return {
-          provider,
-          model: trimmedModel,
-          baseUrl: chatBaseUrl.trim(),
-          apiKey: chatApiKey,
-          apiVersion: apiProtocol === 'azure' ? chatApiVersion.trim() : '',
-        };
-      }
       const provider =
         chatProtocolFromAgent(cliAgentId)
         ?? inferProviderFromModel(trimmedModel);
@@ -303,7 +208,7 @@ export function MemoryModelInline({
         apiVersion: '',
       };
     },
-    [mode, apiProtocol, chatApiKey, chatBaseUrl, chatApiVersion, cliAgentId],
+    [cliAgentId],
   );
 
   const persist = useCallback(
@@ -335,55 +240,6 @@ export function MemoryModelInline({
     [t],
   );
 
-  // Re-sync the saved memory override when the surrounding BYOK chat
-  // config drifts. The picker initially captures provider / key /
-  // baseUrl / apiVersion at click time, but if the user later swaps the
-  // protocol tab, rotates the API key, or edits the base URL, the
-  // background memory extractor would otherwise keep calling the *old*
-  // vendor / credential — directly contradicting the picker's "borrows
-  // the surrounding chat picker's protocol, key, base URL, and
-  // api-version automatically" promise.
-  //
-  // We compare the persisted (masked) shape against the live chat
-  // props field by field; the masked config exposes the last 4 chars
-  // of the saved key as `apiKeyTail`, which is enough to detect a
-  // rotation without ever round-tripping the secret back to the
-  // browser. A 300 ms debounce coalesces the keystroke-granularity
-  // prop updates that a parent autosave dialog typically streams in,
-  // so we don't spam PATCH /api/memory/config on every character.
-  useEffect(() => {
-    if (mode !== 'api') return;
-    if (!apiMemoryProvider) return;
-    if (busy) return;
-    if (customEditing) return;
-    if (!config || !config.model) return;
-    const trimmedBaseUrl = chatBaseUrl.trim();
-    const newTail = (chatApiKey || '').slice(-4);
-    const azureVersion = apiProtocol === 'azure' ? chatApiVersion.trim() : '';
-    const drift =
-      config.provider !== apiMemoryProvider
-      || config.baseUrl !== trimmedBaseUrl
-      || config.apiVersion !== azureVersion
-      || config.apiKeyTail !== newTail;
-    if (!drift) return;
-    const handle = setTimeout(() => {
-      void persist(buildOverride(config.model), { silent: true });
-    }, 300);
-    return () => clearTimeout(handle);
-  }, [
-    mode,
-    apiProtocol,
-    apiMemoryProvider,
-    chatApiKey,
-    chatBaseUrl,
-    chatApiVersion,
-    config,
-    busy,
-    customEditing,
-    buildOverride,
-    persist,
-  ]);
-
   const onSelectChange = useCallback(
     async (value: string) => {
       if (value === SAME_AS_CHAT_SENTINEL) {
@@ -401,20 +257,18 @@ export function MemoryModelInline({
         setCustomDraft(savedModel || '');
         return;
       }
-      if (mode === 'api' && !apiMemoryProvider) return;
       setCustomEditing(false);
       await persist(buildOverride(value));
     },
-    [mode, apiMemoryProvider, persist, buildOverride, savedModel],
+    [persist, buildOverride, savedModel],
   );
 
   const onSaveCustom = useCallback(async () => {
     const trimmed = customDraft.trim();
     if (!trimmed) return;
-    if (mode === 'api' && !apiMemoryProvider) return;
     await persist(buildOverride(trimmed));
     setCustomEditing(false);
-  }, [customDraft, mode, apiMemoryProvider, persist, buildOverride]);
+  }, [customDraft, persist, buildOverride]);
 
   // Stable unique id for the labelling span so multiple instances of
   // this picker (or instances rendered alongside other Memory pickers)
@@ -484,7 +338,7 @@ export function MemoryModelInline({
         popoverClassName="settings-byok-select-popover"
         models={selectOptions}
         value={selectValue}
-        disabled={busy || (mode === 'api' && !apiMemoryProvider)}
+        disabled={busy}
         onChange={(value) => void onSelectChange(value)}
       />
       {customActive ? (
@@ -516,13 +370,11 @@ export function MemoryModelInline({
         </div>
       ) : null}
       <p className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-        {mode === 'api'
-          ? t('settings.memoryModelInlineHintByokNeutral')
-          : effectiveChatProtocol
-            ? t('settings.memoryModelInlineHintCliConstrained', {
-                provider: effectiveChatProtocol,
-              })
-            : t('settings.memoryModelInlineHintCli')}
+        {effectiveChatProtocol
+          ? t('settings.memoryModelInlineHintCliConstrained', {
+              provider: effectiveChatProtocol,
+            })
+          : t('settings.memoryModelInlineHintCli')}
       </p>
     </div>
   );

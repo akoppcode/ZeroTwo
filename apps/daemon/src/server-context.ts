@@ -119,7 +119,6 @@ export interface ServerContext {
   auth: any;
   liveArtifacts: any;
   deploy: any;
-  media: any;
   appConfig: any;
   orbit: any;
   nativeDialogs: any;
@@ -131,8 +130,6 @@ export interface ServerContext {
   projectPreviewScopes: ProjectPreviewScopeDeps;
   telemetry: TelemetryDeps;
   validation: any;
-  finalize: any;
-  handoff: any;
   chat: any;
   messages: any;
   agents: any;

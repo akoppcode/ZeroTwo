@@ -68,27 +68,16 @@ function renderEntryView(overrides: Partial<ComponentProps<typeof EntryView>> = 
       defaultDesignSystemId={null}
       agents={[]}
       config={{
-        mode: 'daemon',
-        apiKey: '',
-        apiProtocol: 'openai',
-        apiVersion: '',
-        baseUrl: 'https://api.openai.com/v1',
-        model: 'gpt-4o',
-        agentId: 'codex',
+        agentId: 'claude',
         skillId: null,
         designSystemId: null,
         onboardingCompleted: true,
-        composio: { apiKey: '', apiKeyConfigured: true, apiKeyTail: '1234' },
-        mediaProviders: {},
         agentModels: {},
         agentCliEnv: {},
       }}
       daemonLive
-      onModeChange={vi.fn()}
       onAgentChange={vi.fn()}
       onAgentModelChange={vi.fn()}
-      onApiProtocolChange={vi.fn()}
-      onApiModelChange={vi.fn()}
       onConfigPersist={vi.fn()}
       onRefreshAgents={vi.fn()}
       onThemeChange={vi.fn()}
@@ -100,7 +89,6 @@ function renderEntryView(overrides: Partial<ComponentProps<typeof EntryView>> = 
       onDeleteProject={vi.fn()}
       onRenameProject={vi.fn()}
       onChangeDefaultDesignSystem={vi.fn()}
-      onPersistComposioKey={vi.fn()}
       onOpenSettings={vi.fn()}
       onCompleteOnboarding={vi.fn()}
       {...overrides}

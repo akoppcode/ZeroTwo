@@ -6,12 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/App';
 import type { AgentInfo, AppConfig, Project } from '../../src/types';
 import {
-  fetchComposioConfigFromDaemon,
   fetchDaemonConfig,
   loadConfig,
   mergeDaemonConfig,
   saveConfig,
-  syncComposioConfigToDaemon,
   syncConfigToDaemon,
 } from '../../src/state/config';
 import {
@@ -192,8 +190,6 @@ vi.mock('../../src/components/pet/pets', () => ({
 
 vi.mock('../../src/components/SettingsDialog', () => ({
   SettingsDialog: () => null,
-  switchApiProtocolConfig: (config: AppConfig) => config,
-  updateCurrentApiProtocolConfig: (config: AppConfig) => config,
 }));
 
 vi.mock('../../src/providers/registry', async () => {
@@ -236,11 +232,9 @@ vi.mock('../../src/state/config', async () => {
   return {
     ...actual,
     fetchDaemonConfig: vi.fn().mockResolvedValue({}),
-    fetchComposioConfigFromDaemon: vi.fn().mockResolvedValue(null),
     loadConfig: vi.fn(),
     mergeDaemonConfig: vi.fn(),
     saveConfig: vi.fn(),
-    syncComposioConfigToDaemon: vi.fn().mockResolvedValue(true),
     syncConfigToDaemon: vi.fn().mockResolvedValue(undefined),
   };
 });
@@ -261,29 +255,17 @@ const mockedListProjects = vi.mocked(listProjects);
 const mockedListTemplates = vi.mocked(listTemplates);
 const mockedPatchProject = vi.mocked(patchProject);
 const mockedFetchDaemonConfig = vi.mocked(fetchDaemonConfig);
-const mockedFetchComposioConfigFromDaemon = vi.mocked(fetchComposioConfigFromDaemon);
 const mockedLoadConfig = vi.mocked(loadConfig);
 const mockedMergeDaemonConfig = vi.mocked(mergeDaemonConfig);
 const mockedSaveConfig = vi.mocked(saveConfig);
-const mockedSyncComposioConfigToDaemon = vi.mocked(syncComposioConfigToDaemon);
 const mockedSyncConfigToDaemon = vi.mocked(syncConfigToDaemon);
 
 const baseConfig: AppConfig = {
-  mode: 'daemon',
-  apiKey: '',
-  apiProtocol: 'anthropic',
-  apiVersion: '',
-  baseUrl: 'https://api.anthropic.com',
-  model: 'claude-sonnet-4-5',
-  apiProviderBaseUrl: 'https://api.anthropic.com',
-  apiProtocolConfigs: {},
-  agentId: 'codex',
+  agentId: 'claude',
   skillId: null,
   designSystemId: null,
   onboardingCompleted: true,
   privacyDecisionAt: 1778244000000,
-  mediaProviders: {},
-  composio: {},
   agentModels: {},
   agentCliEnv: {},
 };
@@ -328,7 +310,6 @@ describe('App project creation routing', () => {
     mockedFetchAppVersionInfo.mockResolvedValue(null);
     mockedListTemplates.mockResolvedValue([]);
     mockedFetchDaemonConfig.mockResolvedValue({});
-    mockedFetchComposioConfigFromDaemon.mockResolvedValue(null);
     mockedMergeDaemonConfig.mockImplementation((local) => local);
     mockedLoadConfig.mockReturnValue({ ...baseConfig });
     mockedUploadProjectFiles.mockResolvedValue({ uploaded: [], failed: [] });
@@ -355,10 +336,10 @@ describe('App project creation routing', () => {
   });
 
   it('auto-picks the first available agent in registry order after streamed probes settle', async () => {
-    const codexAgent: AgentInfo = {
-      id: 'codex',
-      name: 'Codex CLI',
-      bin: 'codex',
+    const copilotAgent: AgentInfo = {
+      id: 'copilot',
+      name: 'Copilot CLI',
+      bin: 'copilot',
       available: true,
       version: '0.80.0',
       models: [{ id: 'default', label: 'Default' }],
@@ -374,9 +355,9 @@ describe('App project creation routing', () => {
     mockedLoadConfig.mockReturnValue({ ...baseConfig, agentId: null });
     mockedListProjects.mockResolvedValue([]);
     mockedFetchAgentsStream.mockImplementation(async ({ onAgent }) => {
-      onAgent(codexAgent);
+      onAgent(copilotAgent);
       onAgent(claudeAgent);
-      return [codexAgent, claudeAgent];
+      return [copilotAgent, claudeAgent];
     });
 
     render(<App />);
@@ -387,7 +368,7 @@ describe('App project creation routing', () => {
       );
     });
     expect(
-      mockedSaveConfig.mock.calls.some(([saved]) => saved.agentId === 'codex'),
+      mockedSaveConfig.mock.calls.some(([saved]) => saved.agentId === 'copilot'),
     ).toBe(false);
     expect(mockedSyncConfigToDaemon).toHaveBeenCalledWith(
       expect.objectContaining({ agentId: 'claude' }),
@@ -395,18 +376,18 @@ describe('App project creation routing', () => {
   });
 
   it('ignores stale streamed writes from an older bootstrap after a newer rescan', async () => {
-    const staleCodexAgent: AgentInfo = {
-      id: 'codex',
-      name: 'Stale Codex CLI',
-      bin: 'codex',
+    const staleCopilotAgent: AgentInfo = {
+      id: 'copilot',
+      name: 'Stale Copilot CLI',
+      bin: 'copilot',
       available: false,
       version: null,
       models: [],
     };
-    const refreshedCodexAgent: AgentInfo = {
-      id: 'codex',
-      name: 'Fresh Codex CLI',
-      bin: 'codex',
+    const refreshedCopilotAgent: AgentInfo = {
+      id: 'copilot',
+      name: 'Fresh Copilot CLI',
+      bin: 'copilot',
       available: true,
       version: '0.80.0',
       models: [{ id: 'default', label: 'Default' }],
@@ -419,8 +400,8 @@ describe('App project creation routing', () => {
         return staleBootstrap.promise;
       })
       .mockImplementationOnce(async ({ onAgent }) => {
-        onAgent(refreshedCodexAgent);
-        return [refreshedCodexAgent];
+        onAgent(refreshedCopilotAgent);
+        return [refreshedCopilotAgent];
       });
     mockedListProjects.mockResolvedValue([]);
 
@@ -429,27 +410,27 @@ describe('App project creation routing', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Refresh agents' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('entry-agent-codex').textContent).toBe(
-        'Fresh Codex CLI',
+      expect(screen.getByTestId('entry-agent-copilot').textContent).toBe(
+        'Fresh Copilot CLI',
       );
     });
 
     await act(async () => {
-      emitStaleAgent?.(staleCodexAgent);
-      staleBootstrap.resolve([staleCodexAgent]);
+      emitStaleAgent?.(staleCopilotAgent);
+      staleBootstrap.resolve([staleCopilotAgent]);
       await staleBootstrap.promise;
     });
 
-    expect(screen.getByTestId('entry-agent-codex').textContent).toBe(
-      'Fresh Codex CLI',
+    expect(screen.getByTestId('entry-agent-copilot').textContent).toBe(
+      'Fresh Copilot CLI',
     );
   });
 
   it('does not auto-pick from a partial rescan when an older bootstrap settles', async () => {
-    const codexAgent: AgentInfo = {
-      id: 'codex',
-      name: 'Codex CLI',
-      bin: 'codex',
+    const copilotAgent: AgentInfo = {
+      id: 'copilot',
+      name: 'Copilot CLI',
+      bin: 'copilot',
       available: true,
       version: '0.80.0',
       models: [{ id: 'default', label: 'Default' }],
@@ -469,7 +450,7 @@ describe('App project creation routing', () => {
     mockedFetchAgentsStream
       .mockReturnValueOnce(staleBootstrap.promise)
       .mockImplementationOnce(({ onAgent }) => {
-        onAgent(codexAgent);
+        onAgent(copilotAgent);
         return rescan.promise;
       });
 
@@ -478,8 +459,8 @@ describe('App project creation routing', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Refresh agents' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('entry-agent-codex').textContent).toBe(
-        'Codex CLI',
+      expect(screen.getByTestId('entry-agent-copilot').textContent).toBe(
+        'Copilot CLI',
       );
     });
 
@@ -488,7 +469,7 @@ describe('App project creation routing', () => {
       await staleBootstrap.promise;
     });
     await act(async () => {
-      rescan.resolve([codexAgent, claudeAgent]);
+      rescan.resolve([copilotAgent, claudeAgent]);
       await rescan.promise;
     });
 
@@ -498,15 +479,15 @@ describe('App project creation routing', () => {
       );
     });
     expect(
-      mockedSaveConfig.mock.calls.some(([saved]) => saved.agentId === 'codex'),
+      mockedSaveConfig.mock.calls.some(([saved]) => saved.agentId === 'copilot'),
     ).toBe(false);
   });
 
   it('keeps auto-pick gated while rescanning from an empty agent state', async () => {
-    const codexAgent: AgentInfo = {
-      id: 'codex',
-      name: 'Codex CLI',
-      bin: 'codex',
+    const copilotAgent: AgentInfo = {
+      id: 'copilot',
+      name: 'Copilot CLI',
+      bin: 'copilot',
       available: true,
       version: '0.80.0',
       models: [{ id: 'default', label: 'Default' }],
@@ -526,7 +507,7 @@ describe('App project creation routing', () => {
     mockedFetchAgentsStream
       .mockReturnValueOnce(initialProbe.promise)
       .mockImplementationOnce(({ onAgent }) => {
-        onAgent(codexAgent);
+        onAgent(copilotAgent);
         return rescan.promise;
       });
 
@@ -543,13 +524,13 @@ describe('App project creation routing', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Refresh agents' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('entry-agent-codex').textContent).toBe(
-        'Codex CLI',
+      expect(screen.getByTestId('entry-agent-copilot').textContent).toBe(
+        'Copilot CLI',
       );
     });
 
     await act(async () => {
-      rescan.resolve([codexAgent, claudeAgent]);
+      rescan.resolve([copilotAgent, claudeAgent]);
       await rescan.promise;
     });
 
@@ -559,7 +540,7 @@ describe('App project creation routing', () => {
       );
     });
     expect(
-      mockedSaveConfig.mock.calls.some(([saved]) => saved.agentId === 'codex'),
+      mockedSaveConfig.mock.calls.some(([saved]) => saved.agentId === 'copilot'),
     ).toBe(false);
   });
 

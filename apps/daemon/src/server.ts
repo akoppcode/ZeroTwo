@@ -1,11 +1,7 @@
 // @ts-nocheck
 import type {
-  DesktopExportArtifactInput,
-  DesktopExportArtifactResult,
   DesktopExportPdfInput,
   DesktopExportPdfResult,
-  DesktopRenderSlidesInput,
-  DesktopRenderSlidesResult,
 } from '@open-design/sidecar-proto';
 import express from 'express';
 import multer from 'multer';
@@ -20,7 +16,6 @@ import net from 'node:net';
 import { executionProfileFromStreamFormat, PLUGIN_SHARE_ACTION_PLUGIN_IDS } from '@open-design/contracts';
 import {
   composeSystemPrompt,
-  resolveExclusiveSurface,
 } from './prompts/system.js';
 import { emittedRenderableQuestionForm } from './question-form-detect.js';
 import { resolveProjectRoot } from './project-root.js';
@@ -63,12 +58,6 @@ import {
 } from './plugin-preview-bakes.js';
 import { userFacingAgentLabel } from './user-facing-agent-label.js';
 import {
-  buildBrowserUseRunState,
-  collectBrowserUseDiscoveryFacts,
-  isBrowserUseRequested,
-  renderBrowserUseUnavailablePrompt,
-} from './browser-use-diagnostics.js';
-import {
   UPLOAD_DIR,
   composeLiveInstructionPrompt,
   formatDesignFilesWorkspaceHint,
@@ -78,22 +67,15 @@ import {
   resolveChatExtraAllowedDirs,
   describeStablePromptCache,
   designSystemIdFromPluginSnapshot,
-  resolveCodexGeneratedImagesDir,
   resolveEffectiveDesignSystemSelection,
-  resolveGrantedCodexImagegenOverride,
   resolveResearchCommandContract,
   resolveSafeProjectAttachments,
   resolveSafePromptImagePaths,
-  selectPromptImagePaths,
-  validateCodexGeneratedImagesDir,
 } from './runtimes/chat-prompt-inputs.js';
 import {
   applyClaudeStreamJsonRunBookkeeping,
   assertValidRuntimeDefInactivityTimeoutMs,
-  bufferedAntigravityGeminiFirstTokenAt,
   classifyChatRunCloseStatus,
-  looksLikeGeminiJsonEventStream,
-  resolveAcpStageTimeoutMs,
   resolveActiveInactivityTimeoutMs,
   resolveChatRunArtifactQuietPeriodMs,
   resolveChatRunInactivityTimeoutMs,
@@ -124,22 +106,15 @@ export {
   resolveChatExtraAllowedDirs,
   describeStablePromptCache,
   designSystemIdFromPluginSnapshot,
-  resolveCodexGeneratedImagesDir,
   resolveEffectiveDesignSystemSelection,
-  resolveGrantedCodexImagegenOverride,
   resolveResearchCommandContract,
   resolveSafeProjectAttachments,
   resolveSafePromptImagePaths,
-  selectPromptImagePaths,
-  validateCodexGeneratedImagesDir,
 } from './runtimes/chat-prompt-inputs.js';
 export {
   applyClaudeStreamJsonRunBookkeeping,
   assertValidRuntimeDefInactivityTimeoutMs,
-  bufferedAntigravityGeminiFirstTokenAt,
   classifyChatRunCloseStatus,
-  looksLikeGeminiJsonEventStream,
-  resolveAcpStageTimeoutMs,
   resolveActiveInactivityTimeoutMs,
   resolveChatRunArtifactQuietPeriodMs,
   resolveChatRunInactivityTimeoutMs,
@@ -164,41 +139,21 @@ export { resolveProjectRoot };
 import { createCommandInvocation } from '@open-design/platform';
 import { SIDECAR_ENV } from '@open-design/sidecar-proto';
 import {
-  buildLiveArtifactsMcpServersForAgent,
   checkPromptArgvBudget,
   checkWindowsCmdShimCommandLineBudget,
   checkWindowsDirectExeCommandLineBudget,
   detectAgents,
   getAgentDef,
   isKnownModel,
-  openDesignAmrTraceEnv,
   applyAgentLaunchEnv,
   resolveAgentLaunch,
   sanitizeCustomModel,
   spawnEnvForAgent,
 } from './agents.js';
 import {
-  getRememberedLiveModels,
-  preferFreshLiveModels,
-  rememberLiveModels,
   resolveModelForAgent,
 } from './runtimes/models.js';
-import { loadMmdRouteLaunchEnv } from './runtimes/mmd-routes.js';
 import { preparePromptFileForAgent } from './runtimes/prompt-file.js';
-import { buildOpenCodeByokProviderConfig } from './runtimes/byok-opencode.js';
-import {
-  readVelaLoginStatus,
-  resolveAmrProfile,
-} from './integrations/vela.js';
-import {
-  amrAccountFailureDetails,
-  classifyAmrAccountFailureSignal,
-} from './integrations/vela-errors.js';
-import { amrModelLoadingCache } from './runtimes/amr-model-cache.js';
-import {
-  fetchVelaPresetModels,
-  fetchVelaRemoteModelsWithRetry,
-} from './runtimes/defs/amr.js';
 import { migrateLegacyDataDirSync } from './legacy-data-migrator.js';
 import {
   consumedImportNonces,
@@ -240,7 +195,6 @@ import {
   createPluginAssetCache,
   isCacheableExternalUrl,
 } from './plugin-asset-cache.js';
-import { defaultMediaExecutionPolicy, parseMediaExecutionPolicyInput } from './media/policy.js';
 import {
   applySandboxRuntimeEnv,
   ensureSandboxRuntimeDirs,
@@ -310,9 +264,6 @@ import {
   listActiveRuleEntries,
   readMemoryConfig,
 } from './memory.js';
-import { attachAcpSession } from './acp.js';
-import { attachPiRpcSession } from './pi-rpc.js';
-import { stageAmrImagePaths } from './media/amr-image-staging.js';
 import { ingestRoutineConnectorEvolution } from './automation-routine-evolution.js';
 import { createClaudeStreamHandler } from './runtimes/claude-stream.js';
 import { createAgentTitleMarkerStripper } from './title-marker.js';
@@ -333,17 +284,10 @@ import {
 } from './critique/rollout.js';
 import { narrowProjectCritiqueOverride } from './critique/spawn-inputs.js';
 import { createCopilotStreamHandler } from './copilot-stream.js';
-import { createJsonEventStreamHandler } from './runtimes/json-event-stream.js';
 import {
-  antigravityAuthGuidance,
-  antigravityQuotaGuidance,
   classifyAgentAuthFailure,
   classifyAgentServiceFailure,
-  cursorAuthGuidance,
 } from './runtimes/auth.js';
-import { readOpenCodeServiceFailure } from './runtimes/opencode-log.js';
-import { createAgentStderrVisibilityFilter } from './amr-stderr-filter.js';
-import { createQoderStreamHandler } from './runtimes/qoder-stream.js';
 import { subscribe as subscribeFileEvents } from './project-watchers.js';
 import { importFigmaFromBytes } from './figma/figma-import.js';
 import { renderDesignSystemPreview } from './design-systems/preview.js';
@@ -356,9 +300,6 @@ import {
 import { deriveRunErrorCode, runResultFromStatus } from './run-result.js';
 import { classifyRunFailure, isResumableFailure } from './run-failure-classification.js';
 import { decideSafeRunRetry } from './run-retry-policy.js';
-import {
-  amrUserIdForRunAnalytics,
-} from './run-analytics-observability.js';
 import {
   createRunArtifactBaselines,
   diffRunArtifacts,
@@ -375,53 +316,17 @@ import {
   agentIdToTracking,
   modelIdForTracking,
 } from '@open-design/contracts/analytics';
-import {
-  mergeNoProxyWithLoopbackDefaults,
-  redactSecrets,
-  testAgentConnection,
-  testProviderConnection,
-  validateBaseUrl,
-  validateBaseUrlResolved,
-} from './connectionTest.js';
-import { listProviderModels } from './integrations/provider-models.js';
 import { importClaudeDesignZip } from './claude-design-import.js';
-import {
-  defaultBaseUrlForFinalizeProtocol,
-  finalizeDesignPackage,
-  FinalizePackageLockedError,
-  FinalizeUpstreamError,
-  isFinalizeProviderProtocol,
-} from './finalize-design.js';
 import { buildDocumentPreview } from './document-preview.js';
 import { lintArtifact, renderFindingsForAgent } from './lint-artifact.js';
 import { loadCraftSections } from './craft.js';
 import { skillCwdAliasSegment, stageActiveSkill } from './cwd-aliases.js';
-import { buildDesktopArtifactExportInput, buildDesktopPdfExportInput } from './pdf-export.js';
-import { generateMedia } from './media/index.js';
-import { listElevenLabsVoiceOptions } from './integrations/elevenlabs-voices.js';
+import { buildDesktopPdfExportInput } from './pdf-export.js';
 import { searchResearch, ResearchError } from './research/index.js';
 import { openBrowser } from './browser-open.js';
 import {
-  AUDIO_DURATIONS_SEC,
-  AUDIO_MODELS_BY_KIND,
-  IMAGE_MODELS,
-  MEDIA_ASPECTS,
-  MEDIA_PROVIDERS,
-  VIDEO_LENGTHS_SEC,
-  VIDEO_MODELS,
-} from './media/models.js';
-import { readMaskedConfig, writeConfig } from './media/config.js';
-import {
-  listMediaTasksByProject,
-  listRecentMediaTasks,
-  reconcileMediaTasksOnBoot,
-} from './media/tasks.js';
-import { TASK_TTL_AFTER_DONE_MS, createMediaTaskStore } from './media/task-store.js';
-import {
   MCP_TEMPLATES,
-  buildAcpMcpServers,
   buildClaudeMcpJson,
-  buildOpenCodeMcpConfigContent,
   isManagedProjectCwd,
   readMcpConfig,
   writeMcpConfig,
@@ -538,7 +443,6 @@ import {
   computeIncludeStable,
   hashStableInstructions,
   isAgentResumeFailure,
-  persistCapturedAgentSession,
   resolveAgentResumeContext,
 } from './agent-session-resume.js';
 import {
@@ -569,17 +473,11 @@ import { registerPluginAssetRoutes } from './routes/plugins/assets.js';
 import { registerPluginMarketplaceRoutes } from './routes/plugins/marketplaces.js';
 import { registerPluginEventRoutes, registerPluginRoutes, registerProjectPluginRoutes } from './routes/plugins/index.js';
 import { registerMcpRoutes } from './mcp-routes.js';
-import { registerXaiRoutes } from './routes/xai.js';
 import { registerLiveArtifactRoutes } from './routes/live-artifact.js';
 import { registerDesignSystemToolRoutes } from './routes/design-system-tool.js';
 import { registerDeployRoutes, registerDeploymentCheckRoutes } from './routes/deploy.js';
-import { registerMediaRoutes } from './routes/media.js';
 import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './routes/project/index.js';
-import { registerVelaRoutes } from './routes/vela.js';
-import { registerFinalizeRoutes, registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
-import { registerHandoffRoutes } from './routes/handoff.js';
-import { EmptyTranscriptError, synthesizeHandoffPrompt } from './handoff-design.js';
-import { TranscriptExportLockedError } from './transcript-export.js';
+import { registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerRunRoutes } from './routes/runs.js';
 import { registerTerminalRoutes } from './routes/terminal.js';
@@ -596,7 +494,6 @@ import {
 } from './routes/static-resource.js';
 export { rewriteSkillAssetUrls } from './routes/static-resource.js';
 import { registerRoutineRoutes, routineDbRowToContract } from './routes/routine.js';
-import { resolveAmrModelProbe } from './runtimes/amr-model-probe.js';
 import { createPluginInstallationHelpers, normalizeProjectPluginFolderPath, resolveProjectChildDirectory } from './services/plugin-installation.js';
 import { createPluginShareTaskStore } from './services/plugin-share-tasks.js';
 import { getRouteRegistrationInventory, installRouteRegistrationGuard } from './route-registration-guard.js';
@@ -1072,14 +969,6 @@ export function createAgentRuntimeEnv(
   if (typeof sidecarIpcPath === 'string' && sidecarIpcPath.length > 0) {
     env[SIDECAR_ENV.IPC_PATH] = sidecarIpcPath;
   }
-  if (SANDBOX_RUNTIME.enabled) {
-    const noProxy = mergeNoProxyWithLoopbackDefaults(env.NO_PROXY ?? env.no_proxy);
-    if (noProxy) {
-      env.NO_PROXY = noProxy;
-      if (process.platform !== 'win32') env.no_proxy = noProxy;
-    }
-  }
-
   // Ensure the node binary directory is on PATH so agent sub-processes —
   // in particular npm .cmd shims on Windows that run `"node" script.js` —
   // can find the same node binary that runs the daemon even when the daemon
@@ -1602,41 +1491,6 @@ function createSseErrorPayload(code, message, init = {}) {
   return { message, error: createCompatApiError(code, message, init) };
 }
 
-function rewriteKnownAgentStreamError(agentId, message, failureText = '') {
-  const rawMessage =
-    typeof message === 'string' && message.trim()
-      ? message.trim()
-      : 'Agent stream error';
-  const combined = `${rawMessage}\n${failureText}`;
-  if (
-    /bufio\.scanner:\s*token too long/i.test(combined) &&
-    /opencode/i.test(combined) &&
-    (agentId === 'opencode' || agentId === 'mimo' || agentId === 'amr' || /json-rpc id \d+/i.test(combined))
-  ) {
-    return 'The run failed due to an unknown upstream streaming error. Please retry.';
-  }
-  return rawMessage;
-}
-
-function createAmrModelUnavailablePayload(model, init = {}) {
-  const modelText = typeof model === 'string' && model.trim()
-    ? `"${model.trim()}"`
-    : 'the selected model';
-  return createSseErrorPayload(
-    'AMR_MODEL_UNAVAILABLE',
-    `AMR model ${modelText} is not available from Vela. Refresh the AMR model list, choose a supported model, and retry this run.`,
-    {
-      retryable: false,
-      details: {
-        kind: 'amr_model',
-        action: 'choose_model',
-        ...(typeof model === 'string' && model.trim() ? { model: model.trim() } : {}),
-        ...init,
-      },
-    },
-  );
-}
-
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });
 
@@ -1880,8 +1734,6 @@ export function createSseResponse(
 }
 
 export type DesktopPdfExporter = (input: DesktopExportPdfInput) => Promise<DesktopExportPdfResult>;
-export type DesktopSlideRenderer = (input: DesktopRenderSlidesInput) => Promise<DesktopRenderSlidesResult>;
-export type DesktopArtifactExporter = (input: DesktopExportArtifactInput) => Promise<DesktopExportArtifactResult>;
 
 // Loosely typed shape — we only access `namespace`, `base`, `mode`, and
 // `source` from the runtime context when building the diagnostics export.
@@ -1895,9 +1747,7 @@ export interface DaemonRuntimeContext {
 }
 
 export interface StartServerOptions {
-  desktopArtifactExporter?: DesktopArtifactExporter | null;
   desktopPdfExporter?: DesktopPdfExporter | null;
-  desktopSlideRenderer?: DesktopSlideRenderer | null;
   host?: string;
   port?: number;
   returnServer?: boolean;
@@ -1916,8 +1766,6 @@ export async function startServer({
   host = normalizeDaemonBindHost(process.env.OD_BIND_HOST),
   returnServer = false,
   desktopPdfExporter = null,
-  desktopSlideRenderer = null,
-  desktopArtifactExporter = null,
   runtime = null,
 }: StartServerOptions = {}) {
   host = normalizeDaemonBindHost(host);
@@ -2134,7 +1982,6 @@ export async function startServer({
     PLUGIN_LOCKFILE_PATH,
     PLUGIN_UPLOAD_MAX_BYTES,
   });
-  const mediaTaskStore = createMediaTaskStore(db);
   const {
     authorizeToolRequest,
     optionalToolGrantFromRequest,
@@ -2193,24 +2040,6 @@ export async function startServer({
   if (reconciledStaleRuns > 0) {
     console.warn(`[critique] reconcileStaleRuns flipped ${reconciledStaleRuns} stale running row(s) to interrupted`);
   }
-  const mediaReconcile = reconcileMediaTasksOnBoot(db, {
-    terminalTtlMs: TASK_TTL_AFTER_DONE_MS,
-  });
-  if (mediaReconcile.interrupted > 0 || mediaReconcile.deleted > 0) {
-    console.warn(
-      `[media] reconcileMediaTasksOnBoot interrupted ${mediaReconcile.interrupted} task(s), ` +
-        `deleted ${mediaReconcile.deleted} expired terminal task(s)`,
-    );
-  }
-  mediaTaskStore.mediaTasks.clear();
-  for (const row of listRecentMediaTasks(db, { terminalTtlMs: TASK_TTL_AFTER_DONE_MS })) {
-    mediaTaskStore.hydrateMediaTask(row);
-  }
-
-  if (process.env.OD_CODEX_DISABLE_PLUGINS === '1') {
-    console.log('[od] Codex plugins disabled via OD_CODEX_DISABLE_PLUGINS=1');
-  }
-
   let bundledMarketplaceEntries = [];
   // Plan §3.I3 / spec §23.3.5 — register every plugin under
   // <resourceRoot>/plugins/_official/** in packaged runs, or
@@ -2413,13 +2242,6 @@ export async function startServer({
 
   const reportFeedback = telemetry.reportFeedback;
 
-  // DNS-aware wrapper. The sync `validateBaseUrl` only inspects the literal
-  // hostname string, so a public DNS name pointing at an internal address
-  // (`internal.example.com → 10.0.0.5`) still passes. We delegate to
-  // `validateBaseUrlResolved` here so every proxy and finalize handler runs
-  // the same resolved-IP check before issuing the upstream request.
-  const validateExternalApiBaseUrl = (baseUrl) => validateBaseUrlResolved(baseUrl);
-
   const resolvedPortRef = {
     get current() {
       return resolvedPort;
@@ -2582,10 +2404,7 @@ export async function startServer({
     buildProjectArchive,
     buildBatchArchive,
     buildDesktopPdfExportInput,
-    buildDesktopArtifactExportInput,
     desktopPdfExporter,
-    desktopSlideRenderer,
-    desktopArtifactExporter,
     daemonUrlRef,
     sanitizeArchiveFilename,
   };
@@ -2620,27 +2439,6 @@ export async function startServer({
     cloudflarePagesDeploymentMetadata,
     prepareDeployPreflight,
   };
-  const mediaDeps = {
-    MEDIA_PROVIDERS,
-    IMAGE_MODELS,
-    VIDEO_MODELS,
-    AUDIO_MODELS_BY_KIND,
-    MEDIA_ASPECTS,
-    VIDEO_LENGTHS_SEC,
-    AUDIO_DURATIONS_SEC,
-    readMaskedConfig,
-    writeConfig,
-    generateMedia,
-    mediaTasks: mediaTaskStore.mediaTasks,
-    createMediaTask: mediaTaskStore.createMediaTask,
-    persistMediaTask: mediaTaskStore.persistMediaTask,
-    appendTaskProgress: mediaTaskStore.appendTaskProgress,
-    notifyTaskWaiters: mediaTaskStore.notifyTaskWaiters,
-    getLiveMediaTask: mediaTaskStore.getLiveMediaTask,
-    mediaTaskSnapshot: mediaTaskStore.mediaTaskSnapshot,
-    listMediaTasksByProject,
-    listElevenLabsVoiceOptions,
-  };
   const appConfigDeps = { readAppConfig, writeAppConfig };
   const orbitDeps = { orbitService };
   const nativeDialogDeps = { openBrowser, openNativeFolderDialog };
@@ -2671,26 +2469,8 @@ export async function startServer({
     requestRunOverride,
     verifyDesktopImportToken,
   };
-  const finalizeDeps = {
-    defaultBaseUrlForFinalizeProtocol,
-    finalizeDesignPackage,
-    FinalizePackageLockedError,
-    FinalizeUpstreamError,
-    isFinalizeProviderProtocol,
-    redactSecrets,
-  };
-  const handoffDeps = {
-    synthesizeHandoffPrompt,
-    FinalizeUpstreamError,
-    TranscriptExportLockedError,
-    EmptyTranscriptError,
-    redactSecrets,
-  };
-  const validationDeps = { isSafeId, validateExternalApiBaseUrl, validateBaseUrl, validateProjectDesignSystemId, validateProjectSkillId };
+  const validationDeps = { isSafeId, validateProjectDesignSystemId, validateProjectSkillId };
   const agentDeps = {
-    listProviderModels,
-    testProviderConnection,
-    testAgentConnection,
     getAgentDef,
     isKnownModel,
     sanitizeCustomModel,
@@ -2708,10 +2488,6 @@ export async function startServer({
     http: httpDeps,
     paths: pathDeps,
     mcp: { pendingAuth: mcpPendingAuth, daemonUrlRef },
-  });
-  registerXaiRoutes(app, {
-    http: httpDeps,
-    paths: pathDeps,
   });
   // Project workspace
   registerActiveContextRoutes(app, {
@@ -2932,31 +2708,12 @@ export async function startServer({
     deploy: deployDeps,
     projectStore: projectStoreDeps,
   });
-  registerFinalizeRoutes(app, {
-    db,
-    http: httpDeps,
-    paths: pathDeps,
-    projectStore: projectStoreDeps,
-    validation: validationDeps,
-    finalize: finalizeDeps,
-  });
-  registerHandoffRoutes(app, {
-    db,
-    http: httpDeps,
-    paths: pathDeps,
-    projectStore: projectStoreDeps,
-    conversations: conversationDeps,
-    validation: validationDeps,
-    handoff: handoffDeps,
-  });
   registerDeploymentCheckRoutes(app, { db, http: httpDeps, deploy: deployDeps });
   app.use('/frames', express.static(FRAMES_DIR));
   registerProjectExportRoutes(app, {
     db,
     http: httpDeps,
     paths: pathDeps,
-    node: nodeDeps,
-    ids: idDeps,
     projectStore: projectStoreDeps,
     exports: projectExportDeps,
     projectFiles: projectFileDeps,
@@ -2973,30 +2730,6 @@ export async function startServer({
     documents: { buildDocumentPreview },
     artifacts: artifactDeps,
     projectPreviewScopes,
-  });
-
-  registerMediaRoutes(app, {
-    db,
-    design,
-    http: httpDeps,
-    paths: pathDeps,
-    ids: idDeps,
-    auth: authDeps,
-    media: mediaDeps,
-    appConfig: appConfigDeps,
-    orbit: orbitDeps,
-    nativeDialogs: nativeDialogDeps,
-    projectStore: projectStoreDeps,
-    projectFiles: projectFileDeps,
-    conversations: conversationDeps,
-    research: researchDeps,
-  });
-
-  registerVelaRoutes(app, {
-    paths: { RUNTIME_DATA_DIR },
-    appConfig: { readAppConfig },
-    http: { getPublicBaseUrl },
-    env: process.env,
   });
 
   const pluginRouteHelpers = {
@@ -3305,8 +3038,6 @@ export async function startServer({
     sessionMode,
     connectedExternalMcp,
     appliedPluginSnapshotId,
-    mediaExecution,
-    byokMediaDefaults,
   }) => {
     const project =
       typeof projectId === 'string' && projectId
@@ -3637,21 +3368,6 @@ export async function startServer({
       metadata?.kind === 'template' && typeof metadata.templateId === 'string'
         ? (getTemplate(db, metadata.templateId) ?? undefined)
         : undefined;
-    let audioVoiceOptions = [];
-    let audioVoiceOptionsError;
-    if (
-      metadata?.kind === 'audio' &&
-      metadata?.audioKind === 'speech' &&
-      metadata?.audioModel === 'elevenlabs-v3' &&
-      !metadata?.voice
-    ) {
-      try {
-        audioVoiceOptions = await listElevenLabsVoiceOptions(PROJECT_ROOT, { limit: 100 });
-      } catch (err) {
-        audioVoiceOptionsError = err && err.message ? err.message : String(err);
-        console.warn('[elevenlabs] voice option lookup failed:', audioVoiceOptionsError);
-      }
-    }
 
     // Thread the critique config plus the active design-system / skill data
     // into the composer when critique is enabled. Without this the spawned
@@ -3702,31 +3418,21 @@ export async function startServer({
     // the spawn path routes runs through runOrchestrator(...) only when the
     // SAME flag is true, so prompt and orchestrator stay in lockstep.
     //
-    // Non-plain adapters (claude-stream-json, copilot-stream-json,
-    // json-event-stream, acp-json-rpc, pi-rpc) emit their own wrapper
+    // Non-plain adapters (claude-stream-json, copilot-stream-json)
+    // emit their own wrapper
     // protocol; the v1 critique parser only understands plain stdout. The
     // spawn path falls through to legacy generation for those, so the
     // panel addendum has to be suppressed here too: otherwise the model
     // is instructed to emit Critique Theater tags that no orchestrator
     // consumes.
-    const resolvedExclusiveSurface = resolveExclusiveSurface({
-      metadata,
-      skillMode,
-      skillModes: skillModes.size > 0 ? Array.from(skillModes) : undefined,
-    });
-    const isMediaSurface =
-      resolvedExclusiveSurface === 'image'
-      || resolvedExclusiveSurface === 'video'
-      || resolvedExclusiveSurface === 'audio';
     const isPlainAdapter = (streamFormat ?? 'plain') === 'plain';
     const critiqueShouldRun = critiqueEnabledForRun
       && critiqueBrand !== undefined
       && critiqueSkill !== undefined
-      && !isMediaSurface
       && isPlainAdapter;
     // Only thread the critique fields when the run is actually eligible;
     // otherwise the composer's own internal eligibility check (cfg.enabled
-    // && brand && skill && !isMediaSurface) might still fire on
+    // && brand && skill) might still fire on
     // non-plain adapters and we'd emit the panel for a run the orchestrator
     // skips. Gating the threading itself keeps composer + orchestrator in
     // exact lockstep regardless of which side enforces eligibility.
@@ -3780,7 +3486,6 @@ export async function startServer({
 
     const prompt = composeSystemPrompt({
       agentId,
-      includeCodexImagegenOverride: false,
       skillBody,
       skillName,
       skillMode,
@@ -3799,8 +3504,6 @@ export async function startServer({
       memoryHooks,
       metadata,
       template,
-      audioVoiceOptions,
-      audioVoiceOptionsError,
       // critiqueCfg.enabled is loaded from OD_CRITIQUE_ENABLED only, so a
       // run that the resolver enabled via phase / project / skill (env
       // unset) would have critiqueShouldRun = true while critiqueCfg.enabled
@@ -3815,8 +3518,6 @@ export async function startServer({
       critiqueSkill: critiqueShouldRun ? critiqueSkill : undefined,
       locale: typeof locale === 'string' ? locale : undefined,
       sessionMode: normalizeConversationSessionMode(sessionMode),
-      mediaExecution,
-      byokMediaDefaults,
       streamFormat,
       executionProfile: executionProfileFromStreamFormat(streamFormat),
       connectedExternalMcp: Array.isArray(connectedExternalMcp)
@@ -3953,8 +3654,6 @@ export async function startServer({
       research,
       context,
       titleGeneration,
-      byokProvider,
-      byokMediaDefaults,
     } = chatBody;
     lifecycle.mark('prompt_build_start');
     if (typeof projectId === 'string' && projectId) run.projectId = projectId;
@@ -3993,19 +3692,6 @@ export async function startServer({
       );
     if (!def.bin)
       return design.runs.fail(run, 'AGENT_UNAVAILABLE', 'agent has no binary');
-    const byokOpenCodeProvider = def.id === 'byok-opencode'
-      ? buildOpenCodeByokProviderConfig(
-          byokProvider,
-          typeof model === 'string' ? model : null,
-        )
-      : null;
-    if (def.id === 'byok-opencode' && !byokOpenCodeProvider) {
-      return design.runs.fail(
-        run,
-        'BYOK_PROVIDER_REQUIRED',
-        'BYOK OpenCode requires a provider, API key, and model for this run.',
-      );
-    }
     // Validate the checked-in `inactivityTimeoutMs` hint immediately
     // after the runtime def is selected and before any side-effectful
     // setup (auto-memory extract, `.mcp.json` write/unlink,
@@ -4037,17 +3723,6 @@ export async function startServer({
       safeCommentAttachments.length === 0
     ) {
       return design.runs.fail(run, 'BAD_REQUEST', 'message required');
-    }
-    const browserUseRunState = buildBrowserUseRunState({
-      requested: isBrowserUseRequested(message, currentPrompt, systemPrompt),
-      agentId: def.id,
-    });
-    if (browserUseRunState) {
-      run.browserUse = browserUseRunState;
-      design.runs.emit(run, 'diagnostic', {
-        type: 'browser_use_unavailable',
-        ...browserUseRunState,
-      });
     }
     if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
     const runId = run.id;
@@ -4121,11 +3796,6 @@ export async function startServer({
         'Failed to read one or more image attachments.',
       );
     }
-    const amrStagedImages =
-      def.id === 'amr'
-        ? await stageAmrImagePaths(cwd ?? PROJECT_ROOT, safeImages, UPLOAD_DIR)
-        : safeImages;
-
     // Project-scoped attachments: project-relative paths inside cwd. Each
     // is run through the same path-traversal guard the file CRUD endpoints
     // use, then existence-checked. Whatever survives shows up as an
@@ -4288,8 +3958,6 @@ export async function startServer({
         locale,
         sessionMode: runSessionMode,
         connectedExternalMcp,
-        mediaExecution: run?.mediaExecution,
-        byokMediaDefaults,
         // Plan §3.M2 / §3.V1 — forward the run's snapshot id so the
         // prompt composer can splice in `## Active stage` blocks.
         // Default ON; set OD_BUNDLED_ATOM_PROMPTS=0 to opt out.
@@ -4312,13 +3980,10 @@ export async function startServer({
     //      path inside its working directory. We copy (not symlink) so
     //      each staged directory is a true write barrier — agents cannot
     //      mutate the shipped repo resource through their cwd.
-    //   2. `--add-dir` allowlist. For non-Codex agents, pass `SKILLS_DIR`
+    //   2. `--add-dir` allowlist. Pass `SKILLS_DIR`
     //      and `DESIGN_SYSTEMS_DIR` so the absolute fallback path in the
     //      preamble is reachable when staging fails (e.g. the project has
-    //      no on-disk cwd, or fs.cp errored). Codex treats `--add-dir`
-    //      entries as writable, so Codex receives only the narrow
-    //      `${CODEX_HOME:-$HOME/.codex}/generated_images` output folder
-    //      for allowlisted gpt-image image projects.
+    //      no on-disk cwd, or fs.cp errored).
     //   3. PROJECT_ROOT cwd. When `cwd` is null, the agent runs with
     //      `cwd: PROJECT_ROOT` — there the absolute path is already an
     //      in-cwd path, so neither (1) nor (2) is required for it to
@@ -4345,7 +4010,7 @@ export async function startServer({
     }
     // Resolve the agent's effective working directory once and use it
     // everywhere the agent could read it (buildArgs runtimeContext, spawn
-    // cwd, ACP session new). Falling back to PROJECT_ROOT — rather than
+    // cwd). Falling back to PROJECT_ROOT — rather than
     // letting `spawn` inherit the daemon process cwd — is what makes the
     // absolute-path fallback in the skill preamble actually in-cwd for
     // no-project runs (packaged daemons / service launches do not start
@@ -4415,34 +4080,11 @@ export async function startServer({
         metadata: projectRecord?.metadata,
       });
     };
-    let codexGeneratedImagesDir = resolveCodexGeneratedImagesDir(
-      agentId,
-      projectRecord?.metadata,
-      process.env,
-      os.homedir(),
-      run?.mediaExecution,
-    );
-    if (codexGeneratedImagesDir) {
-      codexGeneratedImagesDir = validateCodexGeneratedImagesDir(
-        codexGeneratedImagesDir,
-        {
-          protectedDirs: [SKILLS_DIR, DESIGN_SYSTEMS_DIR, ...linkedDirs],
-        },
-      );
-    }
     const extraAllowedDirs = resolveChatExtraAllowedDirs({
       agentId,
       skillsDir: SKILLS_DIR,
       designSystemsDir: DESIGN_SYSTEMS_DIR,
       linkedDirs,
-      codexGeneratedImagesDir,
-    });
-    const codexImagegenOverride = resolveGrantedCodexImagegenOverride({
-      agentId,
-      metadata: projectRecord?.metadata,
-      codexGeneratedImagesDir,
-      extraAllowedDirs,
-      mediaExecution: run?.mediaExecution,
     });
     const researchCommandContract = resolveResearchCommandContract(
       research,
@@ -4452,26 +4094,16 @@ export async function startServer({
     // keep working memory across turns. Decide once per run; reuse for the
     // prompt-composition skipTranscript choice, the buildArgs flags, and the
     // create-turn persistence below.
-    const agentSupportsSessionResume =
-      def.resumesSessionViaCli === true ||
-      def.streamFormat === 'pi-rpc' ||
-      def.resumesSessionViaAcpLoad === true;
-    // Capture-style adapters (codex) mint their OWN session id and report it on
-    // the stream; the daemon captures it here and persists THAT as the resume
-    // handle instead of `agentResumeCtx.newSessionId` (which such CLIs ignore).
-    // Set from the `status` event's `sessionId` in `sendAgentEvent` below.
-    const agentCapturesSessionId = def.capturesSessionIdFromStream === true;
-    let capturedSessionId: string | null = null;
+    const agentSupportsSessionResume = def.resumesSessionViaCli === true;
     // --- Model resolution hoisted above the resume-identity guard ---
     // The guard (and the persisted `agent_sessions.model`) must key off the
     // CONCRETE model actually launched, not the raw request token: a user who
     // picked `default` would otherwise store `default`/null, so changing the
     // effective default between turns would still pass the guard and resume the
     // old upstream session under the wrong model (#4704, reported by @nettee).
-    // resolveModelForAgent is hoisted here; the AMR `default`->live-catalog
-    // rewrite is mirrored below so `safeModel` is final before the guard. The
-    // preflight further down stays authoritative for auth/availability and
-    // re-runs the (cached, idempotent) resolution.
+    // resolveModelForAgent is hoisted here so `safeModel` is final before the
+    // guard. The preflight further down stays authoritative for
+    // auth/availability and re-runs the (cached, idempotent) resolution.
     let configuredAgentEnv = {};
     try {
       const appConfig = await readAppConfig(RUNTIME_DATA_DIR);
@@ -4479,22 +4111,13 @@ export async function startServer({
     } catch {
       configuredAgentEnv = {};
     }
-    const requestedLiveModelScope = def.id === 'amr'
-      ? resolveAmrProfile({
-          ...process.env,
-          ...(def.env || {}),
-          ...configuredAgentEnv,
-        })
-      : null;
     let safeModel = resolveModelForAgent(
       def,
       typeof model === 'string'
-        ? isKnownModel(def, model, requestedLiveModelScope)
+        ? isKnownModel(def, model)
           ? model
           : sanitizeCustomModel(model)
         : null,
-      process.env,
-      requestedLiveModelScope,
     );
     const safeReasoning =
       typeof reasoning === 'string' && Array.isArray(def.reasoningOptions)
@@ -4503,33 +4126,6 @@ export async function startServer({
     const agentOptions = { model: safeModel, reasoning: safeReasoning };
     const agentLaunch = resolveAgentLaunch(def, configuredAgentEnv);
     const resolvedBin = agentLaunch.selectedPath;
-    if (def.id === 'amr' && resolvedBin && agentLaunch.launchPath) {
-      // Concretize a default/empty model to the live catalog's first entry, the
-      // same rewrite the AMR preflight applies — done here only so the resume
-      // guard sees the launched model. Read-only + cached (hot on follow-up
-      // turns); the preflight below remains the authoritative gate.
-      try {
-        const resumeProbe = await resolveAmrModelProbe({ dataDir: RUNTIME_DATA_DIR, env: process.env, readAppConfig });
-        const resumeCatalog = await amrModelLoadingCache.get(resumeProbe.cacheKey, {
-          fetchPreset: () => fetchVelaPresetModels(resumeProbe.launchPath, resumeProbe.env),
-          fetchRemote: () => fetchVelaRemoteModelsWithRetry(resumeProbe.launchPath, resumeProbe.env),
-        });
-        const resumeLiveModels = preferFreshLiveModels(
-          resumeCatalog.models ?? [],
-          getRememberedLiveModels(def.id, requestedLiveModelScope),
-        );
-        const resumeModelIds = new Set(resumeLiveModels.map((c) => c?.id).filter(Boolean));
-        const askedForDefault =
-          typeof model !== 'string' || !model.trim() || model.trim().toLowerCase() === 'default';
-        if (!safeModel || safeModel === 'default' || (askedForDefault && !resumeModelIds.has(safeModel))) {
-          safeModel = resumeLiveModels[0]?.id ?? safeModel ?? null;
-          agentOptions.model = safeModel;
-        }
-      } catch {
-        // Degrade silently: keep the requested value. The preflight below records
-        // the probe failure and applies the identical fallback.
-      }
-    }
     const agentResumeCtx =
       agentSupportsSessionResume && run.conversationId
         ? resolveAgentResumeContext(db, {
@@ -4574,7 +4170,6 @@ export async function startServer({
       storedStablePromptHash: agentResumeCtx.storedStablePromptHash,
       currentStableHash,
     });
-    const browserUsePromptGuard = renderBrowserUseUnavailablePrompt(run.browserUse ?? null);
     const titleGenerationRequested =
       titleGeneration &&
       typeof titleGeneration === 'object' &&
@@ -4590,8 +4185,8 @@ export async function startServer({
         ].join('\n')
       : '';
     const clientInstructionParts = includeStableInstructions
-      ? [researchCommandContract, runContextPrompt, browserUsePromptGuard, titleGenerationPrompt, systemPrompt]
-      : [researchCommandContract, runContextPrompt, browserUsePromptGuard, titleGenerationPrompt];
+      ? [researchCommandContract, runContextPrompt, titleGenerationPrompt, systemPrompt]
+      : [researchCommandContract, runContextPrompt, titleGenerationPrompt];
     const clientInstructionPrompt = clientInstructionParts
       .map((part) => (typeof part === 'string' ? part.trim() : ''))
       .filter(Boolean)
@@ -4600,7 +4195,6 @@ export async function startServer({
       daemonSystemPrompt: includeStableInstructions ? daemonSystemPrompt : '',
       runtimeToolPrompt: includeStableInstructions ? runtimeToolPrompt : '',
       clientSystemPrompt: clientInstructionPrompt,
-      finalPromptOverride: codexImagegenOverride,
     });
     // Some models (notably claude-opus-4-7 with --include-partial-messages)
     // start their reply by echoing the top of the user message verbatim,
@@ -4623,11 +4217,7 @@ export async function startServer({
         : formIdForOverride !== null
           ? FORM_ANSWERED_GENERIC_OVERRIDE
           : '';
-    const promptImagePaths = selectPromptImagePaths(
-      def.id,
-      safeImages,
-      amrStagedImages,
-    );
+    const promptImagePaths = safeImages;
     const composed = [
       instructionPrompt
         ? `# Instructions (read first)\n\n${formOverride}${instructionPrompt}${cwdHint}${linkedDirsHint}${ECHO_GUARD}\n\n---\n`
@@ -4654,7 +4244,6 @@ export async function startServer({
         { kind: 'runtimeToolPrompt', content: runtimeToolPrompt },
         { kind: 'researchCommandContract', content: researchCommandContract },
         { kind: 'runContextPrompt', content: runContextPrompt },
-        { kind: 'browserUsePromptGuard', content: browserUsePromptGuard },
         { kind: 'clientSystemPrompt', content: clientInstructionPrompt },
         { kind: 'echoGuard', content: ECHO_GUARD },
         { kind: 'userRequest', content: userRequestPrompt },
@@ -4692,7 +4281,7 @@ export async function startServer({
     });
     lifecycle.mark('prompt_build_end');
     lifecycle.mark('launch_preflight_start');
-    // (model resolution + AMR concretization hoisted above the resume guard)
+    // (model resolution hoisted above the resume guard)
     const executionProfile = executionProfileFromStreamFormat(def.streamFormat);
     // Accumulates the agent's visible text this run so the close handler can
     // tell whether the turn ended on a clarifying question form. The
@@ -4814,7 +4403,6 @@ export async function startServer({
       run.status = 'queued';
       run.updatedAt = Date.now();
       run.child = null;
-      run.acpSession = null;
       run.exitCode = null;
       run.signal = null;
       run.error = null;
@@ -4984,9 +4572,7 @@ export async function startServer({
       );
       const liveSessionId = agentResumeCtx.isResuming
         ? agentResumeCtx.resumeSessionId
-        : agentCapturesSessionId
-          ? capturedSessionId
-          : agentResumeCtx.newSessionId;
+        : agentResumeCtx.newSessionId;
       const resumableFailure =
         result === 'failed' &&
         def.resumesSessionViaCli === true &&
@@ -5035,32 +4621,22 @@ export async function startServer({
       design.runs.finish(run, status, code, signal);
       return false;
     };
-    const mcpServers = buildLiveArtifactsMcpServersForAgent(def, {
-      enabled: Boolean(toolTokenGrant?.token),
-      command: process.execPath,
-      argsPrefix: [OD_BIN],
-    });
-
     // External MCP servers configured by the user in Settings → External MCP.
     // Open Design relays them to the agent so the model can call those tools.
-    // Two delivery shapes today:
+    // Delivery shape today:
     //   - Claude Code: write a `.mcp.json` into the project cwd. Claude Code
     //     auto-loads that file at spawn (same format the CLI accepts via
     //     `claude mcp add` + Claude Desktop's config). Fire-and-forget; we
     //     deliberately do NOT block spawn on a write failure since the agent
     //     can still run without external tools — log a warning and continue.
-    //   - ACP agents (Hermes/Kimi): merge stdio entries into the existing
-    //     `mcpServers` array; SSE/HTTP entries are skipped because ACP's
-    //     stdio-only descriptor can't represent them yet.
-    // Other agents (Codex, Gemini, OpenCode, Cursor, Qwen, Qoder, Copilot,
-    // Pi, DeepSeek) inherit the user's per-CLI MCP config from their own
-    // home dir for now — a future change can grow this list.
+    // Other agents (Copilot) inherit the user's per-CLI MCP config from their
+    // own home dir for now — a future change can grow this list.
     //
     // The MCP config + OAuth tokens were resolved earlier (above
     // composeDaemonSystemPrompt) so the system prompt could mention any
     // already-authenticated servers; we reuse `enabledExternalMcp` and
-    // `oauthTokensForSpawn` here for the Claude `.mcp.json` write +
-    // ACP merge so we don't pay for a second filesystem read.
+    // `oauthTokensForSpawn` here for the Claude `.mcp.json` write
+    // so we don't pay for a second filesystem read.
     //
     // Claude Code: write `.mcp.json` to the daemon-managed project cwd before
     // spawn so Claude Code auto-loads the user's external MCP servers. Strict
@@ -5073,9 +4649,7 @@ export async function startServer({
     // since disabled all servers, so removing a server actually takes effect
     // on the next run.
     // Dispatch on `def.externalMcpInjection` rather than hard-coding agent
-    // id / stream-format checks. The three branches are functionally
-    // equivalent to the previous shape (claude/acp), with the OpenCode
-    // env-content branch added to fix #2142. Runtimes that leave the field
+    // id / stream-format checks. Runtimes that leave the field
     // undefined fall through unchanged — the settings UI surfaces an
     // explicit "external MCP is not forwarded to <agent>" banner for them
     // so the previous silent-failure UX is gone.
@@ -5119,48 +4693,8 @@ export async function startServer({
         }
       }
     }
-    if (
-      enabledExternalMcp.length > 0 &&
-      def.externalMcpInjection === 'acp-merge'
-    ) {
-      const acpExternal = buildAcpMcpServers(enabledExternalMcp);
-      mcpServers.push(...acpExternal);
-    }
-    // OpenCode: serialise enabled MCP servers into its `mcp` config schema
-    // and hand the JSON to the child via `OPENCODE_CONFIG_CONTENT`. The env
-    // var is *merged* with the user's saved `~/.config/opencode/opencode
-    // .json` (per OpenCode's documented config layering), so adding a
-    // server here does not erase whatever the user already has in their
-    // global config. We deliberately leave the env unset when no servers
-    // are enabled — overwriting with `{}` would wipe the user's saved
-    // mcp section for this single invocation, which is exactly the kind
-    // of surprise the previous silent-failure UX taught us to avoid.
-    let opencodeConfigContent: string | null = null;
-    const isOpenCodeContent = def.externalMcpInjection === 'opencode-env-content';
-    const isMiMoContent = def.externalMcpInjection === 'mimo-env-content';
-    if (isOpenCodeContent || isMiMoContent) {
-      try {
-        opencodeConfigContent = buildOpenCodeMcpConfigContent(
-          enabledExternalMcp,
-          oauthTokensForSpawn,
-          {
-            allowedDirectories: [effectiveCwd, ...extraAllowedDirs],
-            ...(byokOpenCodeProvider
-              ? { extraConfig: byokOpenCodeProvider.config }
-              : {}),
-          },
-        );
-      } catch (err) {
-        console.warn(
-          '[mcp-config] failed to build OPENCODE_CONFIG_CONTENT:',
-          err && err.message ? err.message : err,
-        );
-      }
-    }
-
     // Pre-flight the composed prompt against any argv-byte budget the
-    // adapter declared (only DeepSeek TUI today — its CLI doesn't accept
-    // a `-` stdin sentinel, so the prompt has to ride argv). Doing this
+    // adapter declared. Doing this
     // before bin resolution means the test harness pins the guard
     // independently of whether the adapter binary happens to be on PATH
     // in the CI environment, and the user gets the actionable
@@ -5179,235 +4713,12 @@ export async function startServer({
       return design.runs.finish(run, 'failed', 1, null);
     }
 
-    let mmdRouteLaunchEnv = null;
-    if (def.id === 'claude' && safeModel) {
-      mmdRouteLaunchEnv = await loadMmdRouteLaunchEnv(
-        {
-          ...process.env,
-          ...(def.env || {}),
-          ...configuredAgentEnv,
-        },
-        safeModel,
-      ).catch(() => null);
-    }
-
     // agentLaunch / resolvedBin are resolved above the resume guard (hoisted).
-    // Hoisted above the AMR catalog preflight: the empty-catalog branch
-    // below calls `sendAmrAccountFailure(...)` to surface AMR_AUTH_REQUIRED
-    // for signed-out users, and a `const` declared later in the same outer
-    // function scope would hit a TDZ ReferenceError before initialization.
-    const sendAmrAccountFailure = (failure) => {
-      send('error', createSseErrorPayload(
-        failure.code,
-        failure.message,
-        {
-          retryable: false,
-          details: amrAccountFailureDetails(failure),
-        },
-      ));
-    };
 
-    if (def.id === 'amr' && resolvedBin && agentLaunch.launchPath) {
-      const launchPath = agentLaunch.launchPath ?? resolvedBin;
-      const modelProbeEnv = launchPath
-        ? applyAgentLaunchEnv(
-            spawnEnvForAgent(
-              def.id,
-              {
-                ...createAgentRuntimeEnv(process.env, daemonUrl, toolTokenGrant),
-                ...(def.env || {}),
-              },
-              configuredAgentEnv,
-              undefined,
-              { resolvedBin: agentLaunch.selectedPath },
-            ),
-            agentLaunch,
-          )
-        : null;
-      const amrModelScope = resolveAmrProfile(modelProbeEnv ?? process.env);
-      // Resolve the AMR model catalog through the SAME shared cache the UI's
-      // `/api/amr/models` endpoint serves (AmrModelLoadingCache): a cached
-      // authoritative `vela model list` when it is hot, otherwise the offline
-      // `vela model preset` seed while a remote refresh runs in the background.
-      //
-      // Why not a fresh `vela model list` per run: that authoritative call
-      // needs network reachability to the AMR gateway AND `$HOME` (the offline
-      // `preset`/`--version` calls need neither), takes up to ~10s, and only
-      // retries a narrow set of network errors. Running it blocking on every
-      // turn turned any transient gateway/timeout/HOME hiccup into a hard
-      // "AMR model … is not available from Vela" — even for a logged-in user
-      // who already picked a real model the picker surfaced from the preset
-      // seed. Under CorpLink/飞连 the call routinely exceeded the timeout, so
-      // AMR became unusable in packaged nightlies. Reusing the cache keeps that
-      // blocking probe off the per-run hot path and degrades to preset instead
-      // of fail-closing; vela's own `session/set_model` remains the final gate.
-      let liveModels = [];
-      try {
-        const probe = await resolveAmrModelProbe({ dataDir: RUNTIME_DATA_DIR, env: process.env, readAppConfig });
-        const catalog = await amrModelLoadingCache.get(probe.cacheKey, {
-          fetchPreset: () => fetchVelaPresetModels(probe.launchPath, probe.env),
-          fetchRemote: () => fetchVelaRemoteModelsWithRetry(probe.launchPath, probe.env),
-        });
-        liveModels = catalog.models ?? [];
-      } catch (error) {
-        // Do not swallow silently: a probe failure here is exactly what made
-        // the packaged AMR breakage undiagnosable (the old `catch {}` left no
-        // trace in any log or diagnostics bundle). Record it and degrade to the
-        // remembered catalog below.
-        console.warn('[amr] model catalog preflight probe failed', error);
-        liveModels = [];
-      }
-      const rememberedLiveModels = getRememberedLiveModels(def.id, amrModelScope);
-      if (liveModels.length > 0) {
-        rememberLiveModels(def.id, liveModels, amrModelScope);
-      }
-      liveModels = preferFreshLiveModels(liveModels, rememberedLiveModels);
-      const liveModelIds = new Set(
-        liveModels.map((candidate) => candidate?.id).filter(Boolean),
-      );
-      // A request that came in as 'default'/empty is normally pre-resolved to a
-      // concrete id via the agent-wide cached model order; if it still is not,
-      // adopt the first catalog entry so the spawn layer always has a real id.
-      const userAskedForDefault =
-        typeof model !== 'string' ||
-        !model.trim() ||
-        model.trim().toLowerCase() === 'default';
-      if (
-        !safeModel ||
-        safeModel === 'default' ||
-        (userAskedForDefault && !liveModelIds.has(safeModel))
-      ) {
-        safeModel = liveModels[0]?.id ?? safeModel ?? null;
-        agentOptions.model = safeModel;
-      }
-      if (liveModelIds.size === 0) {
-        // The catalog is genuinely empty: even the offline preset seed could
-        // not be read, which almost always means the user is signed out (`vela`
-        // catalog calls 401) or the CLI is unrunnable. Prefer the relogin
-        // affordance over a misleading "choose a model".
-        if (def.id === 'amr') {
-          const loginStatus = readVelaLoginStatus(
-            modelProbeEnv ?? process.env,
-            configuredAgentEnv,
-          );
-          if (!loginStatus.loggedIn) {
-            sendAmrAccountFailure({
-              code: 'AMR_AUTH_REQUIRED',
-              message:
-                'AMR sign-in is required. Sign in to AMR Cloud again, then retry this run.',
-              action: 'relogin',
-            });
-            return design.runs.finish(run, 'failed', 1, null);
-          }
-        }
-        // Logged in but no catalog at all AND no resolvable model: only now is
-        // there nothing safe to forward, so surface the model error.
-        if (!safeModel) {
-          send('error', createAmrModelUnavailablePayload(safeModel, {
-            reason: 'model_catalog_unavailable',
-          }));
-          return design.runs.finish(run, 'failed', 1, null);
-        }
-        // Otherwise fall through with the user's selected model and let vela's
-        // `session/set_model` be the authoritative gate.
-      } else if (!safeModel) {
-        // Catalog known but we could not resolve any model id to forward.
-        send('error', createAmrModelUnavailablePayload(
-          typeof model === 'string' && model.trim() ? model : safeModel,
-          { availableModels: [...liveModelIds] },
-        ));
-        return design.runs.finish(run, 'failed', 1, null);
-      }
-      // NOTE: when the selected model is absent from the (possibly preset-only
-      // or stale) catalog we intentionally do NOT fail-close. The cached/preset
-      // catalog can lag the live one, and a logged-in user picked a concrete
-      // id; vela rejects a truly unsupported model at `session/set_model` with
-      // a precise error, which beats a pre-emptive block on a flaky metadata read.
-    }
-
-    // Plain-streaming adapters that own a "continue most recent
-    // conversation" CLI flag (today: only `agy -c`) read this signal
-    // to resume upstream session state on follow-up turns. The query
-    // matches any persisted assistant message in the same conversation
-    // EXCEPT the placeholder row this run just inserted (it's still
-    // `pending` and has no body — counting it as prior would always
-    // force `-c` on the very first turn). Adapters that don't consume
-    // this field ignore it.
-    const hasPriorAssistantTurn = run.conversationId
-      ? Boolean(
-          db
-            .prepare(
-              `SELECT 1 FROM messages
-               WHERE conversation_id = ?
-                 AND role = 'assistant'
-                 AND COALESCE(content, '') <> ''
-                 AND id <> COALESCE(?, '')
-               LIMIT 1`,
-            )
-            .get(run.conversationId, run.assistantMessageId ?? ''),
-        )
-      : false;
-
-    // Antigravity's `agy` is silent on stdout/stderr in print mode for
-    // both auth-missing and quota-exhausted failures — the actual
-    // RESOURCE_EXHAUSTED / "not logged in" payload only surfaces in
-    // its `--log-file`. We allocate a per-run temp path, pipe agy's
-    // log to it via buildArgs, then read it in the empty-output guard
-    // to disambiguate the silent-failure cause. Other adapters ignore
-    // this field.
-    const agentLogFilePath =
-      def.id === 'antigravity'
-        ? path.join(os.tmpdir(), `od-agy-${run.id}.log`)
-        : undefined;
     const promptFile = await preparePromptFileForAgent(def, composed, run.id);
     const cleanupPromptFile = () => {
       if (promptFile) promptFile.cleanup().catch(() => {});
     };
-
-    // Codex CLI parses config.toml before processing any -c overrides. An
-    // invalid `service_tier` value (the Codex app has written "priority",
-    // "default", and other values the CLI rejects) causes an immediate parse
-    // error and exit-1 before any work starts. Normalize it in-place — any
-    // value outside {fast,flex} has its line removed so the CLI uses its
-    // built-in default — so the launch succeeds. Errors are silently swallowed
-    // — a missing or read-only config.toml is fine, and the Codex CLI still
-    // surfaces the original error if the write fails. See issue #4276 / #3408.
-    if (def.id === 'codex') {
-      const { normalizeCodexConfigFile } = await import('./codex-config-normalize.js');
-      // Route through spawnEnvForAgent so resolveCodexConfigPath sees the same
-      // fully-expanded CODEX_HOME the Codex child process will see. In
-      // particular, spawnEnvForAgent calls expandConfiguredEnv which expands
-      // `~/` / `~\` prefixes — a user-configured CODEX_HOME="~/.codex-alt"
-      // would otherwise resolve to the literal path "~/.codex-alt/config.toml"
-      // in the normalizer while the child resolves it to the absolute path,
-      // leaving the real config untouched. Mirrors the diagnostics-export.ts
-      // `envFor('codex')` pattern. See issue #4276.
-      await normalizeCodexConfigFile(
-        spawnEnvForAgent('codex', process.env, configuredAgentEnv),
-      );
-    }
-
-    // Serialize antigravity spawns whose buildArgs writes a concrete
-    // model into settings.json. Two concurrent runs with different
-    // models would otherwise race the file: A writes model A, B writes
-    // model B, then A's agy reads model B. The lock is acquired BEFORE
-    // buildArgs (which performs the write) and released asynchronously
-    // AFTER agy's --log-file confirms the model was propagated. See
-    // `antigravity.ts` for the chain implementation.
-    let antigravityModelLockRelease: (() => void) | null = null;
-    const antigravityConcreteModel =
-      def.id === 'antigravity'
-      && typeof agentOptions.model === 'string'
-      && agentOptions.model.length > 0
-      && agentOptions.model !== 'default'
-        ? agentOptions.model
-        : null;
-    if (antigravityConcreteModel) {
-      const { acquireAntigravityModelLock } = await import(
-        './runtimes/defs/antigravity.js'
-      );
-      antigravityModelLockRelease = await acquireAntigravityModelLock();
-    }
 
     let args;
     try {
@@ -5418,8 +4729,6 @@ export async function startServer({
         agentOptions,
         {
           cwd: effectiveCwd,
-          hasPriorAssistantTurn,
-          agentLogFilePath,
           promptFilePath: promptFile?.path,
           resumeSessionId: agentResumeCtx.resumeSessionId,
           newSessionId: agentResumeCtx.newSessionId,
@@ -5432,7 +4741,7 @@ export async function startServer({
     // Second-pass budget check that knows about the Windows `.cmd` shim
     // wrap. The pre-buildArgs `checkPromptArgvBudget` only looks at the
     // raw composed prompt; on Windows an npm-installed adapter resolves
-    // to e.g. `deepseek.cmd`, the spawn path goes through `cmd.exe /d /s
+    // to a `.cmd` shim, the spawn path goes through `cmd.exe /d /s
     // /c "<inner>"`, and `quoteForWindowsCmdShim` doubles every embedded
     // `"` plus wraps any whitespace/special-char arg in outer quotes —
     // so a quote-heavy prompt that fit under `maxPromptArgBytes` can
@@ -5458,8 +4767,8 @@ export async function startServer({
       return design.runs.finish(run, 'failed', 1, null);
     }
 
-    // Companion guard for non-shim Windows installs (e.g. a cargo-built
-    // `deepseek.exe` rather than the npm `.cmd` shim). Direct `.exe`
+    // Companion guard for non-shim Windows installs (a direct `.exe`
+    // rather than the npm `.cmd` shim). Direct `.exe`
     // spawns skip the cmd.exe wrap above, but Node/libuv still composes
     // a CreateProcess `lpCommandLine` by walking each argv element
     // through `quote_cmd_arg`, which escapes every embedded `"` as `\"`
@@ -5492,15 +4801,9 @@ export async function startServer({
       persistDeliveredAgentSessionState = () => {
         if (persisted) return;
         persisted = true;
-        // The id to persist for a create turn: capture-style adapters store the
-        // session id the CLI minted and reported on the stream; specify-style
-        // adapters store the daemon-minted id they passed to the CLI. A
-        // capture-style run that never reported an id (CLI died before
-        // `thread.started`) leaves nothing to resume — correct, the next turn
-        // starts fresh and re-seeds the transcript.
-        const createTurnSessionId = agentCapturesSessionId
-          ? capturedSessionId
-          : agentResumeCtx.newSessionId;
+        // The id to persist for a create turn: the daemon-minted id passed to
+        // the CLI.
+        const createTurnSessionId = agentResumeCtx.newSessionId;
         if (!agentResumeCtx.isResuming && createTurnSessionId) {
           upsertAgentSession(db, {
             conversationId: run.conversationId,
@@ -5534,9 +4837,7 @@ export async function startServer({
 
     // `runStartTimeMs` is consumed by the run-end artifact-manifest
     // reconciler (#2893 / #3110) to skip artifacts whose mtime predates
-    // this run. The original main-side hunk also re-declared `const send`
-    // here; on this branch `send` was hoisted into the AMR preflight
-    // earlier, so we keep only the new `runStartTimeMs` declaration.
+    // this run. `send` is declared earlier in this function.
     const runStartTimeMs = Date.now();
     const inactivityTimeoutMs = resolveChatRunInactivityTimeoutMs(def.inactivityTimeoutMs);
     const artifactQuietPeriodMs = resolveChatRunArtifactQuietPeriodMs();
@@ -5633,42 +4934,17 @@ export async function startServer({
         // kill, OOM) is NOT silently reclassified to `succeeded` —
         // only signals from this watchdog branch should be.
         artifactQuietShutdownRequested = true;
-        if (acpSession?.abort) {
-          acpSession.abort();
-        }
         if (child && !child.killed) design.runs.signalChild(run, 'SIGTERM');
         scheduleForcedChildShutdown();
         return;
       }
-      // OpenCode retries a 429 usage-limit silently and emits nothing on
-      // stdout/stderr, so the watchdog is the first signal we get. The real
-      // reason is recorded only in OpenCode's own session log — recover it
-      // and surface it HERE, before finish() tears down the live SSE
-      // clients, so a viewer sees "usage limit reached" instead of the
-      // generic stall message. Bound to this run via `since` so a stale or
-      // concurrent session's error can't be misattributed. See issue #982.
-      let stallPayload = null;
-      if (agentId === 'opencode') {
-        const logFailure = readOpenCodeServiceFailure(spawnedAgentEnv, {
-          since: run.createdAt,
-        });
-        if (logFailure) {
-          stallPayload = createSseErrorPayload(
-            logFailure.code,
-            logFailure.message,
-            { retryable: logFailure.retryable },
-          );
-        }
-      }
-      if (!stallPayload) {
-        const message =
-          `Agent stalled without emitting any new output for ${Math.round(inactivityTimeoutMs / 1000)}s. ` +
-          'The model or CLI likely hung while generating. ' +
-          `Phase details: spawned agent ${userFacingAgentLabel(agentId, resolvedBin)}; stdout arrived: ${childStdoutSeen ? 'yes' : 'no'}; ` +
-          `last agent event: ${lastAgentEventPhase}; largest tool result observed: ${lastToolResultChars} chars. ` +
-          'Retry the turn, pick a different model, or start a new conversation if the prior context is very large.';
-        stallPayload = createSseErrorPayload('AGENT_EXECUTION_FAILED', message, { retryable: true });
-      }
+      const message =
+        `Agent stalled without emitting any new output for ${Math.round(inactivityTimeoutMs / 1000)}s. ` +
+        'The model or CLI likely hung while generating. ' +
+        `Phase details: spawned agent ${userFacingAgentLabel(agentId, resolvedBin)}; stdout arrived: ${childStdoutSeen ? 'yes' : 'no'}; ` +
+        `last agent event: ${lastAgentEventPhase}; largest tool result observed: ${lastToolResultChars} chars. ` +
+        'Retry the turn, pick a different model, or start a new conversation if the prior context is very large.';
+      const stallPayload = createSseErrorPayload('AGENT_EXECUTION_FAILED', message, { retryable: true });
       send('error', stallPayload);
       // A silent first-token hang is one of the safe transient failure shapes
       // this run is allowed to recover: classifyRunFailure maps the stall text
@@ -5680,9 +4956,6 @@ export async function startServer({
       const retried = finishWithRetryDecision('failed', 1, null);
       if (retried) {
         watchdogRetryRestarted = true;
-      }
-      if (acpSession?.abort) {
-        acpSession.abort();
       }
       if (child && !child.killed) design.runs.signalChild(run, 'SIGTERM');
       scheduleForcedChildShutdown();
@@ -5747,40 +5020,20 @@ export async function startServer({
       ));
       return design.runs.finish(run, 'failed', 1, null);
     }
-    const browserUseRuntimeEnv = run.browserUse
-      ? {
-          OD_BROWSER_USE_REQUESTED: run.browserUse.requested ? '1' : '0',
-          OD_BROWSER_USE_AVAILABLE: run.browserUse.available ? '1' : '0',
-          ...(run.browserUse.reason ? { OD_BROWSER_USE_UNAVAILABLE_REASON: run.browserUse.reason } : {}),
-          OD_BROWSER_USE_REGISTRY_PATH: run.browserUse.diagnostics?.registryPath ?? '',
-        }
-      : {};
     const agentSpawnEnv = spawnEnvForAgent(
       def.id,
       {
         ...createAgentRuntimeEnv(process.env, daemonUrl, toolTokenGrant),
         ...(def.env || {}),
-        ...browserUseRuntimeEnv,
       },
       configuredAgentEnv,
       undefined,
       { resolvedBin: agentLaunch.selectedPath },
     );
-    if (def.id === 'amr') {
-      const loginStatus = readVelaLoginStatus(agentSpawnEnv, configuredAgentEnv);
-      if (!loginStatus.loggedIn) {
-        cleanupPromptFile();
-        revokeToolToken('child_exit');
-        unregisterChatAgentEventSink();
-        sendAmrAccountFailure({
-          code: 'AMR_AUTH_REQUIRED',
-          message: 'AMR sign-in is required. Sign in to AMR Cloud again, then retry this run.',
-          action: 'relogin',
-        });
-        return design.runs.finish(run, 'failed', 1, null);
-      }
-    }
-    const odMediaEnv = {
+    // Project/CLI wiring for the spawned agent: the `od` CLI and the plugin
+    // share prompts read OD_BIN / OD_PROJECT_ID / OD_PROJECT_DIR from the env
+    // the daemon injects on spawn.
+    const odCliEnv = {
       OD_BIN,
       OD_NODE_BIN,
       OD_DAEMON_URL: daemonUrl,
@@ -5814,20 +5067,12 @@ export async function startServer({
     noteAgentActivity();
 
     let child;
-    let acpSession = null;
     let writePromptToChildStdin = false;
     let spawnedAgentEnv = null;
     let agentStdoutTail = '';
     let agentStderrTail = '';
-    const agentStderrFilter = createAgentStderrVisibilityFilter(agentId);
     const emitVisibleAgentStderr = (chunk: unknown) => {
-      const visibleChunk = agentStderrFilter.write(chunk);
-      if (!visibleChunk) return;
-      agentStderrTail = `${agentStderrTail}${visibleChunk}`.slice(-2000);
-      send('stderr', { chunk: visibleChunk });
-    };
-    const flushVisibleAgentStderr = () => {
-      const visibleChunk = agentStderrFilter.flush();
+      const visibleChunk = typeof chunk === 'string' ? chunk : String(chunk);
       if (!visibleChunk) return;
       agentStderrTail = `${agentStderrTail}${visibleChunk}`.slice(-2000);
       send('stderr', { chunk: visibleChunk });
@@ -5835,34 +5080,10 @@ export async function startServer({
     try {
       // Prompt delivery via stdin is now the universal default. This bypasses
       // both the cmd.exe 8KB limit and the CreateProcess 32KB limit.
-      const stdinMode =
-        def.promptViaStdin || def.streamFormat === 'acp-json-rpc'
-          ? 'pipe'
-          : 'ignore';
+      const stdinMode = def.promptViaStdin ? 'pipe' : 'ignore';
       const env = applyAgentLaunchEnv({
         ...agentSpawnEnv,
-        ...(mmdRouteLaunchEnv || {}),
-        ...odMediaEnv,
-        ...(byokOpenCodeProvider ? byokOpenCodeProvider.env : {}),
-        ...openDesignAmrTraceEnv({
-          agentId: def.id,
-          runId: run.id,
-          conversationId: run.conversationId,
-          runAttempt: run.retryAttemptCount ?? 0,
-        }),
-        // OpenCode external-MCP injection (issue #2142). Layered AFTER
-        // spawnEnvForAgent / odMediaEnv / configuredAgentEnv so the
-        // daemon-built MCP config wins over a stale value the user
-        // might have exported in their shell — that would let an
-        // outdated content string suppress the user's freshly-saved
-        // MCP servers, which is exactly the bug we are fixing.
-        // `opencodeConfigContent === null` means "no enabled servers";
-        // we deliberately leave the env unset in that case so the
-        // user's saved `~/.config/opencode/opencode.json` continues
-        // to apply as-is.
-        ...(opencodeConfigContent
-          ? { [isMiMoContent ? 'MIMOCODE_CONFIG_CONTENT' : 'OPENCODE_CONFIG_CONTENT']: opencodeConfigContent }
-          : {}),
+        ...odCliEnv,
       }, agentLaunch);
       spawnedAgentEnv = env;
       const invocation = createCommandInvocation({
@@ -5890,57 +5111,7 @@ export async function startServer({
         process.platform !== 'win32' && typeof child.pid === 'number'
           ? child.pid
           : null;
-      // Schedule release of the antigravity model lock once agy's
-      // --log-file confirms the chosen model was propagated to the
-      // backend (the upstream signal that settings.json was read).
-      // The watcher's `false` return (timeout) deliberately does NOT
-      // release — looper review at 263fd2fe7 flagged that releasing
-      // on timeout reopens the slow-cold-start race: a >15s agy
-      // startup that hadn't yet read settings.json would let run B
-      // rewrite the file and run A would then read run B's model.
-      // The exit handler is the canonical fallback that releases the
-      // lock no matter what (crashed agy, fast exit, etc.) so the
-      // queue can never starve permanently.
-      if (
-        antigravityModelLockRelease
-        && antigravityConcreteModel
-        && agentLogFilePath
-      ) {
-        const releaseOnce = (() => {
-          let fired = false;
-          return () => {
-            if (fired) return;
-            fired = true;
-            antigravityModelLockRelease?.();
-          };
-        })();
-        const watcherAbort = new AbortController();
-        const { waitForAgyToReadModel } = await import(
-          './runtimes/defs/antigravity.js'
-        );
-        void waitForAgyToReadModel(
-          agentLogFilePath,
-          antigravityConcreteModel,
-          { abortSignal: watcherAbort.signal },
-        )
-          .then((found) => {
-            // Only release on TRUE confirmation; a `false` return means
-            // the watcher ran out of its polling window without seeing
-            // the propagation line. We hold the lock until child exit
-            // so a slow-cold-start agy can't be pre-empted by a
-            // concurrent settings.json rewrite from run B.
-            if (found) releaseOnce();
-          })
-          .catch(() => undefined);
-        child.once('exit', () => {
-          // Stop the watcher so its pending readFile / setTimeout
-          // chain does not outlive the run and leak into subsequent
-          // antigravity spawns (or test cases).
-          watcherAbort.abort();
-          releaseOnce();
-        });
-      }
-      if (def.promptViaStdin && child.stdin && def.streamFormat !== 'pi-rpc') {
+      if (def.promptViaStdin && child.stdin) {
         // EPIPE from a fast-exiting CLI (bad auth, missing model, exit on
         // launch) would otherwise surface as an unhandled stream error and
         // crash the daemon. Swallow it — the regular exit/close handlers
@@ -5976,8 +5147,7 @@ export async function startServer({
     child.stderr.setEncoding('utf8');
 
     // Reset the inactivity watchdog on every raw stdout byte so that
-    // structured adapters that buffer partial lines (Codex item.completed,
-    // pi-rpc session/prompt, ACP agent messages) and models that spend a
+    // structured adapters that buffer partial lines and models that spend a
     // long time in non-streamed reasoning still keep the run alive.
     child.stdout.on('data', (chunk) => {
       childStdoutSeen = true;
@@ -6048,15 +5218,14 @@ export async function startServer({
     // Critique Theater branch (M0 dark launch, default disabled).
     // Only plain-stream adapters are routed through runOrchestrator in v1.
     // Adapters that emit structured wrappers (claude-stream-json,
-    // qoder-stream-json, copilot-stream-json, json-event-stream,
-    // acp-json-rpc, pi-rpc) fall
+    // copilot-stream-json) fall
     // through to the legacy single-pass code path below with a one-time
     // stderr warning so the parser never sees wrapper bytes. Per-format
     // decoding into the orchestrator is a v2 concern.
     //
     // Use critiqueShouldRun (computed in the prompt builder) instead of
     // just the env var or the rollout resolver so the orchestrator gate
-    // is in lockstep with the panel addendum. Media surfaces and runs
+    // is in lockstep with the panel addendum. Runs
     // missing brand/skill context never get the panel prompt, so they
     // must also skip the orchestrator and fall through to legacy
     // generation; otherwise the parser waits for <CRITIQUE_RUN> tags
@@ -6145,7 +5314,6 @@ export async function startServer({
           emitVisibleAgentStderr(chunk);
         });
         child.on('error', (err) => {
-          flushVisibleAgentStderr();
           send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', err.message));
         });
 
@@ -6155,7 +5323,6 @@ export async function startServer({
         // apart from a clean ship and may misclassify failures.
         const childExitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
           child.once('close', (code, signal) => {
-            flushVisibleAgentStderr();
             resolve({ code, signal });
           });
         });
@@ -6200,7 +5367,6 @@ export async function startServer({
             design.runs.finish(run, 'failed', 1, null);
           }
         } catch (err) {
-          flushVisibleAgentStderr();
           send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', err instanceof Error ? err.message : String(err)));
           design.runs.finish(run, 'failed', 1, null);
         } finally {
@@ -6215,36 +5381,6 @@ export async function startServer({
     // plain streams (most other CLIs) we forward raw chunks unchanged so
     // the browser can append them to the assistant's text buffer.
     let agentStreamError = null;
-    // Holds buffered plain-text stdout chunks for agents (currently
-    // antigravity) where we need to inspect the full output at close
-    // time before deciding whether to forward it. The auth-prompt guard
-    // in the close handler suppresses the buffer when the output is an
-    // OAuth prompt; otherwise the flush below sends the chunks in order.
-    const plaintextStdoutBuffer: BufferedStdoutChunk[] = [];
-    // Arrival time of the first buffered plain-text stdout chunk
-    // (antigravity). First-token timing is stamped from this value only
-    // when the buffer is actually flushed to the client at close time. If
-    // the auth-prompt guard suppresses the buffer (the OAuth login URL is
-    // printed to stdout), no token ever reaches the user, so TTFT must not
-    // be recorded for that failure mode. See PR #3412.
-    let firstBufferedStdoutAt: number | null = null;
-    // Tracks whether any stream the run is using actually emitted user-
-    // visible content or a deliverable. Only the streams routed through
-    // `sendAgentEvent` contribute to this flag; ACP sessions and plain stdout
-    // streams are covered by their own success/failure paths and the
-    // empty-output guard below skips them via `trackingSubstantiveOutput`.
-    let agentProducedOutput = false;
-    let trackingSubstantiveOutput = false;
-    // Event types that count as "the agent actually produced a response or a
-    // deliverable." Lifecycle markers (`status`), meter readings (`usage`),
-    // reasoning deltas, and tool activity deliberately do NOT count: a run can
-    // think/read/call tools and still terminate before returning text/artifacts
-    // to the user. Treat that as empty output instead of a silent success
-    // (issues #691, #4814).
-    const SUBSTANTIVE_AGENT_EVENT_TYPES = new Set([
-      'text_delta',
-      'artifact',
-    ]);
     // First-token timing must reflect when the user actually starts seeing
     // model output, so only token-producing events qualify. `tool_use` is
     // deliberately excluded: a run that opens with a Read/Glob/MCP call would
@@ -6264,25 +5400,14 @@ export async function startServer({
     // Subsegment markers inside `processSpawnedAt -> firstTokenAt` (#3408 §4).
     // `cliReadyAt` is the first well-formed adapter output and is stamped for
     // every runtime family from its own decode choke point: first JSONL line
-    // (claude-stream-json), first decoded stream event (json-event-stream /
-    // qoder / pi-rpc), first non-empty stdout chunk (plain), or first ACP
-    // JSON-RPC message (acp-json-rpc). `sessionInitDoneAt` is only observable
-    // for ACP (the resume/`session/new` ack); for stream/plain families that
-    // gap is folded into `spawn_to_first_token_remainder_ms` rather than
-    // anchored to a fabricated marker. Both are first-write-wins like
+    // (claude-stream-json / copilot-stream-json) or first non-empty stdout
+    // chunk (plain). Both are first-write-wins like
     // `firstTokenAt` so a later chunk cannot move an already-stamped boundary.
     const noteCliReadyAt = (timestamp = Date.now()) => {
       if (run.analyticsTelemetry?.cliReadyAt) return;
       run.analyticsTelemetry = {
         ...(run.analyticsTelemetry ?? {}),
         cliReadyAt: timestamp,
-      };
-    };
-    const noteSessionInitDoneAt = (timestamp = Date.now()) => {
-      if (run.analyticsTelemetry?.sessionInitDoneAt) return;
-      run.analyticsTelemetry = {
-        ...(run.analyticsTelemetry ?? {}),
-        sessionInitDoneAt: timestamp,
       };
     };
     const noteFirstTokenFromAgentEvent = (ev) => {
@@ -6310,7 +5435,7 @@ export async function startServer({
     }
 
     // Shared helper for emitting guarded text deltas across all agent
-    // stream handlers (sendAgentEvent, copilot, ACP).
+    // stream handlers.
     function emitGuardedTextDelta(delta: string) {
       const safe = guardTextDelta(delta);
       if (safe.length > 0) {
@@ -6364,16 +5489,6 @@ export async function startServer({
           { retryable: true },
         ),
       );
-      // ACP sessions (Hermes, Kimi, Devin, Kiro, etc.) need explicit
-      // abort because their I/O is multiplexed and they won't
-      // necessarily exit on child SIGTERM alone.
-      if (acpSession?.abort) {
-        try {
-          acpSession.abort();
-        } catch {
-          // ignore — best-effort
-        }
-      }
       if (child && !child.killed) design.runs.signalChild(run, 'SIGTERM');
       scheduleForcedChildShutdown();
     }
@@ -6381,17 +5496,16 @@ export async function startServer({
     // Per-run tool-loop guard. Agents sometimes fixate on a failing tool call
     // and grind through dozens of identical attempts (e.g. re-running an Edit
     // whose `old_string` never matches, or a shell assertion against an element
-    // that does not exist). Unlike the BYOK proxy path — bounded by
-    // MAX_BYOK_TOOL_LOOPS — the autonomous chat agents had no such bound. This
+    // that does not exist). The autonomous chat agents had no such bound. This
     // guard observes the normalized tool_use/tool_result events EVERY agent
-    // path emits, so one instance covers Claude, Codex/OpenCode, Copilot, ACP,
-    // … It emits a one-shot `tool_loop` warning, then (in halt mode) terminates
+    // path emits, so one instance covers Claude and Copilot.
+    // It emits a one-shot `tool_loop` warning, then (in halt mode) terminates
     // the run at a hard ceiling. Mode via OD_TOOL_LOOP_GUARD (halt|warn|off).
     const toolLoopGuard = createToolLoopGuard({ mode: resolveToolLoopMode() });
     let toolLoopAbortFired = false;
 
-    // Idempotent — both agent-event paths (sendAgentEvent, the Claude
-    // stream-json callback) can route a halt verdict here.
+    // Idempotent — every agent-event path (the Claude stream-json
+    // callback, Copilot) can route a halt verdict here.
     function abortForToolLoop(verdict: ToolLoopVerdict) {
       if (toolLoopAbortFired) return;
       toolLoopAbortFired = true;
@@ -6406,13 +5520,6 @@ export async function startServer({
           { retryable: true },
         ),
       );
-      if (acpSession?.abort) {
-        try {
-          acpSession.abort();
-        } catch {
-          // ignore — best-effort
-        }
-      }
       // Route through signalChild (not a bare child.kill) so the halt escalates
       // to the whole process group when one exists, matching abortForRoleMarker,
       // cancel, and the inactivity watchdog. A bare child.kill leaves Bash/build
@@ -6446,109 +5553,16 @@ export async function startServer({
     }
 
     // Single choke point for emitting an agent event to the client. EVERY
-    // stream handler (sendAgentEvent, the Claude callback, Copilot, ACP, …)
+    // stream handler (the Claude callback, Copilot)
     // emits through here, never via a bare send('agent', …), so the tool-loop
     // guard sees every runtime's tool activity and no handler can drift out of
     // coverage. observe runs AFTER the send so a `tool_loop` warning/halt
     // follows the result that triggered it in the stream. (PR #3375 review:
-    // Copilot and ACP bypassed the guard by calling send('agent', …) directly.)
+    // Copilot bypassed the guard by calling send('agent', …) directly.)
     function emitAgentEvent(ev: any) {
       send('agent', ev);
       observeToolEventForLoop(ev);
     }
-
-    const sendAgentEvent = (ev) => {
-      if (ev?.type === 'error') {
-        if (agentStreamError) return;
-        flushVisibleAgentStderr();
-        const failureText = [
-          String(ev.message || 'Agent stream error'),
-          typeof ev.raw === 'string' ? ev.raw : '',
-          agentStdoutTail,
-          agentStderrTail,
-        ].join('\n');
-        agentStreamError = rewriteKnownAgentStreamError(
-          agentId,
-          String(ev.message || 'Agent stream error'),
-          failureText,
-        );
-        clearInactivityWatchdog();
-        const authFailure = classifyAgentAuthFailure(agentId, failureText);
-        if (authFailure?.status === 'missing') {
-          send('error', createSseErrorPayload(
-            'AGENT_AUTH_REQUIRED',
-            authFailure.message ?? cursorAuthGuidance(),
-            { retryable: true },
-          ));
-          return;
-        }
-        // Recover the specific model-service failure class (auth / quota /
-        // upstream) for agents without a tailored probe (Claude Code, codex,
-        // …), so the chat shows an accurate reason instead of the generic
-        // execution-failed bucket.
-        const serviceCode = classifyAgentServiceFailure(failureText);
-        if (serviceCode) {
-          send('error', createSseErrorPayload(serviceCode, agentStreamError, {
-            details: ev.raw ? { raw: ev.raw } : undefined,
-            retryable: true,
-          }));
-          return;
-        }
-        send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', agentStreamError, {
-          details: ev.raw ? { raw: ev.raw } : undefined,
-          retryable: false,
-        }));
-        return;
-      }
-      // First well-formed decoded stream event = CLI ready for the
-      // json-event-stream / qoder / pi-rpc families (#3408 §4 marker).
-      noteCliReadyAt();
-      // Capture-style resume: codex reports its own thread id on the
-      // `thread.started` status event. Persist the most recent non-empty id we
-      // see so the create-turn store (and the resumable-failure store) use the
-      // CLI's real session handle, not the unused daemon-minted `newSessionId`.
-      if (
-        agentCapturesSessionId &&
-        ev?.type === 'status' &&
-        typeof ev.sessionId === 'string' &&
-        ev.sessionId.length > 0
-      ) {
-        capturedSessionId = ev.sessionId;
-      }
-      lastAgentEventPhase = summarizeAgentEventForInactivity(ev);
-      noteAgentActivity();
-      // Role-marker guard for qoder / json-event-stream / pi-rpc (#3247).
-      if (ev?.type === 'text_delta' && typeof ev.delta === 'string') {
-        if (emitTitleFilteredGuardedTextDelta(ev.delta)) {
-          noteFirstTokenAt();
-          agentProducedOutput = true;
-        }
-        return;
-      }
-      noteFirstTokenFromAgentEvent(ev);
-      if (ev?.type && SUBSTANTIVE_AGENT_EVENT_TYPES.has(ev.type)) {
-        agentProducedOutput = true;
-      }
-      emitAgentEvent(ev);
-    };
-    const parseBufferedAntigravityGeminiJsonEventStream = () => {
-      if (
-        def.id !== 'antigravity' ||
-        plaintextStdoutBuffer.length === 0
-      ) {
-        return false;
-      }
-      const bufferedStdout = plaintextStdoutBuffer.map((chunk) => chunk.text).join('');
-      if (!looksLikeGeminiJsonEventStream(bufferedStdout)) return false;
-      trackingSubstantiveOutput = true;
-      const firstTokenAt = bufferedAntigravityGeminiFirstTokenAt(plaintextStdoutBuffer);
-      if (firstTokenAt !== null) noteFirstTokenAt(firstTokenAt);
-      const handler = createJsonEventStreamHandler('gemini', sendAgentEvent);
-      handler.feed(bufferedStdout);
-      handler.flush();
-      plaintextStdoutBuffer.length = 0;
-      return true;
-    };
 
     if (def.streamFormat === 'claude-stream-json') {
       const claude = createClaudeStreamHandler((ev) => {
@@ -6557,7 +5571,6 @@ export async function startServer({
         noteCliReadyAt();
         if (ev?.type === 'error') {
           if (agentStreamError) return;
-          flushVisibleAgentStderr();
           const message = String((ev as any).message || 'Claude Code stream error');
           const failureText = [
             message,
@@ -6582,8 +5595,7 @@ export async function startServer({
             resolvedBin: agentLaunch.selectedPath,
           });
           const serviceCode = classifyAgentServiceFailure(failureText);
-          agentStreamError = diagnostic?.message
-            ?? rewriteKnownAgentStreamError(agentId, message, failureText);
+          agentStreamError = diagnostic?.message ?? message;
           send('error', createSseErrorPayload(
             diagnostic?.code ?? serviceCode ?? 'AGENT_EXECUTION_FAILED',
             agentStreamError,
@@ -6630,11 +5642,6 @@ export async function startServer({
       }, { suppressHtmlArtifactsAfterFileWrite: def.id === 'claude' });
       child.stdout.on('data', (chunk) => claude.feed(chunk));
       child.on('close', () => claude.flush());
-    } else if (def.streamFormat === 'qoder-stream-json') {
-      trackingSubstantiveOutput = true;
-      const qoder = createQoderStreamHandler(sendAgentEvent);
-      child.stdout.on('data', (chunk) => qoder.feed(chunk));
-      child.on('close', () => qoder.flush());
     } else if (def.streamFormat === 'copilot-stream-json') {
       const copilot = createCopilotStreamHandler((ev) => {
         lastAgentEventPhase = summarizeAgentEventForInactivity(ev);
@@ -6650,172 +5657,8 @@ export async function startServer({
       });
       child.stdout.on('data', (chunk) => copilot.feed(chunk));
       child.on('close', () => copilot.flush());
-    } else if (def.streamFormat === 'pi-rpc') {
-      // Route through sendAgentEvent so that pi-rpc's error events
-      // (extension_error, auto_retry_end with success=false, and the
-      // message_update error delta) set agentStreamError and flip the
-      // run to `failed` on close — same path as qoder-stream-json and
-      // json-event-stream after issue #691. Also enables the
-      // substantive-output guard (agentProducedOutput) so a pi run
-      // that exits 0 without producing visible content is caught.
-      //
-      // attachPiRpcSession invokes its send callback with the two-arg
-      // channel/payload shape: send('agent', payload) for normal events
-      // and send('error', {message}) from fail(). sendAgentEvent
-      // expects a single event object, so we adapt at the call site:
-      //   - 'agent' channel → relay payload through sendAgentEvent
-      //   - 'error' channel → route through the daemon's error path
-      //     (createSseErrorPayload + send SSE + set agentStreamError)
-      trackingSubstantiveOutput = true;
-      acpSession = attachPiRpcSession({
-        child,
-        prompt: composed,
-        cwd: effectiveCwd,
-        model: safeModel,
-        parentSession: agentResumeCtx.isResuming && agentResumeCtx.resumeSessionId
-          ? agentResumeCtx.resumeSessionId
-          : undefined,
-        send: (channel, payload) => {
-          if (channel === 'agent') {
-            sendAgentEvent(payload);
-          } else if (channel === 'error') {
-            if (agentStreamError) return;
-            flushVisibleAgentStderr();
-            agentStreamError = String(payload?.message || 'Pi session error');
-            const piErrorCode = typeof payload?.code === 'string' ? payload.code : null;
-            if (piErrorCode) {
-              run.errorCode = piErrorCode;
-            }
-            if (piErrorCode === 'PI_PARENT_SESSION_FAILED' && run.conversationId) {
-              clearAgentSession(db, run.conversationId, def.id);
-            }
-            clearInactivityWatchdog();
-            send('error', createSseErrorPayload(
-              'AGENT_EXECUTION_FAILED',
-              agentStreamError,
-              { retryable: false },
-            ));
-          } else {
-            noteAgentActivity();
-            send(channel, payload);
-          }
-        },
-        imagePaths: def.supportsImagePaths ? amrStagedImages : [],
-        uploadRoot: UPLOAD_DIR,
-      });
-    } else if (def.streamFormat === 'acp-json-rpc') {
-      const acpStageTimeoutMs = resolveAcpStageTimeoutMs(def.inactivityTimeoutMs);
-      acpSession = attachAcpSession({
-        child,
-        prompt: composed,
-        cwd: effectiveCwd,
-        model: safeModel,
-        imagePaths: def.supportsImagePaths ? amrStagedImages : [],
-        mcpServers,
-        envFormat: def.acpMcpEnvFormat ?? 'array',
-        executionProfile,
-        ...(def.id === 'amr' ? { modelUnavailableErrorCode: 'AMR_MODEL_UNAVAILABLE' } : {}),
-        // Resume the prior upstream session (drives `session/load`) when the
-        // resume-identity guard says it is safe; otherwise a fresh session/new.
-        ...(def.resumesSessionViaAcpLoad === true && agentResumeCtx.isResuming && agentResumeCtx.resumeSessionId
-          ? { resumeSessionId: agentResumeCtx.resumeSessionId }
-          : {}),
-        onCliReady: () => noteCliReadyAt(),
-        onSessionInit: () => noteSessionInitDoneAt(),
-        send: (event, data) => {
-          if (event === 'agent') {
-            lastAgentEventPhase = summarizeAgentEventForInactivity(data);
-          }
-          noteAgentActivity();
-          if (event === 'error') flushVisibleAgentStderr();
-          if (def.id === 'amr' && event === 'error') {
-            const failure = classifyAmrAccountFailureSignal({
-              details: data?.error?.details,
-              message: data?.message,
-              errorMessage: data?.error?.message,
-              errorCode: data?.error?.code,
-              stdoutTail: agentStdoutTail,
-              stderrTail: agentStderrTail,
-            });
-            if (failure) {
-              sendAmrAccountFailure(failure);
-              return;
-            }
-          }
-          // Hold back the `resume_failed` error so the same-turn reseed stays
-          // transparent. When this run is resuming an upstream session via
-          // `session/load` and the agent reports that session is gone, the ACP
-          // bridge has already called `fail()` -> `send('error')` for the failed
-          // load. The child-close handler then clears the stale handle and
-          // re-runs this turn fresh (the resume-target-missing block below), so
-          // forwarding this error would flash an execution failure — and trip
-          // clients that treat an SSE `error` as terminal — a beat before the
-          // invisible recovery. Suppress it and leave a diagnostic instead; the
-          // close handler is the sole authority on whether this turn ends in an
-          // error or a transparent reseed. The `resumeAutoReseeded` guard lets a
-          // second resume failure in one run fall through to the explicit
-          // "resend your message" affordance the close handler emits.
-          if (
-            event === 'error' &&
-            def.resumesSessionViaAcpLoad === true &&
-            agentResumeCtx.isResuming &&
-            agentResumeCtx.resumeSessionId &&
-            !run.resumeAutoReseeded &&
-            isAgentResumeFailure(def.id, agentStderrTail, agentStdoutTail)
-          ) {
-            design.runs.emit(run, 'diagnostic', {
-              type: 'agent_resume_failed_suppressed',
-              agent_id: def.id,
-              reason: 'resume_failed',
-              previous_session_id: agentResumeCtx.resumeSessionId ?? null,
-            });
-            return;
-          }
-          if (event === 'agent' && data?.type === 'text_delta' && typeof data.delta === 'string') {
-            if (emitTitleFilteredGuardedTextDelta(data.delta)) {
-              noteFirstTokenAt();
-            }
-            return;
-          }
-          if (event === 'agent') {
-            noteFirstTokenFromAgentEvent(data);
-            emitAgentEvent(data);
-          } else {
-            send(event, data);
-          }
-        },
-        ...(acpStageTimeoutMs !== undefined ? { stageTimeoutMs: acpStageTimeoutMs } : {}),
-      });
-    } else if (def.streamFormat === 'json-event-stream') {
-      // Pipe through sendAgentEvent so the OpenCode `type:'error'` frame
-      // (now emitted as a real error event by json-event-stream.ts after
-      // #691) actually triggers `agentStreamError` instead of being
-      // forwarded as a no-op `agent` SSE event. This also wires the
-      // substantive-output tracking the close handler reads below.
-      trackingSubstantiveOutput = true;
-      const handler = createJsonEventStreamHandler(
-        def.eventParser || def.id,
-        sendAgentEvent,
-      );
-      child.stdout.on('data', (chunk) => handler.feed(chunk));
-      child.on('close', () => handler.flush());
-    } else if (def.id === 'antigravity') {
-      // Buffer stdout until close so the auth-prompt guard can suppress
-      // the OAuth URL before forwarding it to the client as assistant
-      // text. agy exits 0 after printing the auth URL on stdout, so the
-      // chunks would otherwise arrive before the close-time classifier
-      // detects them as an auth prompt. First-token timing is deliberately
-      // NOT stamped here — only the first chunk's arrival time is recorded,
-      // and `firstTokenAt` is stamped from it at flush time so the
-      // suppressed OAuth-prompt path never reports a TTFT (PR #3412).
-      child.stdout.on('data', (chunk) => {
-        noteAgentActivity();
-        const receivedAt = Date.now();
-        if (firstBufferedStdoutAt === null) firstBufferedStdoutAt = receivedAt;
-        plaintextStdoutBuffer.push({ text: String(chunk), receivedAt });
-      });
     } else {
-      // Plain / BYOK mode: guard raw stdout chunks (#3247).
+      // Plain mode: guard raw stdout chunks (#3247).
       child.stdout.on('data', (chunk) => {
         noteAgentActivity();
         const text = typeof chunk === 'string' ? chunk : String(chunk);
@@ -6839,9 +5682,6 @@ export async function startServer({
         }
       });
     }
-    // Wire the acpSession onto the run so cancel() can call abort()
-    // instead of raw SIGTERM (applies to pi-rpc and acp-json-rpc).
-    run.acpSession = acpSession;
     child.stderr.on('data', (chunk) => {
       noteAgentActivity();
       emitVisibleAgentStderr(chunk);
@@ -6850,7 +5690,6 @@ export async function startServer({
     child.on('error', (err) => {
       clearInactivityWatchdog();
       cleanupPromptFile();
-      flushVisibleAgentStderr();
       revokeToolToken('child_exit');
       unregisterChatAgentEventSink();
       send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', err.message));
@@ -6860,7 +5699,6 @@ export async function startServer({
       try {
       clearInactivityWatchdog();
       clearForcedChildShutdown();
-      flushVisibleAgentStderr();
       if (watchdogRetryRestarted) {
         // The inactivity watchdog already failed this attempt and the same-run
         // retry restarted on a fresh child. Finalization and event-sink / run-
@@ -6874,18 +5712,15 @@ export async function startServer({
       }
       revokeToolToken('child_exit');
       unregisterChatAgentEventSink();
-      // Resume-target-missing recovery runs BEFORE the generic fatal/stream-error
-      // short-circuits. The signal arrives differently per adapter: codex reports
-      // "no rollout found for thread id" as a stream `error` event, while AMR/vela
-      // reports a structured `resume_failed` JSON-RPC error that the ACP bridge
-      // turns into a FATAL. Either would otherwise be swallowed by the
-      // `fatal_rpc_error` / `stream_error` paths below and leave the dead session
+      // Resume-target-missing recovery runs BEFORE the generic stream-error
+      // short-circuit. A resume failure would otherwise be swallowed by the
+      // `stream_error` path below and leave the dead session
       // id stored — so every later turn would retry the same broken resume (#4275
       // class). Clearing the stale handle here lets the next turn start fresh +
       // re-seed the full transcript: one cold turn, never a broken conversation.
       if (
         !run.cancelRequested &&
-        (def.resumesSessionViaCli === true || def.resumesSessionViaAcpLoad === true) &&
+        def.resumesSessionViaCli === true &&
         agentResumeCtx.isResuming &&
         run.conversationId &&
         isAgentResumeFailure(def.id, agentStderrTail, agentStdoutTail)
@@ -6924,11 +5759,6 @@ export async function startServer({
         ));
         return design.runs.finish(run, 'failed', code ?? 1, signal ?? null);
       }
-      if (acpSession?.hasFatalError()) {
-        markRpcCloseReason('fatal_rpc_error');
-        return finishWithRetryDecision('failed', code ?? 1, signal ?? null);
-      }
-      parseBufferedAntigravityGeminiJsonEventStream();
       flushAgentTitleMarkerBuffer();
       if (agentStreamError) {
         markRpcCloseReason('stream_error');
@@ -6938,16 +5768,6 @@ export async function startServer({
         code !== 0 &&
         !run.cancelRequested
       ) {
-        if (def.id === 'amr') {
-          const amrFailure = classifyAmrAccountFailureSignal({
-            stdoutTail: agentStdoutTail,
-            stderrTail: agentStderrTail,
-          });
-          if (amrFailure) {
-            sendAmrAccountFailure(amrFailure);
-            return finishWithRetryDecision('failed', code ?? 1, signal ?? null);
-          }
-        }
         const authFailure = classifyAgentAuthFailure(
           agentId,
           `${agentStderrTail}\n${agentStdoutTail}`,
@@ -6955,28 +5775,11 @@ export async function startServer({
         if (authFailure?.status === 'missing') {
           send('error', createSseErrorPayload(
             'AGENT_AUTH_REQUIRED',
-            authFailure.message ?? cursorAuthGuidance(),
+            authFailure.message ?? 'Agent sign-in is required. Sign in to the agent CLI again, then retry this run.',
             { retryable: true },
           ));
           return finishWithRetryDecision('failed', code ?? 1, signal ?? null);
         }
-      }
-      // Empty-output guard: a clean `code === 0` exit with no visible
-      // output means the run silently finished without producing anything.
-      // Surface an explicit failure so the chat shows a clear reason.
-      if (
-        code === 0 &&
-        !run.cancelRequested &&
-        trackingSubstantiveOutput &&
-        !agentProducedOutput
-      ) {
-        markRpcCloseReason('empty_output');
-        send('error', createSseErrorPayload(
-          'AGENT_EXECUTION_FAILED',
-          'Agent completed without producing any output. The model or provider may have returned an empty response — check the agent logs for upstream errors.',
-          { retryable: true },
-        ));
-        return finishWithRetryDecision('failed', code, signal);
       }
       if (
         code === 0 &&
@@ -6992,11 +5795,8 @@ export async function startServer({
         ));
         return finishWithRetryDecision('failed', code, signal);
       }
-      // Plain-stream auth-failure guard: plain adapters (today
-      // antigravity, deepseek's TUI variants) may exit cleanly with
-      // visible stdout that's actually an auth prompt — agy prints
-      // "Authentication required. Please visit the URL to log in:
-      // <URL>" + "Error: authentication timed out." rather than
+      // Plain-stream auth-failure guard: a CLI may exit cleanly with
+      // visible stdout that's actually an auth prompt rather than
       // failing with a non-zero exit. Without this guard the chat
       // shows that raw prompt as the agent's "reply", and the user
       // has no way to actually complete OAuth from inside the chat.
@@ -7005,7 +5805,6 @@ export async function startServer({
       if (
         code === 0 &&
         !run.cancelRequested &&
-        !trackingSubstantiveOutput &&
         childStdoutSeen
       ) {
         const authFailure = classifyAgentAuthFailure(
@@ -7021,61 +5820,22 @@ export async function startServer({
           return finishWithRetryDecision('failed', 0, signal);
         }
       }
-      // Plain-stream empty-output guard: plain agents send raw stdout
-      // chunks without structured event tracking. Detect auth failures
-      // and quota / upstream errors when exit 0 but no stdout was
-      // seen. agy in print mode is silent on stdout/stderr for both
-      // missing-auth AND quota-exhausted failures; the daemon piped
-      // agy's `--log-file` to `agentLogFilePath` precisely so this
-      // guard can grep the upstream error code (RESOURCE_EXHAUSTED 429
-      // for quota, "not logged into Antigravity" for auth) and route
-      // to the right user-facing guidance.
+      // Plain-stream empty-output guard: detect auth failures
+      // and quota / upstream errors when exit 0 but no stdout was seen.
       if (
         code === 0 &&
         !run.cancelRequested &&
-        !trackingSubstantiveOutput &&
         !childStdoutSeen
       ) {
         markRpcCloseReason('empty_output');
-        let combinedDetail = `${agentStderrTail}\n${agentStdoutTail}`;
-        if (def.id === 'antigravity' && agentLogFilePath) {
-          try {
-            const logContent = await fs.promises.readFile(agentLogFilePath, 'utf8');
-            // Keep the last 8 KB — quota / auth lines all land near the
-            // tail (after the spawn / model-config preamble).
-            combinedDetail = `${combinedDetail}\n${logContent.slice(-8192)}`;
-          } catch {
-            // Missing log file (agy didn't write it, mounted tmpfs is
-            // read-only, etc.) is fine — fall through to the generic
-            // empty-output message.
-          }
-        }
+        const combinedDetail = `${agentStderrTail}\n${agentStdoutTail}`;
         const authFailure = classifyAgentAuthFailure(agentId, combinedDetail);
-        const serviceFailure = !authFailure
-          ? classifyAgentServiceFailure(combinedDetail)
-          : null;
-        const isAntigravityQuota =
-          def.id === 'antigravity' && serviceFailure === 'RATE_LIMITED';
-        // Antigravity-only fallback: if neither classifier matched but
-        // the run was silent, lean on the empirical observation that
-        // an empty agy print-mode exit almost always means
-        // missing-OAuth (the only other silent path is quota, which
-        // the log-file check above already caught).
-        const useAntigravityAuthFallback =
-          !authFailure && !serviceFailure && def.id === 'antigravity';
-        const errorCode =
-          authFailure || useAntigravityAuthFallback
-            ? 'AGENT_AUTH_REQUIRED'
-            : isAntigravityQuota
-              ? 'RATE_LIMITED'
-              : 'AGENT_EXECUTION_FAILED';
+        const errorCode = authFailure
+          ? 'AGENT_AUTH_REQUIRED'
+          : 'AGENT_EXECUTION_FAILED';
         const msg = authFailure
           ? authFailure.message ?? `${def.name} authentication expired. Please re-authenticate and retry.`
-          : isAntigravityQuota
-            ? antigravityQuotaGuidance()
-            : useAntigravityAuthFallback
-              ? antigravityAuthGuidance()
-              : `${def.name} returned an empty response. This may indicate an expired session — try re-authenticating the agent.`;
+          : `${def.name} returned an empty response. This may indicate an expired session — try re-authenticating the agent.`;
         send('error', createSseErrorPayload(
           errorCode,
           msg,
@@ -7083,28 +5843,11 @@ export async function startServer({
         ));
         return finishWithRetryDecision('failed', 0, signal);
       }
-      // ACP agents that don't shut down on stdin.end() (e.g. Devin for
-      // Terminal) are forced to exit via SIGTERM from attachAcpSession after
-      // a clean prompt completion. Without an override, the chat run would
-      // be marked `failed` because `code === 0` fails (code is null on a
-      // signal exit). `completedSuccessfully()` reports whether the ACP
-      // session resolved without a fatal error or abort.
-      //
-      // Scope the override narrowly to the exact forced-shutdown shape this
-      // PR introduces: code is null AND signal is SIGTERM AND the ACP
-      // session reported clean completion. Any other post-response failure
-      // (non-zero exit code, SIGKILL, SIGSEGV, etc.) still propagates as
-      // `failed`, preserving the existing close-status behavior for genuine
-      // post-response process problems.
-      const acpCleanCompletion =
-        typeof acpSession?.completedSuccessfully === 'function' &&
-        acpSession.completedSuccessfully();
       const runArtifactSideEffects = scanRunEventsForRetrySideEffects(run.events);
       const status = classifyChatRunCloseStatus({
         cancelRequested: !!run.cancelRequested,
         code,
         signal,
-        acpCleanCompletion,
         artifactQuietShutdownRequested,
         turnCompletedCleanly: !!run.turnCompletedCleanly,
         artifactProducedThisRun:
@@ -7128,7 +5871,7 @@ export async function startServer({
           resolvedBin: agentLaunch.selectedPath,
         });
         // A non-zero exit whose output reads as an auth / quota / upstream
-        // problem (typical of Claude Code, codex, …) gets the specific code
+        // problem gets the specific code
         // rather than the generic execution-failed bucket; the human-readable
         // message still prefers the richer CLI diagnostic when we have one.
         const serviceCode = classifyAgentServiceFailure(
@@ -7151,36 +5894,13 @@ export async function startServer({
             { retryable: true },
           ));
         } else {
-          // OpenCode swallows provider failures in headless mode: a 429
-          // usage-limit is marked retryable and retried silently with
-          // nothing on stdout/stderr, so the run only dies via the
-          // inactivity watchdog and the checks above find no signal. The
-          // real reason is recorded only in OpenCode's own session log,
-          // so recover it before falling back to the generic rewrite.
-          // See issue #982.
-          const openCodeFailure =
-            def.id === 'opencode'
-              ? readOpenCodeServiceFailure(spawnedAgentEnv, { since: run.createdAt })
-              : null;
-          if (openCodeFailure) {
+          const detail = (agentStderrTail || agentStdoutTail || '').trim();
+          if (detail) {
             send('error', createSseErrorPayload(
-              openCodeFailure.code,
-              openCodeFailure.message,
-              { retryable: openCodeFailure.retryable },
+              'AGENT_EXECUTION_FAILED',
+              detail,
+              { retryable: true },
             ));
-          } else {
-            const rewritten = rewriteKnownAgentStreamError(
-              def.id,
-              (agentStderrTail || agentStdoutTail || '').trim(),
-              `${agentStderrTail}\n${agentStdoutTail}`,
-            );
-            if (rewritten !== 'Agent stream error') {
-              send('error', createSseErrorPayload(
-                'AGENT_EXECUTION_FAILED',
-                rewritten,
-                { retryable: true },
-              ));
-            }
           }
         }
       }
@@ -7217,61 +5937,8 @@ export async function startServer({
           } catch { /* project-level best-effort */ }
         })();
       }
-      // Flush buffered plain-text stdout (antigravity) that was not
-      // suppressed by the auth-prompt guard above. Send each chunk in
-      // order before finishing so the assistant text arrives before the
-      // run's `finished` event. Stamp first-token timing here — and only
-      // here — using the first chunk's arrival time, so the OAuth-prompt
-      // path (which returns before this flush) never records a TTFT for
-      // output the user never saw (PR #3412).
-      if (plaintextStdoutBuffer.length > 0 && firstBufferedStdoutAt !== null) {
-        noteFirstTokenAt(firstBufferedStdoutAt);
-      }
-      for (const chunk of plaintextStdoutBuffer) {
-        const visibleText = titleMarkerStripper.strip(chunk.text);
-        if (visibleText) send('stdout', { chunk: visibleText });
-      }
       const flushedTitleMarkerText = titleMarkerStripper.flush();
       if (flushedTitleMarkerText) send('stdout', { chunk: flushedTitleMarkerText });
-      // Capture the pi session file path for conversational continuity.
-      // The session path is discovered by attachPiRpcSession when it
-      // processes agent_end; persist it under (conversationId, agentId) so
-      // another conversation in the same cwd cannot inherit this history.
-      if (acpSession && typeof acpSession.getLastSessionPath === 'function') {
-        const sessionPath = acpSession.getLastSessionPath();
-        if (status === 'succeeded' && def.streamFormat === 'pi-rpc') {
-          persistCapturedAgentSession(db, {
-            conversationId: run.conversationId,
-            agentId: def.id,
-            sessionId: sessionPath,
-            stablePromptHash: currentStableHash,
-            model: safeModel ?? null,
-            cwd: effectiveCwd,
-            lastMessageId: run.assistantMessageId ?? null,
-          });
-        }
-      }
-      // ACP session/load adapters (AMR/vela) report a durable upstream handle
-      // from the ACP session; persist it (under the resume-identity guard) so
-      // the next turn resumes via session/load. A missing handle clears the row
-      // (so a fresh session is opened next turn), mirroring the capture-style
-      // adapters.
-      if (
-        def.resumesSessionViaAcpLoad === true &&
-        status === 'succeeded' &&
-        acpSession &&
-        typeof acpSession.getDurableSessionId === 'function'
-      ) {
-        persistCapturedAgentSession(db, {
-          conversationId: run.conversationId,
-          agentId: def.id,
-          sessionId: acpSession.getDurableSessionId(),
-          stablePromptHash: currentStableHash,
-          model: safeModel ?? null,
-          cwd: effectiveCwd,
-          lastMessageId: run.assistantMessageId ?? null,
-        });
-      }
       if (status === 'succeeded') {
         try {
           await snapshotAiHtmlVersionsBeforeSuccess();
@@ -7295,14 +5962,6 @@ export async function startServer({
       }
       finishWithRetryDecision(status, code, signal);
       } finally {
-        // Best-effort cleanup of the per-run agy log file on every close
-        // path — successful, failed, cancelled, or non-zero exit — so
-        // /tmp doesn't accumulate one file per Antigravity run. The log
-        // is read inside the empty-output guard above before this finally
-        // runs, so the read always happens before the unlink.
-        if (agentLogFilePath) {
-          fs.promises.unlink(agentLogFilePath).catch(() => {});
-        }
         cleanupPromptFile();
       }
     });
@@ -7402,7 +6061,6 @@ export async function startServer({
       assistantMessageId,
       clientRequestId: `orbit-${trigger}-${randomUUID()}`,
       agentId,
-      mediaExecution: defaultMediaExecutionPolicy(),
     });
     upsertMessage(db, conversationId, {
       id: `orbit-user-${run.id}`,
@@ -7692,7 +6350,6 @@ export async function startServer({
       assistantMessageId,
       clientRequestId: `routine-${trigger}-${randomUUID()}`,
       agentId,
-      mediaExecution: defaultMediaExecutionPolicy(),
       ...(resolvedRoutineSnapshot?.ok
         ? {
             appliedPluginSnapshotId: resolvedRoutineSnapshot.snapshotId,
@@ -7897,7 +6554,6 @@ export async function startServer({
     auth: authDeps,
     liveArtifacts: liveArtifactDeps,
     deploy: deployDeps,
-    media: mediaDeps,
     appConfig: appConfigDeps,
     orbit: orbitDeps,
     nativeDialogs: nativeDialogDeps,
@@ -7920,8 +6576,6 @@ export async function startServer({
     routines: { routineService },
     projectPreviewScopes,
     validation: validationDeps,
-    finalize: finalizeDeps,
-    handoff: handoffDeps,
     chat: { startChatRun },
     messages: {
       pinAssistantMessageOnRunCreate,
@@ -7939,24 +6593,10 @@ export async function startServer({
     routines: { routineService },
   });
 
-  // proxy routes (anthropic / openai / azure / google / ollama) live
-  // in chat-routes.ts now — garnet had a partial duplicate here that
-  // referenced helpers (rejectPluginInProxyBody, extractGeminiText, …)
-  // dropped during the reconcile merge. Deleted to fix the BYOK crash.
-  // Restore the plugin-runs-must-go-through-daemon gate by adding it
-  // to chat-routes.ts if needed.
-
-
   registerChatRoutes(app, {
     db,
-    design,
     http: httpDeps,
-    paths: pathDeps,
-    chat: { startChatRun },
-    agents: agentDeps,
     critique: critiqueDeps,
-    validation: validationDeps,
-    lifecycle: { isDaemonShuttingDown: () => daemonShuttingDown },
     telemetry: { reportFinalizedMessage, reportFeedback },
   });
 

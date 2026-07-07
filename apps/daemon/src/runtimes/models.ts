@@ -31,18 +31,6 @@ export function rememberLiveModels(agentId: string, models: RuntimeModelOption[]
   liveModelOrder.set(key, ids);
 }
 
-export function getRememberedLiveModels(agentId: string, scope?: string | null): RuntimeModelOption[] {
-  const ids = liveModelOrder.get(liveModelCacheKey(agentId, scope)) ?? [];
-  return ids.map((id) => ({ id, label: id }));
-}
-
-export function preferFreshLiveModels(
-  freshModels: RuntimeModelOption[],
-  rememberedModels: RuntimeModelOption[],
-): RuntimeModelOption[] {
-  return freshModels.length > 0 ? freshModels : rememberedModels;
-}
-
 export function isKnownModel(
   def: RuntimeAgentDef,
   modelId: string | null | undefined,
@@ -57,31 +45,21 @@ export function isKnownModel(
   return false;
 }
 
-// Some adapters reject the synthetic `'default'` model id (e.g. AMR / vela,
-// which requires an explicit `session/set_model` before `session/prompt`).
-// Those defs declare it by omitting DEFAULT_MODEL_OPTION from
-// `fallbackModels` entirely. When the chat run produces a null or 'default'
-// model for one of those adapters, prefer the first model from the live list
-// last surfaced to the UI, then fall back to the def's first concrete fallback
-// id so the spawn layer always has a real model to forward.
+// Some adapters reject the synthetic `'default'` model id. Those defs declare
+// it by omitting DEFAULT_MODEL_OPTION from `fallbackModels` entirely. When the
+// chat run produces a null or 'default' model for one of those adapters,
+// prefer the first model from the live list last surfaced to the UI, then
+// fall back to the def's first concrete fallback id so the spawn layer always
+// has a real model to forward.
 // Defs that DO list 'default' (the common case) are left untouched.
 export function resolveModelForAgent(
   def: RuntimeAgentDef,
   resolved: string | null,
-  env: Record<string, string | undefined> = process.env,
-  liveModelScope?: string | null,
 ): string | null {
   if (resolved && resolved !== 'default') return resolved;
-  // Daemon-process env override (e.g. VELA_DEFAULT_MODEL for AMR). Lets an
-  // operator pin a different fallback id without a code change when the
-  // hardcoded default goes away upstream.
-  if (def.defaultModelEnvVar) {
-    const raw = env[def.defaultModelEnvVar];
-    if (typeof raw === 'string' && raw.trim()) return raw.trim();
-  }
   const fallbacks = Array.isArray(def.fallbackModels) ? def.fallbackModels : [];
   if (fallbacks.some((m) => m.id === 'default')) return resolved;
-  const liveModels = liveModelOrder.get(liveModelCacheKey(def.id, liveModelScope)) ?? [];
+  const liveModels = liveModelOrder.get(liveModelCacheKey(def.id)) ?? [];
   const firstLive = liveModels[0];
   if (firstLive) return firstLive;
   if (fallbacks.length === 0) return resolved;

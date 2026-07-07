@@ -10,7 +10,6 @@
  *                 non-zero (tail appended to the error message).
  */
 import type { AgentEvent, ChatCommentAttachment, ChatMessage } from '../types';
-import type { AmrEntryAttribution } from '../analytics/amr-attribution';
 import type {
   ChatAnalyticsHints,
   ChatRunCreateResponse,
@@ -22,15 +21,16 @@ import type {
   ChatSseEvent,
   ChatSseStartPayload,
   DaemonAgentPayload,
-  AmrModelsResponse,
-  AmrWalletSnapshot,
-  ByokChatProviderConfig,
-  MediaExecutionPolicy,
   ResearchOptions,
   RunContextSelection,
   SseErrorPayload,
 } from '@open-design/contracts';
-import type { StreamHandlers } from './anthropic';
+
+export interface StreamHandlers {
+  onDelta: (textDelta: string) => void;
+  onDone: (fullText: string) => void;
+  onError: (err: Error) => void;
+}
 
 /**
  * Returns the front-end carrier that's about to send this request:
@@ -58,17 +58,6 @@ import { trackRunProgress, trackRunStart, trackRunTerminal } from '../observabil
 const MAX_TRANSCRIPT_MESSAGE_CHARS = 12_000;
 const LARGE_TOOL_RESULT_CHARS = 8_000;
 const HIGH_INPUT_TOKEN_WARNING_THRESHOLD = 200_000;
-const BYOK_OPENCODE_AGENT_ID = 'byok-opencode';
-const API_MODE_AGENT_IDS = new Set([
-  'anthropic-api',
-  'openai-api',
-  'azure-openai-api',
-  'google-gemini-api',
-  'ollama-cloud-api',
-  'senseaudio-api',
-  'aihubmix-api',
-  'bedrock-api',
-]);
 
 export function latestUserPromptFromHistory(history: ChatMessage[]): string {
   for (let i = history.length - 1; i >= 0; i -= 1) {
@@ -152,18 +141,12 @@ function scopeHistoryToAgent(history: ChatMessage[], targetAgentId?: string): Ch
     if (
       message?.role === 'assistant' &&
       message.agentId &&
-      !isSameTranscriptAgentFamily(message.agentId, targetAgentId)
+      message.agentId !== targetAgentId
     ) {
       return history.slice(i + 1);
     }
   }
   return history;
-}
-
-function isSameTranscriptAgentFamily(agentId: string, targetAgentId: string): boolean {
-  if (agentId === targetAgentId) return true;
-  if (targetAgentId !== BYOK_OPENCODE_AGENT_ID) return false;
-  return API_MODE_AGENT_IDS.has(agentId);
 }
 
 // Strip OD-specific markup that the agent emitted on a prior turn but
@@ -304,12 +287,9 @@ export interface DaemonStreamOptions {
   // options and falls back to the CLI default when missing.
   model?: string | null;
   reasoning?: string | null;
-  byokProvider?: ByokChatProviderConfig;
-  byokMediaDefaults?: ChatRequest['byokMediaDefaults'];
   research?: ResearchOptions;
   context?: RunContextSelection;
   appliedPluginSnapshotId?: string | null;
-  mediaExecution?: MediaExecutionPolicy;
   titleGeneration?: { enabled?: boolean };
   locale?: string;
   initialLastEventId?: string | null;
@@ -379,22 +359,17 @@ function daemonSseError(data: SseErrorPayload): Error {
 }
 
 function shouldSuppressLifecycleExitFallback(
-  agentId: string | undefined,
   exitCode: number | null,
   exitSignal: string | null,
   stderrTail: string,
 ): boolean {
   if (exitCode !== 130 || exitSignal) return false;
-  if (agentId === 'amr') return true;
   const normalizedStderr = stderrTail.toLowerCase();
   return (
     normalizedStderr.includes('opencode server listening') ||
     normalizedStderr.includes('opencode_server_password')
   );
 }
-
-const AMR_OPENCODE_INCOMPLETE_MESSAGE =
-  'Open Design started, but the run did not complete. Please retry or check the run details for the session stream error.';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -564,33 +539,6 @@ function formatLegacyOpenCodeSessionError(text: string): string | null {
   });
 }
 
-function isAmrOpenCodeExitFallback(agentId: string | undefined, stderr: string): boolean {
-  if (agentId === 'amr' || agentId === 'opencode') return true;
-  const normalized = stderr.toLowerCase();
-  return normalized.includes('opencode server listening') || normalized.includes('opencode session error:');
-}
-
-function isAmrOpenCodeBootstrapLine(line: string): boolean {
-  const trimmed = line.trim();
-  return (
-    /^AMR run id:\s*\S+/i.test(trimmed) ||
-    /^Performing one time database migration/i.test(trimmed) ||
-    /^sqlite-migration:done$/i.test(trimmed) ||
-    /^Database migration complete\.?$/i.test(trimmed) ||
-    /^Warning:\s*OPENCODE_SERVER_PASSWORD is not set/i.test(trimmed) ||
-    /^opencode server listening on http:\/\/127\.0\.0\.1:\d+/i.test(trimmed)
-  );
-}
-
-function cleanAmrOpenCodeStderrFallback(agentId: string | undefined, stderr: string): string {
-  if (!isAmrOpenCodeExitFallback(agentId, stderr)) return stderr.trim();
-  return stderr
-    .split(/\r?\n/)
-    .filter((line) => line.trim() && !isAmrOpenCodeBootstrapLine(line))
-    .join('\n')
-    .trim();
-}
-
 export async function streamViaDaemon({
   agentId,
   history,
@@ -609,12 +557,9 @@ export async function streamViaDaemon({
   commentAttachments,
   model,
   reasoning,
-  byokProvider,
-  byokMediaDefaults,
   research,
   context,
   appliedPluginSnapshotId,
-  mediaExecution,
   titleGeneration,
   locale,
   initialLastEventId,
@@ -647,13 +592,10 @@ export async function streamViaDaemon({
     commentAttachments: commentAttachments ?? [],
     model: model ?? null,
     reasoning: reasoning ?? null,
-    ...(byokProvider ? { byokProvider } : {}),
-    ...(byokMediaDefaults ? { byokMediaDefaults } : {}),
     locale,
     ...(appliedPluginSnapshotId ? { appliedPluginSnapshotId } : {}),
     ...(context ? { context } : {}),
     ...(research ? { research } : {}),
-    ...(mediaExecution ? { mediaExecution } : {}),
     ...(titleGeneration?.enabled ? { titleGeneration: { enabled: true } } : {}),
     ...(analyticsHints ? { analyticsHints } : {}),
   };
@@ -728,206 +670,6 @@ export async function fetchChatRunStatus(runId: string): Promise<ChatRunStatusRe
     return (await resp.json()) as ChatRunStatusResponse;
   } catch {
     return null;
-  }
-}
-
-// PR #3157: Antigravity's auth banner can offer a one-click "open
-// system terminal with agy" button. The daemon endpoint spawns
-// osascript / x-terminal-emulator / `cmd /c start` for the user; on
-// success the new Terminal window pops up with agy running and the
-// browser opens for OAuth. The Promise resolves once the daemon kicks
-// off the spawn (not when OAuth completes), so the UI can disable the
-// button momentarily and then re-enable for a retry click after the
-// user finishes in the terminal.
-export interface LaunchAntigravityOauthResult {
-  ok: boolean;
-  platform?: string;
-  via?: string;
-  error?: string;
-}
-export async function launchAntigravityOauth(): Promise<LaunchAntigravityOauthResult> {
-  try {
-    const resp = await fetch('/api/agents/antigravity/oauth-launch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    });
-    const body = (await resp.json().catch(() => null)) as
-      | LaunchAntigravityOauthResult
-      | null;
-    if (!resp.ok) {
-      return {
-        ok: false,
-        error:
-          body?.error ?? `daemon returned ${resp.status} ${resp.statusText}`,
-      };
-    }
-    return body ?? { ok: true };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-}
-
-export interface VelaUser {
-  id: string;
-  email: string;
-  name?: string;
-  image?: string | null;
-  plan?: string;
-  /** Wallet balance (USD, string) from the live `/api/v1/me` projection; `null` when unknown. */
-  balanceUsd?: string | null;
-}
-
-/**
- * Format a raw wallet `balanceUsd` string (e.g. "12.3") into a display string
- * (e.g. "$12.30"). Returns `null` when the balance is unknown/unparseable so
- * callers can simply hide the balance area.
- */
-export function formatVelaBalanceUsd(raw?: string | null): string | null {
-  if (raw == null || raw === '') return null;
-  const amount = Number(raw);
-  if (!Number.isFinite(amount)) return null;
-  // Sign before the currency symbol: an overdrawn wallet reads "-$1.25",
-  // never the malformed "$-1.25".
-  const sign = amount < 0 ? '-' : '';
-  return `${sign}$${Math.abs(amount).toFixed(2)}`;
-}
-
-/** Top subscription tier — no upgrade affordance is shown at/above this. */
-export const VELA_TOP_PLAN_TIER = 'max';
-
-/**
- * Whether to surface an "Upgrade" affordance for the given plan tier. True for
- * a KNOWN tier below the top (free/plus/pro); false at the top tier AND when
- * the plan is unknown. The unknown case matters: a signed-in session whose live
- * billing summary has not resolved yet has no plan, and treating that as
- * upgradeable would flash an Upgrade CTA at top-tier users until billing loads.
- */
-export function canUpgradeVelaPlan(plan?: string | null): boolean {
-  const normalized = plan?.trim().toLowerCase();
-  if (!normalized) return false;
-  return normalized !== VELA_TOP_PLAN_TIER;
-}
-
-/**
- * Live billing projection (plan tier + wallet balance) for the signed-in
- * account, surfaced on its OWN field rather than on {@link VelaUser} so
- * env-backed sessions (where `user` is null) can show plan/balance without a
- * fabricated identity. Absent means unknown → hide the fields.
- */
-export interface VelaLiveAccount {
-  plan?: string;
-  balanceUsd?: string | null;
-}
-
-export interface VelaLoginStatus {
-  loggedIn: boolean;
-  loginInFlight?: boolean;
-  profile: string;
-  user: VelaUser | null;
-  account?: VelaLiveAccount;
-  configPath: string;
-  // Device-authorization details parsed from `vela login` output while a login
-  // is in flight, so the UI can offer a manual sign-in link when the browser
-  // did not auto-open. See parseVelaLoginActivation in the daemon's vela.ts.
-  activationUrl?: string;
-  userCode?: string;
-  browserOpenFailed?: boolean;
-}
-
-// AMR (vela) login surfaces three thin endpoints on the daemon:
-//   GET  /api/integrations/vela/status   — read ~/.amr/config.json projection
-//   POST /api/integrations/vela/login    — spawn `vela login` (vela opens browser itself)
-//   POST /api/integrations/vela/login/cancel — terminate a still-pending login
-//   POST /api/integrations/vela/logout   — clear ~/.amr auth and Settings-backed AMR auth env
-// The Settings UI polls /status after kicking off /login to detect completion.
-export async function fetchVelaLoginStatus(): Promise<VelaLoginStatus | null> {
-  try {
-    const resp = await fetch('/api/integrations/vela/status');
-    if (!resp.ok) return null;
-    return (await resp.json()) as VelaLoginStatus;
-  } catch {
-    return null;
-  }
-}
-
-export async function fetchAmrWalletSnapshot(options: { refresh?: boolean } = {}): Promise<AmrWalletSnapshot | null> {
-  try {
-    const query = options.refresh ? '?refresh=1' : '';
-    const resp = await fetch(`/api/integrations/vela/wallet${query}`, { cache: 'no-store' });
-    if (!resp.ok) return null;
-    return (await resp.json()) as AmrWalletSnapshot;
-  } catch {
-    return null;
-  }
-}
-
-export async function fetchAmrModels(): Promise<AmrModelsResponse | null> {
-  try {
-    const resp = await fetch('/api/amr/models', { cache: 'no-store' });
-    if (!resp.ok) return null;
-    return (await resp.json()) as AmrModelsResponse;
-  } catch {
-    return null;
-  }
-}
-
-export interface StartVelaLoginResult {
-  ok: boolean;
-  status: number;
-  pid?: number;
-  alreadyRunning?: boolean;
-  error?: string;
-}
-
-export async function startVelaLogin(
-  attribution?: AmrEntryAttribution | null,
-  odDeviceId?: string | null,
-): Promise<StartVelaLoginResult> {
-  try {
-    const loginAttribution =
-      attribution && odDeviceId ? { ...attribution, odDeviceId } : attribution;
-    const resp = await fetch('/api/integrations/vela/login', {
-      method: 'POST',
-      headers: loginAttribution ? { 'Content-Type': 'application/json' } : undefined,
-      body: loginAttribution ? JSON.stringify({ attribution: loginAttribution }) : undefined,
-    });
-    if (resp.ok) {
-      const body = (await resp.json()) as { pid?: number };
-      return { ok: true, status: resp.status, pid: body.pid };
-    }
-    const body = (await resp.json().catch(() => null)) as { error?: string } | null;
-    return {
-      ok: false,
-      status: resp.status,
-      alreadyRunning: resp.status === 409,
-      error: body?.error ?? '',
-    };
-  } catch (err) {
-    return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-export async function cancelVelaLogin(): Promise<{ ok: boolean; canceled?: boolean }> {
-  try {
-    const resp = await fetch('/api/integrations/vela/login/cancel', { method: 'POST' });
-    if (!resp.ok) return { ok: false };
-    const body = (await resp.json().catch(() => null)) as { canceled?: boolean } | null;
-    return { ok: true, canceled: body?.canceled };
-  } catch {
-    return { ok: false };
-  }
-}
-
-export async function velaLogout(): Promise<{ ok: boolean }> {
-  try {
-    const resp = await fetch('/api/integrations/vela/logout', { method: 'POST' });
-    return { ok: resp.ok };
-  } catch {
-    return { ok: false };
   }
 }
 
@@ -1234,15 +976,13 @@ async function consumeDaemonRun({
         handlers.onError(markErrorResumable(pendingStructuredError, endResumable));
         return;
       }
-      if (shouldSuppressLifecycleExitFallback(agentId, exitCode, exitSignal, stderrBuf)) {
+      if (shouldSuppressLifecycleExitFallback(exitCode, exitSignal, stderrBuf)) {
         handlers.onDone(acc);
         return;
       }
-      const cleanedStderr = cleanAmrOpenCodeStderrFallback(agentId, stderrBuf);
+      const cleanedStderr = stderrBuf.trim();
       const formattedOpenCodeError = formatLegacyOpenCodeSessionError(cleanedStderr);
-      const tail = (formattedOpenCodeError ?? cleanedStderr).trim().slice(-400);
-      const fallbackTail =
-        tail || (isAmrOpenCodeExitFallback(agentId, stderrBuf) ? AMR_OPENCODE_INCOMPLETE_MESSAGE : '');
+      const fallbackTail = (formattedOpenCodeError ?? cleanedStderr).trim().slice(-400);
       handlers.onError(
         markErrorResumable(
           new Error(`agent exited with ${exitSignal ? `signal ${exitSignal}` : `code ${exitCode}`}${fallbackTail ? `\n${fallbackTail}` : ''}`),

@@ -29,10 +29,6 @@ describe('@open-design/contracts package runtime shape', () => {
     expect(pkg.files).toEqual(['dist']);
     expect(pkg.exports?.['.']?.default).toBe('./dist/index.mjs');
     expect(pkg.exports?.['.']?.types).toBe('./dist/index.d.ts');
-    expect(pkg.exports?.['./api/amrWallet']?.default).toBe('./dist/api/amrWallet.mjs');
-    expect(pkg.exports?.['./api/amrWallet']?.types).toBe('./dist/api/amrWallet.d.ts');
-    expect(pkg.exports?.['./api/connectionTest']?.default).toBe('./dist/api/connectionTest.mjs');
-    expect(pkg.exports?.['./api/connectionTest']?.types).toBe('./dist/api/connectionTest.d.ts');
     expect(pkg.exports?.['./api/research']?.default).toBe('./dist/api/research.mjs');
     expect(pkg.exports?.['./api/research']?.types).toBe('./dist/api/research.d.ts');
     expect(pkg.exports?.['./api/handoff']?.default).toBe('./dist/api/handoff.mjs');
@@ -56,27 +52,12 @@ describe('@open-design/contracts package runtime shape', () => {
 
   it('makes runtime exports importable through package exports', async () => {
     const contracts = await import('@open-design/contracts');
-    const amrWallet = await import('@open-design/contracts/api/amrWallet');
-    const connectionTest = await import('@open-design/contracts/api/connectionTest');
     const research = await import('@open-design/contracts/api/research');
     const handoff = await import('@open-design/contracts/api/handoff');
     const critique = await import('@open-design/contracts/critique');
 
     expect(contracts.composeSystemPrompt).toEqual(expect.any(Function));
     expect(contracts.exampleHealthResponse).toEqual({ ok: true, service: 'daemon' });
-    expect(amrWallet.AMR_WALLET_SNAPSHOT_STATUSES).toEqual([
-      'signed_out',
-      'available',
-      'unavailable',
-    ]);
-    expect(contracts.AMR_WALLET_SNAPSHOT_STATUSES).toEqual([
-      'signed_out',
-      'available',
-      'unavailable',
-    ]);
-    expect(connectionTest.validateBaseUrl).toEqual(expect.any(Function));
-    expect(connectionTest.isLoopbackApiHost).toEqual(expect.any(Function));
-    expect(connectionTest.isBlockedExternalApiHostname).toEqual(expect.any(Function));
     expect(research.RESEARCH_DEFAULT_MAX_SOURCES.shallow).toBe(5);
     // The handoff DTO module is interface-only except for HANDOFF_SCHEMA_VERSION,
     // which exists precisely so esbuild emits a real `.mjs` and NodeNext

@@ -5,7 +5,6 @@ import type {
   TrackingRunFailureUserAction,
 } from '@open-design/contracts/analytics';
 
-import { classifyAmrAccountFailure } from './integrations/vela-errors.js';
 import { classifyAgentServiceFailure } from './runtimes/auth.js';
 import type { RunResult, RunStatusForAnalytics } from './run-result.js';
 
@@ -155,15 +154,13 @@ function collectFailureText(input: RunFailureClassificationInput): string {
 }
 
 function isHardQuotaText(text: string): boolean {
-  return /\b(session limit|usage limit|limit reached|quota|billing (?:hard )?limit|insufficient[ _-]?(?:quota|credit|credits|funds)|exceeded your current quota|out of credits|no payment method|requires more credits|can only afford)\b|DAILY_LIMIT_EXCEEDED|用户额度不足|额度不足|预扣费额度失败/i
+  return /\b(session limit|usage limit|limit reached|quota|billing (?:hard )?limit|insufficient[ _-]?(?:quota|credit|credits|funds)|exceeded your current quota|out of credits|no payment method|requires more credits|can only afford)\b|DAILY_LIMIT_EXCEEDED/i
     .test(text);
 }
 
-// A transient, retryable rate limit (distinct from a hard quota). vela/upstream
-// returns this in Chinese ("速率限制" / "请求频率"), which the English-only
-// quota check above misses, so it currently leaks into execution_failed.
+// A transient, retryable rate limit (distinct from a hard quota).
 function isRateLimitText(text: string): boolean {
-  return /(速率限制|控制请求频率|请求(?:过于)?频繁|rate[ _-]?limit|too many requests)/i
+  return /(rate[ _-]?limit|too many requests)/i
     .test(text);
 }
 
@@ -207,7 +204,7 @@ function isCliNotInstalledText(text: string): boolean {
   //   - Node "Error: spawn <path> ENOENT" (the executable file does not exist —
   //     distinct from spawn EPERM/EBADF/ENOEXEC where the file exists but can't run)
   // Both currently leak into the opaque execution_failed bucket (#3408 P1).
-  return /\b(?:Codex CLI was not found|Missing optional dependency|Cannot find module|not installed|not on PATH|cannot find the (?:path|file) specified|system cannot find the (?:path|file) specified|is not recognized as an internal or external command|\bspawn\b[^\n]*\bENOENT\b)|�ڲ����ⲿ����|�Ҳ���ָ����·��|�޷�ִ��ָ���ĳ���|ϵͳ�Ҳ���ָ����·����|ϵͳ�޷�ִ��ָ���ĳ���/i
+  return /\b(?:Missing optional dependency|Cannot find module|not installed|not on PATH|cannot find the (?:path|file) specified|system cannot find the (?:path|file) specified|is not recognized as an internal or external command|\bspawn\b[^\n]*\bENOENT\b)|�ڲ����ⲿ����|�Ҳ���ָ����·��|�޷�ִ��ָ���ĳ���|ϵͳ�Ҳ���ָ����·����|ϵͳ�޷�ִ��ָ���ĳ���/i
     .test(text);
 }
 
@@ -223,7 +220,6 @@ function isSpawnFailureText(text: string): boolean {
 function isAgentProtocolErrorText(text: string): boolean {
   return /\bjson-rpc id \d+: Internal error\b/i.test(text) ||
     /\bACP session exited before completion\b/i.test(text) ||
-    /\bQoder run failed: (?:stop_sequence|end_turn)\b/i.test(text) ||
     /\bthread\/start failed\b/i.test(text) ||
     /\bfailed to parse request\b/i.test(text);
 }
@@ -247,7 +243,7 @@ function isAuthDetailText(text: string): boolean {
 function isSessionResumeExpiredText(text: string): boolean {
   // Tightly anchored to Claude's actual resume-miss shapes. The session-id form
   // requires the id token immediately before "not found" so it cannot bridge an
-  // unrelated "session …" and a far-away "404 Not Found" (e.g. opencode 4xx).
+  // unrelated "session …" and a far-away "404 Not Found".
   return /\bsession could not be resumed\b/i.test(text) ||
     /\bno conversation found with session id\b/i.test(text) ||
     /\bno session found\b/i.test(text) ||
@@ -262,7 +258,7 @@ function isPromptTooLargeText(text: string): boolean {
 }
 
 function isUpstreamDetailText(text: string): boolean {
-  return /\b(stream disconnected before completion|response\.completed|Transport error: network error|Upstream request failed|websocket closed|socket connection was closed unexpectedly|tls handshake eof|Connection reset by (?:peer|server)|TLS close_notify|Broken pipe|remote host|远程主机强迫关闭|No route to host|Connection refused|ConnectionRefused|error sending request|Provider returned error|high demand|model is at capacity|selected model is at capacity|temporarily unavailable|upstream_error|http2: response body closed|peer closed connection|incomplete chunked read|Client network socket disconnected before secure TLS connection|Connection failed repeatedly|lost its connection to the Anthropic API|Server error mid-response|empty or malformed response|Unexpected server error|Streaming response failed|Failed to process error response|gateway or proxy|Country, region, or territory not supported|AMR model catalog is (?:temporarily )?unavailable|statusCode[\"']?\s*:\s*(?:400|403|404)|400 Bad Request|403 Forbidden|404 Not Found|NotFoundError|OpenAIException - \{\"detail\":\"Not Found\"\}|API Error:\s*(?:400|403)\b)\b/i
+  return /\b(stream disconnected before completion|response\.completed|Transport error: network error|Upstream request failed|websocket closed|socket connection was closed unexpectedly|tls handshake eof|Connection reset by (?:peer|server)|TLS close_notify|Broken pipe|remote host|远程主机强迫关闭|No route to host|Connection refused|ConnectionRefused|error sending request|Provider returned error|high demand|model is at capacity|selected model is at capacity|temporarily unavailable|upstream_error|http2: response body closed|peer closed connection|incomplete chunked read|Client network socket disconnected before secure TLS connection|Connection failed repeatedly|lost its connection to the Anthropic API|Server error mid-response|empty or malformed response|Unexpected server error|Streaming response failed|Failed to process error response|gateway or proxy|Country, region, or territory not supported|statusCode[\"']?\s*:\s*(?:400|403|404)|400 Bad Request|403 Forbidden|404 Not Found|NotFoundError|OpenAIException - \{\"detail\":\"Not Found\"\}|API Error:\s*(?:400|403)\b)\b/i
     .test(text);
 }
 
@@ -272,20 +268,14 @@ function isUpstreamClientErrorText(text: string): boolean {
 }
 
 function modelUnavailableDetail(text: string): TrackingRunFailureDetail | null {
-  if (/\brequires a newer version of codex\b|\bunknown option [`'"]?--[\w-]+[`'"]?\b/i.test(text)) {
+  if (/\bunknown option [`'"]?--[\w-]+[`'"]?\b/i.test(text)) {
     return 'cli_version_incompatible';
   }
   if (/\bmodel is disabled\b/i.test(text)) return 'model_disabled';
-  // A local model server (e.g. LM Studio, reached via opencode's own provider
-  // config) is up but has no model loaded. Not a model we picked wrong — the
-  // user must load a model in the local app first (`lms load`). User-action,
-  // not an engine bug, so it should not sit in the opaque execution_failed
-  // bucket. (#3408 P1)
-  if (/\bno models loaded\b|\blms load\b/i.test(text)) return 'local_model_not_loaded';
   if (/\b(no endpoints found that support tool use|provider routing)\b/i.test(text)) {
     return 'provider_routing_error';
   }
-  if (/\b(model .*not supported|requested model is not supported|supported api model names|not supported when using codex)\b/i.test(text)) {
+  if (/\b(model .*not supported|requested model is not supported|supported api model names)\b/i.test(text)) {
     return 'model_not_supported';
   }
   if (/\b(model (?:is )?(?:unavailable|not available|unsupported|not found)|selected model is not available|not have access|no access|model .*not found|no healthy deployments|model .*not in (?:the )?allowed list)\b/i.test(text)) {
@@ -317,7 +307,7 @@ function authDetail(text: string): TrackingRunFailureDetail {
 }
 
 function upstreamDetail(text: string): TrackingRunFailureDetail {
-  if (/\b(AMR model catalog is (?:temporarily )?unavailable|no endpoints found that support tool use|provider routing)\b/i.test(text)) {
+  if (/\b(no endpoints found that support tool use|provider routing)\b/i.test(text)) {
     return 'provider_routing_error';
   }
   if (/\bhigh demand|temporary errors|model is at capacity|selected model is at capacity\b/i.test(text)) return 'provider_high_demand';
@@ -414,9 +404,6 @@ function processExitDetail(
   if (isProcessCrashText(text)) return 'process_crashed';
   if (isAgentConfigInvalidText(text)) return 'agent_config_invalid';
   if (isFabricatedRoleMarkerText(text)) return 'fabricated_role_marker';
-  if (/\bQoder run failed: stop_sequence\b/i.test(text)) {
-    return 'qoder_stop_sequence';
-  }
   if (isAgentProtocolErrorText(text)) {
     return 'agent_protocol_error';
   }
@@ -530,26 +517,10 @@ export function classifyRunFailure(
   const errorCode = normalizeCode(input.errorCode ?? input.status.errorCode);
   const text = collectFailureText(input);
   const retryableHint = latestRetryable(input.events);
-  const amrFailure = classifyAmrAccountFailure(text);
 
   if (
-    errorCode === 'AMR_INSUFFICIENT_BALANCE' ||
-    amrFailure?.code === 'AMR_INSUFFICIENT_BALANCE'
-  ) {
-    return classification(
-      'insufficient_balance',
-      'amr_insufficient_balance',
-      'session_init',
-      false,
-      'recharge',
-    );
-  }
-
-  if (
-    errorCode === 'AMR_AUTH_REQUIRED' ||
     errorCode === 'AGENT_AUTH_REQUIRED' ||
-    errorCode === 'UNAUTHORIZED' ||
-    amrFailure?.code === 'AMR_AUTH_REQUIRED'
+    errorCode === 'UNAUTHORIZED'
   ) {
     return classification(
       'auth',
@@ -570,9 +541,7 @@ export function classifyRunFailure(
     );
   }
 
-  const modelDetail = errorCode === 'AMR_MODEL_UNAVAILABLE'
-    ? 'model_not_found'
-    : modelUnavailableDetail(text);
+  const modelDetail = modelUnavailableDetail(text);
   if (modelDetail) {
     return classification(
       'model_unavailable',

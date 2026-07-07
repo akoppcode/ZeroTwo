@@ -192,21 +192,11 @@ describe('run-scoped tool bundles', () => {
     });
 
     expect(validateRunToolBundleForAgent(stdioOnly, {
-      id: 'codex',
-      name: 'Codex CLI',
+      id: 'copilot',
+      name: 'GitHub Copilot CLI',
     })).toEqual({
       ok: false,
-      message: 'Codex CLI (codex) does not support run-scoped MCP tool bundles',
-    });
-
-    expect(validateRunToolBundleForAgent(remote, {
-      id: 'hermes',
-      name: 'Hermes',
-      externalMcpInjection: 'acp-merge',
-    })).toEqual({
-      ok: false,
-      message:
-        'toolBundle.mcpServers[0] uses http transport, but Hermes (hermes) only supports stdio run-scoped MCP servers',
+      message: 'GitHub Copilot CLI (copilot) does not support run-scoped MCP tool bundles',
     });
 
     expect(validateRunToolBundleForAgent(remote, {

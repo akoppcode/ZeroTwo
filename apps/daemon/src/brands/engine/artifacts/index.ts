@@ -7,9 +7,6 @@
  *   landing     nav → hero → social proof → problem (PAS) → value pillars
  *               → how-it-works → features → proof → FAQ → pricing → final CTA
  *               → footer  (the 12-module docs/content-structures order)
- *   deck        11-slide pitch skeleton (Cover · Problem · Solution · Why now ·
- *               Market · Product · Business model · Competition & Moat ·
- *               Traction · Team · Ask) with scroll-snap + keyboard paging
  *   poster      3:4 print-style sheet, container-query type so nothing clips
  *   email       single-column 600px announcement with hero, checklist & CTA
  *   newsletter  masthead + numbered stories digest
@@ -30,7 +27,6 @@ import type { Brand, AssetKind } from "../../schema.js";
 import { type DesignTokens, varRef } from "../types.js";
 import { esc, document, brandTagline } from "./_shared.js";
 import { renderLanding } from "./landing.js";
-import { renderDeck } from "./deck.js";
 import { renderPoster } from "./poster.js";
 import { renderEmail } from "./email.js";
 import { renderNewsletter } from "./newsletter.js";
@@ -54,8 +50,6 @@ export function renderArtifact(kind: AssetKind, brand: Brand, tokens: DesignToke
       return renderEmail(brand, tokens);
     case "newsletter":
       return renderNewsletter(brand, tokens);
-    case "deck":
-      return renderDeck(brand, tokens);
     case "poster":
       return renderPoster(brand, tokens);
     case "form":
@@ -79,7 +73,7 @@ export function renderArtifactGallery(
     decorate?: (html: string) => string;
   },
 ): string {
-  const kinds: AssetKind[] = ["landing", "deck", "poster", "email", "newsletter", "form"];
+  const kinds: AssetKind[] = ["landing", "poster", "email", "newsletter", "form"];
   const decorate = opts?.decorate ?? ((html: string) => html);
 
   const frames = kinds

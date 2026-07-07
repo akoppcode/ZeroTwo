@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  composeSystemPrompt,
-  renderCodexImagegenOverride,
-  resolveCodexImagegenModelId,
-} from '../src/prompts/system.js';
+import { composeSystemPrompt } from '../src/prompts/system.js';
 
 // These tests pin the rendering of metadata.promptTemplate inside the
 // composed system prompt. The composer is the trust boundary between the
@@ -583,36 +579,5 @@ describe('composeSystemPrompt — metadata.promptTemplate', () => {
 
     expect(out).toContain('## Media generation contract');
     expect(out).not.toContain('## Codex built-in imagegen override');
-  });
-
-  it('does not render a Codex override for unrecognized gpt-image-like request metadata', () => {
-    const override = renderCodexImagegenOverride('codex', {
-      kind: 'image',
-      imageModel: 'gpt-image-2-preview-not-whitelisted',
-      imageAspect: '1:1',
-    });
-
-    expect(override).toBe('');
-  });
-
-  it('resolves only known OpenAI gpt-image model ids for the Codex override', () => {
-    expect(
-      resolveCodexImagegenModelId({
-        kind: 'image',
-        imageModel: 'gpt-image-2',
-      }),
-    ).toBe('gpt-image-2');
-    expect(
-      resolveCodexImagegenModelId({
-        kind: 'image',
-        imageModel: 'dall-e-3',
-      }),
-    ).toBe('');
-    expect(
-      resolveCodexImagegenModelId({
-        kind: 'image',
-        imageModel: 'gpt-image-2-preview-not-whitelisted',
-      }),
-    ).toBe('');
   });
 });

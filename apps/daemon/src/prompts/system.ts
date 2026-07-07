@@ -14,17 +14,6 @@
  *      (`assets/template.html`) and references (`references/layouts.md`,
  *      `references/checklist.md`), we inject a hard pre-flight rule above
  *      the skill body so the agent reads them BEFORE writing any code.
- *   4. For decks (skillMode === 'deck' OR metadata.kind === 'deck'), the
- *      deck framework directive (./deck-framework.ts) is pinned LAST so it
- *      overrides any softer slide-handling wording earlier in the stack —
- *      this is the load-bearing nav / counter / scroll JS / print
- *      stylesheet contract that PDF stitching depends on. We also fire on
- *      the metadata path so deck-kind projects without a bound skill
- *      (skill_id null) still get a framework, instead of having the agent
- *      re-author scaling / nav / print logic from scratch each turn. When
- *      the active skill ships its own seed (skill body references
- *      `assets/template.html`), we defer to that seed and skip the generic
- *      skeleton — the skill's framework wins to avoid double-injection.
  *
  * The composed string is what the daemon sees as `systemPrompt` and what
  * the Anthropic path sends as `system`.
@@ -32,9 +21,6 @@
 import { renderOfficialDesignerPrompt } from './official-system.js';
 import { renderDiscoveryAndPhilosophy, renderSharedFramesBlock } from './discovery.js';
 import { renderDirectionSpecBlock } from './directions.js';
-import { DECK_FRAMEWORK_DIRECTIVE } from './deck-framework.js';
-import { renderMediaGenerationContract } from './media-contract.js';
-import { IMAGE_MODELS } from '../media/models.js';
 import { renderPanelPrompt } from './panel.js';
 import { defaultCritiqueConfig, type CritiqueConfig } from '@open-design/contracts/critique';
 import {
@@ -258,87 +244,6 @@ export const BASE_SYSTEM_PROMPT = renderOfficialDesignerPrompt('filesystem');
 export const SKIP_DISCOVERY_BRIEF_OVERRIDE = `# Automated project mode — skip discovery form
 
 This project was created through the daemon API with \`skipDiscoveryBrief: true\`. Override the discovery rules below: do NOT emit \`<question-form id="discovery">\`, do NOT show "Quick brief — 30 seconds", and do NOT ask a first-turn clarification form. Treat the user's first message and project metadata as the brief, then proceed directly to planning/building under the normal artifact workflow. Ask at most one concise follow-up only if a required detail is impossible to infer safely.`;
-
-// Injected into non-media projects so the agent knows how to dispatch
-// media generation if the user asks for it mid-session (e.g. "generate an
-// image with fal"). Without this, agents in prototype/deck projects try to
-// call provider REST APIs directly and ask the user for keys that the daemon
-// already holds in .od/media-config.json.
-const MEDIA_DISPATCH_HINT = `
-
----
-
-## Media generation (if asked)
-
-If the user asks you to generate an image, video, or audio file — regardless of which provider or model they mention (fal, Replicate, OpenAI, etc.) — use the daemon dispatcher via your **Bash tool**. Do NOT call provider REST APIs directly.
-
-The daemon injects these env vars into your shell (**POSIX bash — not PowerShell**):
-
-- \`OD_NODE_BIN\`   — absolute path to the Node runtime
-- \`OD_BIN\`        — absolute path to the OD CLI script
-- \`OD_PROJECT_ID\` — the active project id
-
-**Always use the generate→wait loop below.** \`media generate\` always exits 0 — either with \`{"file":{...}}\` if done within ~25s, or with \`{"taskId":"..."}\` as a handoff for slow models (flux-pro-ultra ~60–180s, veo-3-fal longer). Whenever the output contains a \`taskId\`, keep polling with \`media wait\` until exit 0 (done) or exit 5 (failed).
-
-Use **POSIX \`$VAR\` syntax** — do NOT translate to PowerShell (\`$env:VAR\`, \`&\` operator). Uses \`python3\` for JSON parsing (do NOT use \`jq\`):
-
-\`\`\`bash
-# POSIX bash — do NOT convert to PowerShell
-out=\$("$OD_NODE_BIN" "$OD_BIN" media generate \\
-  --project "$OD_PROJECT_ID" \\
-  --surface image \\
-  --model flux-pro-ultra \\
-  --prompt "..." \\
-  --aspect 16:9)
-ec=\$?
-if [ "\$ec" -ne 0 ]; then echo "\$out" >&2; exit "\$ec"; fi
-last=\$(printf '%s\\n' "\$out" | tail -1)
-task_id=\$(printf '%s\\n' "\$last" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('taskId',''))" 2>/dev/null)
-since=\$(printf '%s\\n' "\$last" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('nextSince',0))" 2>/dev/null)
-since="\${since:-0}"
-while [ -n "\$task_id" ]; do
-  out=\$("$OD_NODE_BIN" "$OD_BIN" media wait "\$task_id" --since "\$since")
-  ec=\$?
-  last=\$(printf '%s\\n' "\$out" | tail -1)
-  since=\$(printf '%s\\n' "\$last" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('nextSince',\$since))" 2>/dev/null)
-  since="\${since:-0}"
-  if [ "\$ec" -eq 0 ]; then
-    task_id=""
-  elif [ "\$ec" -ne 2 ]; then
-    echo "\$out" >&2; exit "\$ec"
-  fi
-done
-printf '%s\\n' "\$last"
-\`\`\`
-
-**Never ask the user for an API key.** The daemon reads provider credentials from its config; keys are never passed through the shell. If the provider returns an auth error, tell the user to open Settings → AI Providers and confirm the key is configured there.
-
-For the best fal image model use \`--model flux-pro-ultra\`. For video use \`--model veo-3-fal\` or \`--model wan-2.1-t2v\`. Always pass \`--surface\` explicitly (\`image\`, \`video\`, or \`audio\`). Any \`fal-ai/*\` path (e.g. \`fal-ai/flux/schnell\`, \`fal-ai/wan-i2v\`) is also a valid \`--model\` value for image/video — pass it through as-is without substitution.`;
-
-function renderByokMediaDefaultsHint(defaults?: ByokMediaDefaults): string {
-  const lines: string[] = [];
-  const imageModel = defaults?.imageModel?.trim();
-  const videoModel = defaults?.videoModel?.trim();
-  const speechModel = defaults?.speechModel?.trim();
-  const speechVoice = defaults?.speechVoice?.trim();
-  if (imageModel) lines.push(`- Image model: \`${imageModel}\``);
-  if (videoModel) lines.push(`- Video model: \`${videoModel}\``);
-  if (speechModel) lines.push(`- Speech model: \`${speechModel}\``);
-  if (speechVoice) lines.push(`- Speech voice: \`${speechVoice}\``);
-  if (lines.length === 0) return '';
-  return `
-
-### Run-scoped BYOK media defaults
-
-The user selected these BYOK media defaults in the chat UI for this run. Use
-them when dispatching media unless the current user message explicitly asks for
-a different model or voice.
-${lines.join('\n')}`;
-}
-
-function renderMediaDispatchHint(defaults?: ByokMediaDefaults): string {
-  return `${MEDIA_DISPATCH_HINT}${renderByokMediaDefaultsHint(defaults)}`;
-}
 
 const FILESYSTEM_HANDOFF_OVERRIDE = `
 
@@ -570,8 +475,6 @@ export interface ComposeInput {
 }
 
 export function composeSystemPrompt({
-  agentId,
-  includeCodexImagegenOverride = true,
   skillBody,
   skillName,
   skillMode,
@@ -604,7 +507,6 @@ export function composeSystemPrompt({
   userInstructions,
   projectInstructions,
   mediaExecution,
-  byokMediaDefaults,
   executionProfile,
 }: ComposeInput): string {
   // Injection resistance goes FIRST — before everything else — so no later
@@ -612,13 +514,6 @@ export function composeSystemPrompt({
   // can instruct the model to disregard it.
   const parts: string[] = [PROMPT_INJECTION_RESISTANCE, '\n\n---\n\n'];
   const activeDesignSystemBody = designSystemBody?.trim();
-  const activeSkillModes = new Set(
-    Array.isArray(skillModes)
-      ? skillModes.filter(Boolean)
-      : skillMode
-        ? [skillMode]
-        : [],
-  );
   const resolvedExclusiveSurface = resolveExclusiveSurface({ metadata, skillMode, skillModes });
   const resolvedExecutionProfile =
     executionProfile ?? executionProfileFromStreamFormat(streamFormat);
@@ -659,8 +554,7 @@ export function composeSystemPrompt({
   // forms, brand extraction, direction pickers, and HTML artifact checklist —
   // none of which apply to media generation. Including it forces the agent to
   // parse and override all of those rules before it can start, adding tokens
-  // and LLM inference time. The MEDIA_GENERATION_CONTRACT (pushed below) is
-  // the sole workflow authority for these surfaces.
+  // and LLM inference time.
   const isMediaSurfaceEarly =
     skillMode === 'image' ||
     skillMode === 'video' ||
@@ -857,69 +751,10 @@ export function composeSystemPrompt({
   );
   if (metaBlock) parts.push(metaBlock);
 
-  // Decks have a load-bearing framework (nav, counter, scroll JS, print
-  // stylesheet for PDF stitching). Pin it last so it overrides any softer
-  // wording earlier in the stack ("write a script that handles arrows…").
-  //
-  // We fire on either (a) the active skill is a deck skill OR (b) the
-  // project metadata declares kind=deck. Case (b) catches projects created
-  // without a skill (skill_id null) — without this, a deck-kind project
-  // with no bound skill gets neither a skill seed nor the framework
-  // skeleton, and the agent writes scaling / nav / print logic from scratch
-  // with the same buggy `place-items: center` + transform pattern we keep
-  // having to fix at runtime. Skill seeds (when present) win — they
-  // already define their own opinionated framework (simple-deck's
-  // scroll-snap, guizang-ppt's magazine layout) and re-pinning the generic
-  // skeleton would conflict. The skill-seed path takes over via
-  // `derivePreflight` above, so we only fire the generic skeleton when no
-  // skill seed is on offer.
-  const isDeckProject = resolvedExclusiveSurface === 'deck';
-  const isFreeformProject = activeSkillModes.size === 0 && (!metadata || metadata.kind === 'other');
-  const hasSkillSeed =
-    !!skillBody && /assets\/template\.html/.test(skillBody);
-  if (!isAskMode && isDeckProject && !hasSkillSeed) {
-    parts.push(`\n\n---\n\n${DECK_FRAMEWORK_DIRECTIVE}`);
-  } else if (!isAskMode && isFreeformProject && !hasSkillSeed) {
-    // Freeform / kind=other projects skip the kind picker entirely and
-    // land here. If the user's brief is a deck/keynote/slides ("讲解",
-    // "presentation", "make a deck"), the agent used to invent its own
-    // scale-to-fit + slide visibility + nav script from scratch and
-    // shipped subtle CSS specificity bugs (per-slide layout classes
-    // overriding `.slide { display:none }`). Inject the same framework
-    // here, prefixed with a one-line conditional so the agent only
-    // adopts it when the brief actually is a deck — otherwise the
-    // directive is read as background reference and ignored.
-    parts.push(
-      `\n\n---\n\n## If this brief is a slide deck / keynote / presentation\n\nThe user did not pre-select a "Slide deck" surface, but their request may still call for one. **If — and only if — the brief reads as slides, keynote, presentation, deck, PPT, or 讲解, follow the framework below.** Otherwise ignore everything in this section and continue with the freeform output you would have written anyway.\n\n${DECK_FRAMEWORK_DIRECTIVE}`,
-    );
-  }
-
   const isMediaSurface =
     resolvedExclusiveSurface === 'image'
     || resolvedExclusiveSurface === 'video'
     || resolvedExclusiveSurface === 'audio';
-  if (isAskMode) {
-    // Ask mode ships neither the media-generation contract nor the dispatch
-    // hint. The override above tells the agent to nudge the user toward Design
-    // mode for anything that actually generates media.
-  } else if (isMediaSurface) {
-    parts.push(renderMediaGenerationContract(mediaExecution, byokMediaDefaults));
-  } else {
-    // Non-media projects (prototype, deck, etc.): inject a lightweight hint
-    // so the agent uses `od media generate` if the user asks for an image/video
-    // mid-session, rather than hunting for provider API keys in the environment.
-    parts.push(renderMediaDispatchHint(byokMediaDefaults));
-  }
-
-  if (!isAskMode && includeCodexImagegenOverride && shouldAllowCodexImagegenOverride(metadata, mediaExecution)) {
-    const codexImagegenOverride = renderCodexImagegenOverride(
-      agentId,
-      metadata,
-    );
-    if (codexImagegenOverride) {
-      parts.push(codexImagegenOverride);
-    }
-  }
 
   // Critique Theater addendum. When cfg.enabled is true the panel protocol
   // is pinned last so it overrides any softer critique wording earlier in the
@@ -927,10 +762,9 @@ export function composeSystemPrompt({
   // needs to opt in.
   //
   // The panel block requires <ARTIFACT mime="text/html"> inside <CRITIQUE_RUN>,
-  // which conflicts with MEDIA_GENERATION_CONTRACT (image/video/audio surfaces
-  // explicitly forbid HTML output). Skip the addendum on media surfaces so
-  // the critique flag is a no-op there until a media-aware panel template
-  // lands.
+  // which does not apply to media surfaces (image/video/audio projects do not
+  // produce HTML output). Skip the addendum on media surfaces so the critique
+  // flag is a no-op there.
   const cfg = critique ?? defaultCritiqueConfig();
   if (cfg.enabled && critiqueBrand && critiqueSkill && !isMediaSurface && !isAskMode) {
     parts.push('\n\n' + renderPanelPrompt({ cfg, brand: critiqueBrand, skill: critiqueSkill }));
@@ -1098,119 +932,6 @@ function renderConnectedExternalMcpDirective(
   ].join('');
 }
 
-const CODEX_IMAGEGEN_MODEL_IDS = new Set(
-  IMAGE_MODELS.filter(
-    (model) =>
-      model?.provider === 'openai' &&
-      typeof model?.id === 'string' &&
-      model.id.startsWith('gpt-image-'),
-  ).map((model) => model.id),
-);
-
-export function resolveCodexImagegenModelId(
-  metadata: ProjectMetadata | undefined,
-): string {
-  const imageModel =
-    typeof metadata?.imageModel === 'string' ? metadata.imageModel.trim() : '';
-  return CODEX_IMAGEGEN_MODEL_IDS.has(imageModel) ? imageModel : '';
-}
-
-export function shouldRenderCodexImagegenOverride(
-  agentId: string | null | undefined,
-  metadata: ProjectMetadata | undefined,
-): boolean {
-  const normalizedAgentId =
-    typeof agentId === 'string' ? agentId.trim().toLowerCase() : '';
-  return (
-    normalizedAgentId === 'codex' &&
-    metadata?.kind === 'image' &&
-    resolveCodexImagegenModelId(metadata).length > 0
-  );
-}
-
-function shouldAllowCodexImagegenOverride(
-  metadata: ProjectMetadata | undefined,
-  mediaExecution: MediaExecutionPolicy | undefined,
-): boolean {
-  const mode = mediaExecution?.mode ?? 'enabled';
-  if (mode !== 'enabled') return false;
-  if (
-    Array.isArray(mediaExecution?.allowedSurfaces) &&
-    mediaExecution.allowedSurfaces.length > 0 &&
-    !mediaExecution.allowedSurfaces.includes('image')
-  ) {
-    return false;
-  }
-  const model = resolveCodexImagegenModelId(metadata);
-  if (
-    model &&
-    Array.isArray(mediaExecution?.allowedModels) &&
-    mediaExecution.allowedModels.length > 0 &&
-    !mediaExecution.allowedModels.includes(model)
-  ) {
-    return false;
-  }
-  return true;
-}
-
-export function renderCodexImagegenOverride(
-  agentId: string | null | undefined,
-  metadata: ProjectMetadata | undefined,
-): string {
-  if (!shouldRenderCodexImagegenOverride(agentId, metadata)) {
-    return '';
-  }
-  const imageModel = resolveCodexImagegenModelId(metadata);
-
-  return `
-
----
-
-## Codex built-in imagegen override (load-bearing — Codex only)
-
-The active agent is Codex and this image project selected \`${imageModel}\`.
-For this specific case, use Codex's built-in image generation capability
-instead of \`"$OD_NODE_BIN" "$OD_BIN" media generate\` for the first generation
-attempt. This is an intentional exception to the media generation contract and
-the active image skill's dispatcher wording.
-
-Do not require, request, or mention \`OPENAI_API_KEY\` before trying the
-built-in path. Reuse the project metadata, reference prompt template, aspect
-ratio, style notes, and the user's current brief to form the final image
-prompt. Generate the image with Codex built-in imagegen, then use the actual
-output path returned by the built-in imagegen result as the source file first.
-Only if the built-in result does not return a usable path should you search
-\`\${CODEX_HOME:-$HOME/.codex}/generated_images/.../ig_*.png\` as a fallback
-source. Never leave a project-referenced asset only under \`$CODEX_HOME\`.
-
-When the user asked for one image, produce exactly one final project image
-file. If Codex built-in imagegen returns multiple candidate files, previews, or
-variants, select the single best match and import only that file into
-\`$OD_PROJECT_DIR\`. Do not copy every generated variant, do not keep multiple
-final image files, and do not present multiple outputs unless the user
-explicitly asked for variants or more than one image.
-
-Copy or move the selected generated file into \`$OD_PROJECT_DIR\` with a short
-descriptive filename, then verify the exact destination file exists under
-\`$OD_PROJECT_DIR\` before claiming success. If reading the source path,
-creating the destination directory, copying/moving, or verifying the copied
-asset fails, report the exact source path, destination path, and access/copy
-error. Do not claim success, silently fall back, or ask about OpenAI/Azure
-fallback after a generated image exists but the project copy fails; stop after
-reporting the failure unless the user explicitly chooses fallback in a later
-turn, because fallback may create a different image.
-
-After the file exists under \`$OD_PROJECT_DIR\`, reply with the project-local
-filename and a short summary of the prompt used. Do not emit an \`<artifact>\`
-block for media.
-
-If Codex built-in imagegen is unavailable or generation fails before producing
-an image, surface the actual failure message and ask the user for one-time
-confirmation before falling back to the existing OpenAI/Azure API-key provider
-path via \`"$OD_NODE_BIN" "$OD_BIN" media generate --surface image --model ${imageModel}\`.
-Do not silently fall back.`;
-}
-
 function renderMetadataBlock(
   metadata: ProjectMetadata | undefined,
   template: ProjectTemplate | undefined,
@@ -1287,7 +1008,7 @@ function renderMetadataBlock(
   }
   if (metadata.kind === 'brand') {
     lines.push(
-      '- **brand extraction project**: this project was created by the Brands extractor. Treat `brand.json`, `DESIGN.md`, `BRAND-SYSTEM.md`, `tokens.*.json`, `theme.json`, `kit.html`, `kit.dark.html`, and `artifacts/{landing,deck,poster,email,newsletter,form}.html` as the source of truth. Do not restart extraction from scratch unless the user explicitly asks; explain the extracted kit, then iterate the saved files when requested.',
+      '- **brand extraction project**: this project was created by the Brands extractor. Treat `brand.json`, `DESIGN.md`, `BRAND-SYSTEM.md`, `tokens.*.json`, `theme.json`, `kit.html`, `kit.dark.html`, and `artifacts/{landing,poster,email,newsletter,form}.html` as the source of truth. Do not restart extraction from scratch unless the user explicitly asks; explain the extracted kit, then iterate the saved files when requested.',
     );
     if (metadata.brandId) lines.push(`- **brandId**: ${metadata.brandId}`);
     if (metadata.brandSourceUrl) lines.push(`- **brandSourceUrl**: ${metadata.brandSourceUrl}`);

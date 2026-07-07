@@ -2,15 +2,11 @@ import type http from 'node:http';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import {
-  chmodSync,
   existsSync,
-  mkdirSync,
   mkdtempSync,
   promises as fsp,
   readFileSync,
-  realpathSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -18,29 +14,19 @@ import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
-  bufferedAntigravityGeminiFirstTokenAt,
-  composeLiveInstructionPrompt,
   describeStablePromptCache,
   designSystemIdFromPluginSnapshot,
-  resolveGrantedCodexImagegenOverride,
-  resolveCodexGeneratedImagesDir,
   resolveChatExtraAllowedDirs,
   resolveEffectiveDesignSystemSelection,
   resolveResearchCommandContract,
   startServer,
-  validateCodexGeneratedImagesDir,
 } from '../src/server.js';
 import { skillCwdAliasSegment } from '../src/cwd-aliases.js';
 import { getAgentDef } from '../src/agents.js';
 import { readMemoryConfig, writeMemoryConfig } from '../src/memory.js';
 import { upsertMessage } from '../src/db.js';
-import { renderCodexImagegenOverride } from '../src/prompts/system.js';
 
 const FAKE_VELA_FIXTURE = resolve(process.cwd(), 'tests', 'fixtures', 'fake-vela.mjs');
-
-function symlinkDir(target: string, link: string): void {
-  symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
-}
 
 async function withFakeAgent<T>(
   binName: string,
@@ -2410,54 +2396,6 @@ process.exit(0);
     );
   });
 
-  it('preserves the first buffered stdout timestamp for Antigravity Gemini assistant text', () => {
-    const timestamp = bufferedAntigravityGeminiFirstTokenAt(
-      [{
-        receivedAt: 1_234,
-        text: [
-          JSON.stringify({ type: 'init', session_id: 'agy-1', model: 'gemini-3.5-flash' }),
-          JSON.stringify({ type: 'message', role: 'assistant', content: 'Hello from Antigravity.', delta: true }),
-          JSON.stringify({ type: 'result', status: 'success', stats: { input_tokens: 4, output_tokens: 5 } }),
-        ].join('\n'),
-      }],
-    );
-
-    expect(timestamp).toBe(1_234);
-  });
-
-  it('stamps Antigravity Gemini assistant text from the chunk that completes the first assistant message', () => {
-    const timestamp = bufferedAntigravityGeminiFirstTokenAt([
-      {
-        receivedAt: 1_234,
-        text: `${JSON.stringify({ type: 'init', session_id: 'agy-1', model: 'gemini-3.5-flash' })}\n`,
-      },
-      {
-        receivedAt: 5_678,
-        text: `${JSON.stringify({ type: 'message', role: 'assistant', content: 'Hello from Antigravity.', delta: true })}\n`,
-      },
-      {
-        receivedAt: 9_999,
-        text: `${JSON.stringify({ type: 'result', status: 'success', stats: { input_tokens: 4, output_tokens: 5 } })}\n`,
-      },
-    ]);
-
-    expect(timestamp).toBe(5_678);
-  });
-
-  it('does not stamp a first token timestamp for Antigravity Gemini streams without assistant text', () => {
-    const timestamp = bufferedAntigravityGeminiFirstTokenAt(
-      [{
-        receivedAt: 1_234,
-        text: [
-          JSON.stringify({ type: 'init', session_id: 'agy-1', model: 'gemini-3.5-flash' }),
-          JSON.stringify({ type: 'result', status: 'success', stats: { input_tokens: 4, output_tokens: 0 } }),
-        ].join('\n'),
-      }],
-    );
-
-    expect(timestamp).toBeNull();
-  });
-
   it('surfaces Qoder assistant error records through the SSE error channel', async () => {
     const qoderErrorLine = JSON.stringify({
       type: 'assistant',
@@ -3120,66 +3058,6 @@ async function waitForRunStatus(
 }
 
 describe('chat prompt helpers', () => {
-  it('appends the validated Codex override after the client system prompt and removes earlier duplicates', () => {
-    const override = renderCodexImagegenOverride('codex', {
-      kind: 'image',
-      imageModel: 'gpt-image-2',
-      imageAspect: '1:1',
-    });
-    const clientMediaContract =
-      '## Media generation contract\nclient contract wins unless a later override says otherwise';
-
-    const prompt = composeLiveInstructionPrompt({
-      daemonSystemPrompt: `daemon prompt\n${override}`,
-      runtimeToolPrompt: 'runtime tools',
-      clientSystemPrompt: clientMediaContract,
-      finalPromptOverride: override,
-    });
-
-    const clientIdx = prompt.indexOf(clientMediaContract);
-    const overrideIdx = prompt.indexOf('## Codex built-in imagegen override');
-    expect(clientIdx).toBeGreaterThan(-1);
-    expect(overrideIdx).toBeGreaterThan(clientIdx);
-    expect(prompt.match(/## Codex built-in imagegen override/g)).toHaveLength(1);
-  });
-
-  it('omits the Codex final imagegen override when run media policy blocks execution', () => {
-    const metadata = {
-      kind: 'image',
-      imageModel: 'gpt-image-2',
-      imageAspect: '1:1',
-    };
-    const mediaExecution = {
-      mode: 'disabled',
-      allowedSurfaces: ['image'],
-    };
-    const generatedImagesDir = resolveCodexGeneratedImagesDir(
-      'codex',
-      metadata,
-      { CODEX_HOME: '/tmp/custom-codex-home' },
-      '/home/tester',
-      mediaExecution,
-    );
-    const otherwiseGrantedDir = resolve('/tmp/custom-codex-home/generated_images');
-    const override = resolveGrantedCodexImagegenOverride({
-      agentId: 'codex',
-      metadata,
-      codexGeneratedImagesDir: otherwiseGrantedDir,
-      extraAllowedDirs: [otherwiseGrantedDir],
-      mediaExecution,
-    });
-    const prompt = composeLiveInstructionPrompt({
-      daemonSystemPrompt: 'daemon media policy prompt',
-      runtimeToolPrompt: 'runtime tools',
-      clientSystemPrompt: 'client instructions',
-      finalPromptOverride: override,
-    });
-
-    expect(generatedImagesDir).toBeNull();
-    expect(override).toBeNull();
-    expect(prompt).not.toContain('## Codex built-in imagegen override');
-  });
-
   it('defaults enabled research without an explicit query to the current message', () => {
     const prompt = resolveResearchCommandContract(
       { enabled: true },
@@ -3189,88 +3067,6 @@ describe('chat prompt helpers', () => {
     expect(prompt).toContain('Canonical query for this run:');
     expect(prompt).toContain('EV market 2025 trends');
     expect(prompt).toContain('the first tool action must be the research command');
-  });
-
-  it('resolves only the narrow Codex generated_images allowlist for known gpt-image image projects', () => {
-    expect(
-      resolveCodexGeneratedImagesDir(
-        'codex',
-        { kind: 'image', imageModel: 'gpt-image-2' },
-        { CODEX_HOME: '/tmp/custom-codex-home' },
-        '/home/tester',
-      ),
-    ).toBe(resolve('/tmp/custom-codex-home/generated_images'));
-
-    expect(
-      resolveCodexGeneratedImagesDir(
-        'codex',
-        { kind: 'image', imageModel: 'gpt-image-2-preview' },
-        { CODEX_HOME: '/tmp/custom-codex-home' },
-        '/home/tester',
-      ),
-    ).toBeNull();
-
-    expect(
-      resolveCodexGeneratedImagesDir(
-        'claude',
-        { kind: 'image', imageModel: 'gpt-image-2' },
-        { CODEX_HOME: '/tmp/custom-codex-home' },
-        '/home/tester',
-      ),
-    ).toBeNull();
-  });
-
-  it('rejects a generated_images final-component symlink', () => {
-    const root = mkdtempSync(join(tmpdir(), 'od-codex-generated-symlink-'));
-    try {
-      const codexHome = join(root, 'codex-home');
-      const symlinkTarget = join(root, 'actual-generated-images');
-      mkdirSync(codexHome, { recursive: true });
-      mkdirSync(symlinkTarget, { recursive: true });
-      symlinkDir(symlinkTarget, join(codexHome, 'generated_images'));
-
-      const generatedImagesDir = resolveCodexGeneratedImagesDir(
-        'codex',
-        { kind: 'image', imageModel: 'gpt-image-2' },
-        { CODEX_HOME: codexHome },
-        '/home/tester',
-      );
-
-      expect(
-        validateCodexGeneratedImagesDir(generatedImagesDir, {
-          warn: () => undefined,
-        }),
-      ).toBeNull();
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('rejects a generated_images dir whose canonical path is inside a protected root', () => {
-    const root = mkdtempSync(join(tmpdir(), 'od-codex-generated-protected-'));
-    try {
-      const protectedRoot = join(root, 'skills');
-      const protectedGeneratedImages = join(protectedRoot, 'generated_images');
-      mkdirSync(protectedGeneratedImages, { recursive: true });
-      const codexHome = join(root, 'codex-home');
-      symlinkDir(protectedRoot, codexHome);
-
-      const generatedImagesDir = resolveCodexGeneratedImagesDir(
-        'codex',
-        { kind: 'image', imageModel: 'gpt-image-2' },
-        { CODEX_HOME: codexHome },
-        '/home/tester',
-      );
-
-      expect(
-        validateCodexGeneratedImagesDir(generatedImagesDir, {
-          protectedDirs: [protectedRoot],
-          warn: () => undefined,
-        }),
-      ).toBeNull();
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
   });
 
   it('resolves design-system selection precedence for run prompt composition', () => {
@@ -3356,96 +3152,16 @@ describe('chat prompt helpers', () => {
     });
   });
 
-  it('grants Codex the canonical validated generated_images dir', () => {
-    const root = mkdtempSync(join(tmpdir(), 'od-codex-generated-canonical-'));
-    try {
-      const actualCodexHome = join(root, 'actual-codex-home');
-      const symlinkCodexHome = join(root, 'codex-home-link');
-      mkdirSync(actualCodexHome, { recursive: true });
-      symlinkDir(actualCodexHome, symlinkCodexHome);
-
-      const generatedImagesDir = resolveCodexGeneratedImagesDir(
-        'codex',
-        { kind: 'image', imageModel: 'gpt-image-2' },
-        { CODEX_HOME: symlinkCodexHome },
-        '/home/tester',
-      );
-      const validatedDir = validateCodexGeneratedImagesDir(
-        generatedImagesDir,
-        { warn: () => undefined },
-      );
-      const canonicalGeneratedImagesDir = join(
-        realpathSync.native(actualCodexHome),
-        'generated_images',
-      );
-      const extraAllowedDirs = resolveChatExtraAllowedDirs({
-        agentId: 'codex',
-        skillsDir: '/repo/skills',
-        designSystemsDir: '/repo/design-systems',
-        linkedDirs: ['/linked/reference'],
-        codexGeneratedImagesDir: validatedDir,
-        existsSync: () => true,
-      });
-      const codex = getAgentDef('codex');
-      if (!codex) throw new Error('Codex agent definition missing');
-      const args = codex.buildArgs('', [], extraAllowedDirs, {}, {
-        cwd: '/tmp/od-project',
-      });
-
-      expect(generatedImagesDir).not.toBe(canonicalGeneratedImagesDir);
-      expect(validatedDir).toBe(canonicalGeneratedImagesDir);
-      expect(extraAllowedDirs).toEqual([canonicalGeneratedImagesDir]);
-      expect(
-        args.filter(
-          (arg, index) =>
-            arg === '--add-dir' || args[index - 1] === '--add-dir',
-        ),
-      ).toEqual(['--add-dir', canonicalGeneratedImagesDir]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('limits Codex extra allowed dirs to the generated_images output dir', () => {
-    const generatedImagesDir = '/home/tester/.codex/generated_images';
-    const dirs = resolveChatExtraAllowedDirs({
-      agentId: '  CoDeX  ',
-      skillsDir: '/repo/skills',
-      designSystemsDir: '/repo/design-systems',
-      linkedDirs: ['/linked/reference'],
-      codexGeneratedImagesDir: generatedImagesDir,
-      existsSync: () => true,
-    });
-
-    expect(dirs).toEqual([generatedImagesDir]);
-
-    const codex = getAgentDef('codex');
-    if (!codex) throw new Error('Codex agent definition missing');
-    const args = codex.buildArgs('', [], dirs, {}, { cwd: '/tmp/od-project' });
-    expect(
-      args.filter(
-        (arg, index) =>
-          arg === '--add-dir' || args[index - 1] === '--add-dir',
-      ),
-    ).toEqual(['--add-dir', generatedImagesDir]);
-    expect(args).not.toContain('/repo/skills');
-    expect(args).not.toContain('/repo/design-systems');
-    expect(args).not.toContain('/linked/reference');
-  });
-
-  it('keeps resource and linked dirs for non-Codex agents without the Codex output dir', () => {
+  it('keeps resource and linked dirs that exist on disk', () => {
     const existingDirs = new Set([
       '/repo/skills',
       '/repo/design-systems',
       '/linked/reference',
-      '/home/tester/.codex/generated_images',
     ]);
     const dirs = resolveChatExtraAllowedDirs({
-      agentId: 'claude',
       skillsDir: '/repo/skills',
       designSystemsDir: '/repo/design-systems',
-      linkedDirs: ['/linked/reference'],
-      codexGeneratedImagesDir: '/home/tester/.codex/generated_images',
+      linkedDirs: ['/linked/reference', '/linked/missing'],
       existsSync: (dir: string) => existingDirs.has(dir),
     });
 
@@ -3454,81 +3170,5 @@ describe('chat prompt helpers', () => {
       '/repo/design-systems',
       '/linked/reference',
     ]);
-  });
-
-  it('does not add resource dirs for Codex when imagegen is not whitelisted', () => {
-    const dirs = resolveChatExtraAllowedDirs({
-      agentId: 'codex',
-      skillsDir: '/repo/skills',
-      designSystemsDir: '/repo/design-systems',
-      linkedDirs: ['/linked/reference'],
-      codexGeneratedImagesDir: null,
-      existsSync: () => true,
-    });
-
-    expect(dirs).toEqual([]);
-  });
-
-  it('omits the Codex override when validation fails or the dir is not granted', () => {
-    const metadata = { kind: 'image', imageModel: 'gpt-image-2' };
-    const root = mkdtempSync(join(tmpdir(), 'od-codex-generated-prompt-'));
-    try {
-      const codexHome = join(root, 'codex-home');
-      const symlinkTarget = join(root, 'actual-generated-images');
-      mkdirSync(codexHome, { recursive: true });
-      mkdirSync(symlinkTarget, { recursive: true });
-      symlinkDir(symlinkTarget, join(codexHome, 'generated_images'));
-
-      const generatedImagesDir = resolveCodexGeneratedImagesDir(
-        'codex',
-        metadata,
-        { CODEX_HOME: codexHome },
-        '/home/tester',
-      );
-      const validatedDir = validateCodexGeneratedImagesDir(
-        generatedImagesDir,
-        { warn: () => undefined },
-      );
-      const extraAllowedDirs = resolveChatExtraAllowedDirs({
-        agentId: 'codex',
-        skillsDir: '/repo/skills',
-        designSystemsDir: '/repo/design-systems',
-        linkedDirs: ['/linked/reference'],
-        codexGeneratedImagesDir: validatedDir,
-        existsSync: () => true,
-      });
-      const validationFailedOverride = resolveGrantedCodexImagegenOverride({
-        agentId: 'codex',
-        metadata,
-        codexGeneratedImagesDir: validatedDir,
-        extraAllowedDirs,
-      });
-      const validationFailedPrompt = composeLiveInstructionPrompt({
-        daemonSystemPrompt: 'daemon prompt',
-        runtimeToolPrompt: 'runtime tools',
-        clientSystemPrompt: 'client media contract',
-        finalPromptOverride: validationFailedOverride,
-      });
-
-      expect(validatedDir).toBeNull();
-      expect(extraAllowedDirs).toEqual([]);
-      expect(validationFailedOverride).toBeNull();
-      expect(validationFailedPrompt).not.toContain(
-        '## Codex built-in imagegen override',
-      );
-
-      const validDir = join(root, 'safe-codex-home', 'generated_images');
-      mkdirSync(validDir, { recursive: true });
-      const notGrantedOverride = resolveGrantedCodexImagegenOverride({
-        agentId: 'codex',
-        metadata,
-        codexGeneratedImagesDir: validDir,
-        extraAllowedDirs: [],
-      });
-
-      expect(notGrantedOverride).toBeNull();
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
   });
 });

@@ -13,9 +13,7 @@ import {
   normalizeDesktopSidecarMessage,
   type DesktopClickInput,
   type DesktopEvalInput,
-  type DesktopExportArtifactInput,
   type DesktopExportPdfInput,
-  type DesktopRenderSlidesInput,
   type DesktopScreenshotInput,
   type DesktopStatusSnapshot,
   type DesktopUpdateStatusSnapshot,
@@ -780,10 +778,6 @@ export async function runDesktopMain(
             return await activeDesktop.click(request.input as DesktopClickInput);
           case SIDECAR_MESSAGES.EXPORT_PDF:
             return await activeDesktop.exportPdf(request.input as DesktopExportPdfInput);
-          case SIDECAR_MESSAGES.RENDER_SLIDES:
-            return await activeDesktop.renderSlides(request.input as DesktopRenderSlidesInput);
-          case SIDECAR_MESSAGES.EXPORT_ARTIFACT:
-            return await activeDesktop.exportArtifact(request.input as DesktopExportArtifactInput);
           case SIDECAR_MESSAGES.UPDATE:
             return await updater.handle((request.input as DesktopUpdateInput).action);
         }

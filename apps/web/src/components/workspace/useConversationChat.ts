@@ -47,7 +47,7 @@ function isActiveRunStatus(status: ChatMessage['runStatus']): boolean {
 }
 
 export interface ConversationChatContext {
-  /** Live app config — selects daemon-vs-api mode and the active agent. */
+  /** Live app config — selects the active agent. */
   config: AppConfig;
   /** Agent metadata map (id → AgentInfo), used to resolve model labels. */
   agentsById: Map<string, AgentInfo>;
@@ -152,10 +152,6 @@ export function useConversationChat(
         locale: loc,
         sessionMode,
       } = ctxRef.current;
-      if (cfg.mode !== 'daemon') {
-        setError('Side Chat needs a local agent. Pick one in the top bar.');
-        return;
-      }
       if (!cfg.agentId) {
         setError('Pick a local agent first (top bar).');
         return;

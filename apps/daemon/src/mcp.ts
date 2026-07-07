@@ -440,7 +440,7 @@ const TOOL_DEFS = [
         },
         agent: {
           type: 'string',
-          description: "Which agent Open Design should run, e.g. 'claude' | 'codex' | 'opencode'. Optional; defaults to the user's configured agent.",
+          description: "Which agent Open Design should run, e.g. 'claude' | 'copilot'. Optional; defaults to the user's configured agent.",
         },
         model: {
           type: 'string',
@@ -555,7 +555,7 @@ export async function runMcpStdio({ daemonUrl }: RunMcpOptions): Promise<void> {
         'read/edit files), commission a run - you do not run skills yourself:',
         ' - list_skills / list_plugins to see what you can ask OD to make.',
         ' - list_agents when you need to pass start_run.agent — do not',
-        '    guess "claude" / "codex" / "opencode"; only agents in the',
+        '    guess "claude" / "copilot"; only agents in the',
         '    returned list will actually spawn on this machine.',
         ' - create_project(name) first if you need a fresh project to',
         '    generate into; start_run requires an existing project.',
@@ -1030,7 +1030,7 @@ async function listPlugins(baseUrl: string): Promise<JsonObject> {
 // with zombie "running" runs whose inner Claude binary never spawned.
 // Models are truncated to 10 with `modelsCount` carrying the full
 // total; that keeps the response token-economical even for agents
-// (e.g. opencode) that expose 100+ models.
+// that expose 100+ models.
 async function listAgents(baseUrl: string, includeUnavailable: boolean): Promise<JsonObject> {
   const raw = await getJson<{ agents?: JsonObject[] }>(`${baseUrl}/api/agents`);
   const all = raw?.agents ?? [];

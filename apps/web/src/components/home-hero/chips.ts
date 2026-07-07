@@ -239,60 +239,6 @@ export const HOME_HERO_CHIPS: ReadonlyArray<HomeHeroChip> = [
     },
   },
   {
-    id: 'image',
-    label: 'Image',
-    icon: 'image',
-    group: 'create',
-    description: 'Posters, graphics & art',
-    action: {
-      kind: 'apply-scenario',
-      pluginId: 'od-media-generation',
-      projectKind: 'image',
-      inputs: {
-        mediaKind: 'image',
-        subject: 'a polished product concept',
-        style: 'cinematic, high-quality, on-brand',
-        aspect: '16:9',
-      },
-    },
-  },
-  {
-    id: 'video',
-    label: 'Video',
-    icon: 'play',
-    group: 'create',
-    description: 'Clips, reels & promos',
-    action: {
-      kind: 'apply-scenario',
-      pluginId: 'od-media-generation',
-      projectKind: 'video',
-      inputs: {
-        mediaKind: 'video',
-        subject: 'a short product reveal',
-        style: 'cinematic, high-quality, on-brand',
-        aspect: '16:9',
-      },
-    },
-  },
-  {
-    id: 'audio',
-    label: 'Audio',
-    icon: 'mic',
-    group: 'create',
-    description: 'Voiceovers, music & SFX',
-    action: {
-      kind: 'apply-scenario',
-      pluginId: 'od-media-generation',
-      projectKind: 'audio',
-      inputs: {
-        mediaKind: 'audio',
-        subject: 'a concise audio identity for a product',
-        style: 'clear, polished, modern',
-        aspect: '16:9',
-      },
-    },
-  },
-  {
     id: 'create-plugin',
     label: 'Create plugin',
     icon: 'edit',
@@ -333,10 +279,10 @@ export function chipsForGroup(group: ChipGroup): HomeHeroChip[] {
 // Display order for the inline `create` scenario rail. The composer leads with
 // the slide deck ("Slides") followed by the core build scenarios in
 // decreasing generality (Prototype → Wireframe → Mobile → Document →
-// Animation), then the media scenarios. Brand Kit is intentionally omitted
-// here so it trails the scenario set — it dispatches into the Brand Kit tab
-// rather than seeding a scenario plugin. Any create chip not listed keeps its
-// catalog order after the explicit entries (see `orderedCreateChips`).
+// Animation). Brand Kit is intentionally omitted here so it trails the
+// scenario set — it dispatches into the Brand Kit tab rather than seeding a
+// scenario plugin. Any create chip not listed keeps its catalog order after
+// the explicit entries (see `orderedCreateChips`).
 export const CREATE_RAIL_ORDER = [
   'deck',
   'prototype',
@@ -345,24 +291,13 @@ export const CREATE_RAIL_ORDER = [
   'document',
   'hyperframes',
   'live-artifact',
-  'image',
-  'video',
-  'audio',
 ] as const;
 
-// Chip ids the onboarding "build a design system" teaser intentionally omits.
-// Video and Audio are the trailing pure-media outputs in CREATE_RAIL_ORDER and
-// the least central to the design-system story, so they are the first to drop
-// when keeping the teaser chips to a single tidy row.
-const ONBOARDING_ARTIFACT_OMIT = new Set<string>(['video', 'audio']);
-
-// The artifact chips shown on the onboarding "build a design system" step — a
-// curated single-row subset of the create rail. Derived from CREATE_RAIL_ORDER
-// (not a separately maintained list) so it stays in the same priority order as
-// the Home rail and never drifts from the real template catalog.
-export const ONBOARDING_ARTIFACT_CHIP_IDS = CREATE_RAIL_ORDER.filter(
-  (id) => !ONBOARDING_ARTIFACT_OMIT.has(id),
-);
+// The artifact chips shown on the onboarding "build a design system" step.
+// Derived from CREATE_RAIL_ORDER (not a separately maintained list) so it
+// stays in the same priority order as the Home rail and never drifts from
+// the real template catalog.
+export const ONBOARDING_ARTIFACT_CHIP_IDS: readonly string[] = CREATE_RAIL_ORDER;
 
 // The `create` chips in rail-display order. Listed ids come first in
 // `CREATE_RAIL_ORDER`; any unlisted create chip (e.g. `create-brand-kit`)

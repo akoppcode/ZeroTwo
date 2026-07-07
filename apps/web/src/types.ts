@@ -16,10 +16,6 @@ import type {
   ChatMessageFeedbackRating,
   ChatMessageFeedbackReasonCode,
   ChatMessage,
-  ConnectionTestKind,
-  ConnectionTestProtocol,
-  ConnectionTestRequest,
-  ConnectionTestResponse,
   Conversation,
   DeployConfigResponse,
   DeployProjectFileResponse,
@@ -49,12 +45,7 @@ import type {
   OrbitRunSummary,
   OrbitStatusResponse,
   ProjectDeploymentsResponse,
-  ProviderTestRequest,
   PersistedAgentEvent,
-  ProviderModelOption,
-  ProviderModelsKind,
-  ProviderModelsRequest,
-  ProviderModelsResponse,
   Project,
   ProjectLocationPrefs,
   ProjectPlatform,
@@ -103,17 +94,6 @@ export type {
   PreviewCommentSelectionKind,
   PreviewVisualMarkKind,
 } from '@open-design/contracts';
-
-export type ExecMode = 'daemon' | 'api';
-export type ApiProtocol =
-  | 'anthropic'
-  | 'openai'
-  | 'azure'
-  | 'google'
-  | 'ollama'
-  | 'senseaudio'
-  | 'aihubmix'
-  | 'bedrock';
 
 export type LiveArtifactTabId = `live:${string}`;
 // Tab ids are arbitrary strings; the template-literal members below are
@@ -231,44 +211,6 @@ export interface LiveArtifactPreviewRequest {
   previewUrl: string;
 }
 
-export interface MediaProviderCredentials {
-  apiKey: string;
-  baseUrl: string;
-  model?: string;
-  apiKeyConfigured?: boolean;
-  apiKeyTail?: string;
-  source?: string;
-}
-
-export interface ApiProtocolConfig {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  apiVersion?: string;
-  apiProviderBaseUrl?: string | null;
-  /** SenseAudio BYOK only — default image model the daemon-side
-   *  `generate_image` tool uses when the LLM doesn't pass one. Carries
-   *  one of the SenseAudio image model ids (`senseaudio-image-2.0-260319`,
-   *  `senseaudio-image-1.0-260319`, `doubao-seedream-5-0-260128`). Stored
-   *  per-protocol so flipping between BYOK tabs doesn't reset the
-   *  SenseAudio image-model choice. */
-  byokImageModel?: string;
-  /** BYOK only — default video model the daemon-side `generate_video` tool
-   *  uses when the LLM doesn't pass one. Carries an `aihubmix-` prefixed
-   *  video model id. Stored per-protocol, like byokImageModel. */
-  byokVideoModel?: string;
-  /** BYOK only — default speech (TTS) model for the daemon-side generate_speech
-   *  tool (`aihubmix-` prefixed). Stored per-protocol, like byokImageModel. */
-  byokSpeechModel?: string;
-  /** BYOK only — default speech voice id for the generate_speech tool. */
-  byokSpeechVoice?: string;
-}
-
-export interface ByokProviderConfigDraft {
-  apiConfig: ApiProtocolConfig;
-  maxTokens?: number;
-}
-
 // Per-CLI model + reasoning the user picked in the model menu. Each agent
 // keeps its own slot so flipping between Codex and Gemini doesn't reset the
 // other one's choice. Missing entries fall back to the agent's first
@@ -376,30 +318,8 @@ export interface PetConfig {
 }
 
 export interface AppConfig {
-  mode: ExecMode;
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  apiProtocol?: ApiProtocol;
-  apiVersion?: string;
-  /** SenseAudio BYOK only — default image model for the daemon-side
-   *  generate_image tool. Mirrors apiProtocolConfigs.senseaudio.byokImageModel
-   *  so the active protocol's value lives at the top level (consistent
-   *  with how apiKey / baseUrl / model are projected onto AppConfig). */
-  byokImageModel?: string;
-  /** BYOK only — default video model for the daemon-side generate_video tool.
-   *  Mirrors apiProtocolConfigs.<protocol>.byokVideoModel onto AppConfig. */
-  byokVideoModel?: string;
-  /** BYOK only — default speech model + voice for the generate_speech tool. */
-  byokSpeechModel?: string;
-  byokSpeechVoice?: string;
-  apiProtocolConfigs?: Partial<Record<ApiProtocol, ApiProtocolConfig>>;
-  /** BYOK provider drafts keyed by protocol + selected provider base URL. */
-  byokProviderConfigDrafts?: Record<string, ByokProviderConfigDraft>;
   /** Internal config schema/migration version for localStorage upgrades. */
   configMigrationVersion?: number;
-  /** Base URL of the selected known provider; cleared once the user customizes provider fields. */
-  apiProviderBaseUrl?: string | null;
   agentId: string | null;
   skillId: string | null;
   designSystemId: string | null;
@@ -409,9 +329,7 @@ export interface AppConfig {
   // least once (saved or skipped). Bootstrap skips the auto-popup when
   // this is set so refreshing the page doesn't re-prompt.
   onboardingCompleted?: boolean;
-  mediaProviders?: Record<string, MediaProviderCredentials>;
-  composio?: ComposioSettings;
-  // Per-CLI model picker state, keyed by agent id (e.g. `gemini`, `codex`).
+  // Per-CLI model picker state, keyed by agent id.
   // Pre-existing configs without this field fall through to the agent's
   // declared default.
   agentModels?: Record<string, AgentModelChoice>;
@@ -420,10 +338,7 @@ export interface AppConfig {
   // Per-agent marker that says an API key was saved as an explicit Local CLI
   // environment override, not as an older proxy-only credential.
   agentCliEnvIntent?: AgentCliEnvIntentConfig;
-  // Caps the upstream completion length in API mode. Defaults to 8192 when
-  // unset; raise it for providers (e.g. MiMo) that allow longer responses.
-  maxTokens?: number;
-  // Optional Codex-style animated companion. Older configs that pre-date
+  // Optional animated companion. Older configs that pre-date
   // the feature land at `undefined`, which the loader normalizes to a
   // safe default (un-adopted, hidden until the user opts in).
   pet?: PetConfig;
@@ -465,12 +380,6 @@ export interface TelemetryConfig {
   metrics?: boolean;
   content?: boolean;
   artifactManifest?: boolean;
-}
-
-export interface ComposioSettings {
-  apiKey?: string;
-  apiKeyConfigured?: boolean;
-  apiKeyTail?: string;
 }
 
 export type AgentEvent = PersistedAgentEvent;
@@ -560,10 +469,6 @@ export type {
   AppVersionInfo,
   AppVersionResponse,
   AudioKind,
-  ConnectionTestKind,
-  ConnectionTestProtocol,
-  ConnectionTestRequest,
-  ConnectionTestResponse,
   Conversation,
   DeployConfigResponse,
   DeployProjectFileResponse,
@@ -605,11 +510,6 @@ export type {
   ProjectMetadata,
   ProjectTemplate,
   RenameProjectFileResponse,
-  ProviderTestRequest,
-  ProviderModelOption,
-  ProviderModelsKind,
-  ProviderModelsRequest,
-  ProviderModelsResponse,
   CodexPetSummary,
   CodexPetsResponse,
   SyncCommunityPetsRequest,

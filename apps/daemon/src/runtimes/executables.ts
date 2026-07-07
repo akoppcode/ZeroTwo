@@ -14,28 +14,8 @@ const RUNTIME_PROJECT_ROOT = path.resolve(
 );
 
 const AGENT_BIN_ENV_KEYS = new Map<string, string>([
-  ['amr', 'VELA_BIN'],
-  ['aider', 'AIDER_BIN'],
   ['claude', 'CLAUDE_BIN'],
-  ['codebuddy', 'CODEBUDDY_BIN'],
-  ['codex', 'CODEX_BIN'],
   ['copilot', 'COPILOT_BIN'],
-  ['cursor-agent', 'CURSOR_AGENT_BIN'],
-  ['deepseek', 'DEEPSEEK_BIN'],
-  ['devin', 'DEVIN_BIN'],
-  ['hermes', 'HERMES_BIN'],
-  ['kimi', 'KIMI_BIN'],
-  ['kiro', 'KIRO_BIN'],
-  ['kilo', 'KILO_BIN'],
-  ['mimo', 'MIMO_BIN'],
-  ['opencode', 'OPENCODE_BIN'],
-  ['byok-opencode', 'OPENCODE_BIN'],
-  ['pi', 'PI_BIN'],
-  ['qoder', 'QODER_BIN'],
-  ['qwen', 'QWEN_BIN'],
-  ['reasonix', 'REASONIX_BIN'],
-  ['trae-cli', 'TRAE_CLI_BIN'],
-  ['vibe', 'VIBE_BIN'],
 ]);
 
 const TOOLCHAIN_DIR_CACHE_TTL_MS = 5000;
@@ -183,134 +163,6 @@ function configuredExecutableOverride(
   return executableFilePath(configuredEnv?.[envKey]);
 }
 
-export function resolveAmrOpenCodeExecutable(
-  env: Record<string, string | undefined> = process.env,
-): string | null {
-  const configured = executableFilePath(env.VELA_OPENCODE_BIN);
-  if (configured) return configured;
-  // In packaged builds prefer the bundled companion under
-  // `OD_RESOURCE_ROOT/bin/libexec/opencode/opencode` so a stale global
-  // `opencode` on the user's PATH can't override the known-good build that
-  // shipped with this app. PATH is only consulted as a last resort.
-  const resourceRoot = (
-    env.OD_RESOURCE_ROOT ?? process.env.OD_RESOURCE_ROOT
-  )?.trim();
-  if (resourceRoot) {
-    const bundledDir = packagedVelaOpenCodeCompanionTree(resourceRoot);
-    if (bundledDir) {
-      const bundled = executableFilePath(
-        path.join(
-          bundledDir,
-          process.platform === 'win32' ? 'opencode.exe' : 'opencode',
-        ),
-      );
-      if (bundled) return bundled;
-    }
-  }
-  return resolveOnPath('opencode-cli') ?? resolveOnPath('opencode');
-}
-
-// `tools/pack/tests/resources.test.ts` ships the AMR OpenCode companion as a
-// `<resourceRoot>/bin/libexec/opencode/opencode` *executable file*, not just
-// the directory. Treating any directory there as a valid companion produces a
-// false-positive availability path: `detectAgents()` would surface AMR as
-// available even though the first real run can't launch (`vela` would spawn
-// a missing/non-executable inner binary). Verify the inner executable too.
-function packagedVelaOpenCodeCompanionTree(resourceRoot: string): string | null {
-  const candidate = path.join(resourceRoot, 'bin', 'libexec', 'opencode');
-  const exe = path.join(
-    candidate,
-    process.platform === 'win32' ? 'opencode.exe' : 'opencode',
-  );
-  try {
-    if (!statSync(candidate).isDirectory()) return null;
-    if (!statSync(exe).isFile()) return null;
-    if (process.platform === 'win32') {
-      if (!looksExecutableOnWindows(exe)) return null;
-    } else {
-      accessSync(exe, constants.X_OK);
-    }
-    return candidate;
-  } catch {
-    return null;
-  }
-}
-
-function packagedBuiltInExecutable(
-  def: RuntimeAgentDef,
-  configuredEnv: Record<string, string> = {},
-): string | null {
-  if (def.id === 'byok-opencode') {
-    return resolveAmrOpenCodeExecutable({ ...process.env, ...configuredEnv });
-  }
-  if (def.id !== 'amr') return null;
-  const resourceRoot = process.env.OD_RESOURCE_ROOT?.trim();
-  if (!resourceRoot) return null;
-  if (
-    !resolveAmrOpenCodeExecutable({ ...process.env, ...configuredEnv }) &&
-    !packagedVelaOpenCodeCompanionTree(resourceRoot)
-  ) {
-    return null;
-  }
-  const candidate = path.join(
-    resourceRoot,
-    'bin',
-    process.platform === 'win32' ? 'vela.exe' : 'vela',
-  );
-  try {
-    if (!statSync(candidate).isFile()) return null;
-    if (process.platform === 'win32') {
-      if (!looksExecutableOnWindows(candidate)) return null;
-    } else {
-      accessSync(candidate, constants.X_OK);
-    }
-    return candidate;
-  } catch {
-    return null;
-  }
-}
-
-// The official OpenAI Codex desktop app (bundle id `com.openai.codex`) ships
-// the `codex` CLI *inside* its macOS application bundle at
-// `Codex.app/Contents/Resources/codex` and does NOT add it to PATH unless the
-// user explicitly runs the app's "Install command line tool" action. Users who
-// installed Codex only through the app therefore see a "not installed" agent
-// card even though a healthy native `codex` binary exists on disk, because
-// neither PATH nor the user-toolchain search dirs cover the app bundle. Probe
-// the well-known bundle locations so app-only installs are detected. This is a
-// last-resort fallback that ranks below PATH, so an explicit `npm i -g` /
-// Homebrew / version-manager install always wins.
-function codexAppBundleExecutable(def: RuntimeAgentDef): string | null {
-  if (def?.id !== 'codex') return null;
-  for (const candidate of codexAppBundleCandidates()) {
-    const resolved = executableFilePath(candidate);
-    if (resolved) return resolved;
-  }
-  return null;
-}
-
-// Exported for tests: the no-override `/Applications` branch can't be exercised
-// through `resolveAgentExecutable` deterministically (it would depend on the
-// host actually having `/Applications/Codex.app`), so tests assert the built
-// candidate list directly to catch a path typo or ordering regression in the
-// common real-world install case.
-export function codexAppBundleCandidates(): string[] {
-  // The Codex app bundle is a macOS-only concept; other platforms have no
-  // analogous standalone install of the `codex` CLI to probe for here.
-  if (process.platform !== 'darwin') return [];
-  const { home, hasOverride } = resolveDetectionHome();
-  const bundleSuffix = ['Codex.app', 'Contents', 'Resources', 'codex'];
-  // User-scoped install (~/Applications). Honors the override home so
-  // sandboxed detection runs and tests stay deterministic.
-  const candidates = [path.join(home, 'Applications', ...bundleSuffix)];
-  // System-wide /Applications install. Skip it under an override home for the
-  // same isolation reason `userToolchainDirs` skips Homebrew/system bins.
-  if (!hasOverride) {
-    candidates.unshift(path.join('/Applications', ...bundleSuffix));
-  }
-  return candidates;
-}
-
 export function resolveAgentExecutable(
   def: RuntimeAgentDef,
   configuredEnv: Record<string, string> = {},
@@ -346,12 +198,9 @@ export function inspectAgentExecutableResolution(
       break;
     }
   }
-  const builtInPath = packagedBuiltInExecutable(def, configuredEnv);
-  const appBundlePath = codexAppBundleExecutable(def);
   return {
     configuredOverridePath,
     pathResolvedPath,
-    selectedPath:
-      configuredOverridePath || builtInPath || pathResolvedPath || appBundlePath,
+    selectedPath: configuredOverridePath || pathResolvedPath,
   };
 }

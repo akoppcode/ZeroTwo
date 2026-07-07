@@ -33,7 +33,6 @@
 // (where it sits next to app-config.json and behaves like the legacy
 // path — fine for dev because dev doesn't have namespace churn).
 
-import { readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -82,20 +81,6 @@ export async function readInstallationFile(
   } catch {
     // ENOENT, malformed JSON, permission denied, EIO — treat as empty so the
     // fallback path through app-config.json keeps the daemon alive.
-    return {};
-  }
-}
-
-// Synchronous mirror of readInstallationFile for callers on a sync path (e.g.
-// building the spawn env for the vela CLI). Same parse + same fail-soft.
-export function readInstallationFileSync(
-  installationDir: string,
-): InstallationFile {
-  try {
-    return parseInstallationFile(
-      readFileSync(installationFilePath(installationDir), 'utf8'),
-    );
-  } catch {
     return {};
   }
 }

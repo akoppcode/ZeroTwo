@@ -1,7 +1,7 @@
 // Pure builder for the "Copy guide for an agent" markdown blob.
 //
 // The blob is the headline payoff of the Use Everywhere modal: paste it
-// into Claude Code, Codex, Cursor, openclaw, or hermes and the agent has
+// into Claude Code or GitHub Copilot CLI and the agent has
 // everything it needs to install Open Design, expose it as MCP, and
 // drive it from CLI / HTTP without further hand-holding.
 //
@@ -51,7 +51,7 @@ export function buildAgentGuideMarkdown(options: AgentGuideOptions = {}): string
   lines.push('# Open Design — agent setup guide');
   lines.push('');
   lines.push(
-    'You are a coding agent (Claude Code, Codex, Cursor, openclaw, hermes, or similar). ' +
+    'You are a coding agent (Claude Code, GitHub Copilot CLI, or similar). ' +
       'The user wants Open Design wired into your workflow. Open Design is a local ' +
       'privileged daemon (`od`) plus a Skills + Design-Systems registry that exposes ' +
       'four interchangeable surfaces: CLI, HTTP API, MCP, and Skills.',
