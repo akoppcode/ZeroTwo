@@ -133,23 +133,37 @@ The daemon static-serving pattern (`/artifacts`) is the model for serving `.zero
 chat UI with streaming, project registry, settings persistence, Electron packaging setup
 (`tools/pack`, `tools/dev`, `packages/sidecar*`).
 
-## 7. Rename checklist (→ Zero Two, `com.akoppcode.zerotwo`)
+## 7. Rename (→ Zero Two, `com.akoppcode.zerotwo`)
 
-Must-rename (identifiers/config):
-- Root `package.json` name (`open-design` → `zerotwo`), bin `od` → `zerotwo`.
-- All 20 workspace package names `@open-design/*` → `@zerotwo/*` (+ every `workspace:*` dep and import — ~644 files, mechanical).
-- `packages/release/src/index.ts:54-114`: `PRODUCT_NAME` "Open Design" → "Zero Two",
-  `DEFAULT_NAMESPACE` `open-design` → `zerotwo`, appId `io.open-design.desktop` → `com.akoppcode.zerotwo` (+ channel variants); its tests.
-- `tools/pack/src/{win,linux,mac}` appId/productName wiring; icons under `tools/pack/resources/` (asset swap deferred to Phase 8 branding).
-- Protocol scheme `od://` (`apps/packaged/src/protocol.ts:3`) → `zerotwo://`; MCP resource URIs (`apps/daemon/src/mcp.ts`).
-- Window title (`apps/packaged/src/window-title.ts:7`), userData dir names (`paths.ts:110`).
-- `.claude-plugin/marketplace.json`, `plugins/open-design/` dir.
-- `nexu-io/open-design` repo slugs embedded in runtime code (`cli.ts` fork/issue URLs, `design-systems/index.ts:1638`, `import-export-routes.ts:1006`).
-- In-product "Open Design" strings (~433 .ts/.tsx files) — mechanical replace.
+The `open-design` token is deeply coupled: it is simultaneously the npm scope (`@open-design/*`,
+~644 files), the product display name ("Open Design", ~190 files across every workspace including the
+renderer), and a filesystem/plumbing segment (data-dir paths, config filenames like
+`open-design-config.json`, resource dir names, sidecar namespace dirs, `OD_*` env, `od://` scheme,
+`od` bin). A partial rename of the plumbing breaks the packaging chain (the segment must match what the
+installer writes), and a partial rename of the display name leaves the app incoherent (installer says
+"Zero Two" while 130 daemon/web strings still say "Open Design"). So a coherent identifier rename is a
+single coordinated ~200-file change — not surgical, and gating none of the Phase 0 acceptance criteria.
 
-Deliberately NOT renamed in Phase 0 (internal, zero user impact; documented debt):
-- `OD_*` env-var prefix (`OD_PORT`, `OD_DATA_DIR`, …) — pervasive across daemon/tools/sidecars; renaming is high-risk churn with no product value. Revisit only if it ever leaks into user-facing docs.
-- `.od` daemon data-dir name — becomes `%APPDATA%/ZeroTwo` as part of Phase 1 (EnvironmentService owns config paths per spec §3).
+**Done in Phase 0 (contained, reviewer-visible identity):**
+- Bundle/app id `io.open-design.desktop` (+ `.beta/.betas/.prerelease/.preview`) → `com.akoppcode.zerotwo`
+  in `packages/release/src/index.ts` and `tools/pack/src/{linux,mac/identity,win/builder}`, plus their
+  tests (`packages/release/tests/index.test.ts`, `tools/pack/tests/mac-identity.test.ts`). Verified green.
+- Root `package.json` `name` `open-design` → `zerotwo`, version reset to `0.1.0`, Zero Two description.
+- `LICENSE` retained (Apache-2.0); `NOTICE` added attributing the open-design fork.
+
+**Deferred to a dedicated, independently-verifiable rebrand commit (documented debt, no Phase 0 acceptance impact):**
+- `PRODUCT_NAME` "Open Design" → "Zero Two" — cascades into `.app`/`.exe` bundle names, userData path
+  segments, and ~15 `tools/pack` + `apps/packaged` test files that hardcode those path strings.
+- `@open-design/*` npm scope → `@zerotwo/*` (~644 files: package names, `workspace:*` deps, imports).
+- In-product "Open Design" display strings (~130 files in `apps/daemon`/`apps/web`).
+- Lowercase `open-design` plumbing: data-dir/config-filename/resource-dir/namespace segments,
+  `OD_*` env prefix, `.od` data dir, `od://` protocol scheme (`apps/packaged/src/protocol.ts`) + MCP
+  resource URIs (`apps/daemon/src/mcp.ts`), `od` CLI bin, `.claude-plugin/marketplace.json`,
+  `plugins/open-design/`. The `.od` data dir is slated to become `%APPDATA%/ZeroTwo` in Phase 1
+  (EnvironmentService owns config paths per spec §3).
+- `nexu-io/open-design` repo slugs embedded in runtime code (`cli.ts` fork/issue URLs,
+  `design-systems/index.ts`, `import-export-routes.ts`).
+- Brand asset swap (icons under `tools/pack/resources/`) — Phase 8 branding.
 
 ## 8. CI at fork point
 

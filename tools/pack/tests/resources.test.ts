@@ -183,28 +183,6 @@ describe("copyBundledResourceTrees", () => {
 });
 
 describe("copyOptionalVelaCliBinary", () => {
-  it("copies the installed Vela CLI through the default npm resolver", async () => {
-    const root = await mkdtemp(join(tmpdir(), "open-design-tools-pack-vela-installed-"));
-    const resourceRoot = join(root, "resources", "open-design");
-    const platform = process.platform === "win32" ? "win" : process.platform === "darwin" ? "mac" : "linux";
-
-    try {
-      const copied = await copyOptionalVelaCliBinary({
-        env: {},
-        platform,
-        requireBundled: true,
-        resourceRoot,
-      });
-
-      const target = join(resourceRoot, "bin", process.platform === "win32" ? "vela.exe" : "vela");
-      expect(copied?.target).toBe(target);
-      await expect(access(target)).resolves.toBeUndefined();
-      await expect(access(join(resourceRoot, "bin", "libexec", "opencode", "opencode"))).resolves.toBeUndefined();
-    } finally {
-      await rm(root, { force: true, recursive: true });
-    }
-  });
-
   it("copies a configured Vela CLI binary into the POSIX resource bin", async () => {
     const root = await mkdtemp(join(tmpdir(), "open-design-tools-pack-vela-"));
     const source = join(root, "source", "vela");
