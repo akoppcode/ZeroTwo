@@ -127,10 +127,6 @@ const mockedLoadTabs = vi.mocked(loadTabs);
 const mockedFetchPreviewComments = vi.mocked(fetchPreviewComments);
 
 const config: AppConfig = {
-  mode: 'api',
-  apiKey: '',
-  baseUrl: '',
-  model: '',
   agentId: null,
   skillId: null,
   designSystemId: null,
@@ -189,7 +185,6 @@ function renderProjectView(props?: {
       designTemplates={[] as SkillSummary[]}
       designSystems={props?.designSystems ?? [designSystem]}
       daemonLive
-      onModeChange={vi.fn()}
       onAgentChange={vi.fn()}
       onAgentModelChange={vi.fn()}
       onRefreshAgents={vi.fn()}
@@ -237,8 +232,7 @@ describe('ProjectView preview keep-alive invalidation', () => {
         designTemplates={[] as SkillSummary[]}
         designSystems={[designSystem]}
         daemonLive
-        onModeChange={vi.fn()}
-        onAgentChange={vi.fn()}
+          onAgentChange={vi.fn()}
         onAgentModelChange={vi.fn()}
         onRefreshAgents={vi.fn()}
         onOpenSettings={vi.fn()}

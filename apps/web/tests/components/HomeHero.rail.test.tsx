@@ -138,17 +138,17 @@ describe('HomeHero intent rail', () => {
 
   it('forwards the matching chip descriptor when clicked', () => {
     const { onPickChip } = renderHero();
-    fireEvent.click(screen.getByTestId('home-hero-rail-image'));
+    fireEvent.click(screen.getByTestId('home-hero-rail-prototype'));
     expect(onPickChip).toHaveBeenCalledTimes(1);
-    expect(onPickChip).toHaveBeenCalledWith(findChip('image'));
+    expect(onPickChip).toHaveBeenCalledWith(findChip('prototype'));
   });
 
   it('moves the active creation chip into the composer and hides the tab row', () => {
-    renderHero({ activeChipId: 'video' });
+    renderHero({ activeChipId: 'prototype' });
     expect(screen.queryByTestId('home-hero-type-tabs')).toBeNull();
-    expect(screen.queryByTestId('home-hero-rail-video')).toBeNull();
+    expect(screen.queryByTestId('home-hero-rail-prototype')).toBeNull();
     const node = screen.getByTestId('home-hero-template-trigger');
-    expect(node.textContent).toContain('Video');
+    expect(node.textContent).toContain('Prototype');
   });
 
   it('does not reserve an empty active-context row for a hidden chip-bound plugin', () => {
@@ -234,10 +234,10 @@ describe('HomeHero intent rail', () => {
   });
 
   it('uses the active creation chip as the only clear control for a chip-bound plugin', () => {
-    const activePlugin = makePlugin('example-image-a', 'image', 'Product image');
+    const activePlugin = makePlugin('example-prototype-a', 'prototype', 'Product prototype');
     renderHero({
-      activeChipId: 'image',
-      activePluginTitle: 'Product image',
+      activeChipId: 'prototype',
+      activePluginTitle: 'Product prototype',
       activePluginRecord: activePlugin,
       showActivePluginChip: true,
     });
@@ -479,16 +479,6 @@ describe('HomeHero intent rail', () => {
     expect(createChips[0]?.id).toBe('create-brand-kit');
     expect(findChip('create-brand-kit')?.action).toMatchObject({ kind: 'create-brand-kit' });
     expect(findChip('create-brand-kit')?.icon).toBe('swatchbook');
-  });
-
-  it('media chips route to od-media-generation with the matching project kind', () => {
-    expect(findChip('image')?.action).toMatchObject({
-      kind: 'apply-scenario',
-      pluginId: 'od-media-generation',
-      projectKind: 'image',
-    });
-    expect(findChip('video')?.action).toMatchObject({ pluginId: 'od-media-generation', projectKind: 'video' });
-    expect(findChip('audio')?.action).toMatchObject({ pluginId: 'od-media-generation', projectKind: 'audio' });
   });
 
   it('prototype and slide-deck chips route to their specialised bundled scenario plugin', () => {

@@ -24,5 +24,7 @@ function expandCssFile(filePath: string, seen = new Set<string>()): string {
 }
 
 export function readExpandedIndexCss(): string {
-  return expandCssFile(join(process.cwd(), 'src/index.css'));
+  // Normalize line endings so multi-line selector/block assertions match on
+  // Windows checkouts (CRLF) as well as LF — the CSS text is otherwise identical.
+  return expandCssFile(join(process.cwd(), 'src/index.css')).replace(/\r\n/g, '\n');
 }

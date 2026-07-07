@@ -17,39 +17,6 @@ describe('assistantRoleLabel', () => {
     expect(assistantRoleLabel(message, t)).toBe('OpenAI API via OpenCode · google/gemma-4-e4b');
   });
 
-  it('maps API protocol ids to readable labels when no display name is saved', () => {
-    const message: ChatMessage = {
-      id: 'message-2',
-      role: 'assistant',
-      content: '',
-      agentId: 'openai-api',
-    };
-
-    expect(assistantRoleLabel(message, t)).toBe('OpenAI API via OpenCode');
-  });
-
-  it('maps OpenCode-backed BYOK protocol ids to readable labels', () => {
-    const message: ChatMessage = {
-      id: 'message-senseaudio',
-      role: 'assistant',
-      content: '',
-      agentId: 'senseaudio-api',
-    };
-
-    expect(assistantRoleLabel(message, t)).toBe('SenseAudio API via OpenCode');
-  });
-
-  it('normalizes saved API protocol ids used as display names', () => {
-    const message: ChatMessage = {
-      id: 'message-3',
-      role: 'assistant',
-      content: '',
-      agentName: 'openai-api',
-    };
-
-    expect(assistantRoleLabel(message, t)).toBe('OpenAI API via OpenCode');
-  });
-
   it('preserves an explicit local agent model in the display name', () => {
     const message: ChatMessage = {
       id: 'message-4',

@@ -157,7 +157,6 @@ function renderProjectView() {
       designTemplates={[]}
       designSystems={[]}
       daemonLive
-      onModeChange={() => {}}
       onAgentChange={() => {}}
       onAgentModelChange={() => {}}
       onRefreshAgents={() => {}}

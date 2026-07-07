@@ -214,10 +214,6 @@ const mockedFetchBrands = vi.mocked(fetchBrands);
 const mockedSaveMessage = vi.mocked(saveMessage);
 
 const config: AppConfig = {
-  mode: 'api',
-  apiKey: '',
-  baseUrl: '',
-  model: '',
   agentId: null,
   skillId: null,
   designSystemId: null,
@@ -256,7 +252,6 @@ function renderProjectView(
       designTemplates={[] as SkillSummary[]}
       designSystems={[] as DesignSystemSummary[]}
       daemonLive
-      onModeChange={vi.fn()}
       onAgentChange={vi.fn()}
       onAgentModelChange={vi.fn()}
       onRefreshAgents={vi.fn()}
@@ -1140,7 +1135,6 @@ describe('ProjectView pending prompt seeding', () => {
         designTemplates={[]}
         designSystems={[]}
         daemonLive
-        onModeChange={vi.fn()}
         onAgentChange={vi.fn()}
         onAgentModelChange={vi.fn()}
         onRefreshAgents={vi.fn()}

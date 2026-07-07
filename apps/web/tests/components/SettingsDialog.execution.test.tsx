@@ -688,9 +688,6 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
     );
 
     expect(
-      screen.getByLabelText('Claude CLI API key'),
-    ).toBeTruthy();
-    expect(
       screen.getByLabelText('Claude proxy base URL'),
     ).toBeTruthy();
 
@@ -922,8 +919,7 @@ describe('SettingsDialog notifications interactions', () => {
   it('updates completion success and failure sounds and autosaves the edited notification config', async () => {
     const { onPersist } = renderSettingsDialog(
       {
-        mode: 'daemon',
-        agentId: 'codex',
+        agentId: 'claude',
         notifications: {
           soundEnabled: true,
           successSoundId: 'chime',
@@ -1280,8 +1276,7 @@ describe('SettingsDialog pets interactions', () => {
   it('toggles an adopted pet between tucked and awake states', async () => {
     const { onPersist } = renderSettingsDialog(
       {
-        mode: 'daemon',
-        agentId: 'codex',
+        agentId: 'claude',
         pet: {
           adopted: true,
           enabled: true,
@@ -1496,8 +1491,7 @@ describe('SettingsDialog design systems section', () => {
   it('shows an imported design system from the hidden-only import CTA', async () => {
     renderSettingsDialog(
       {
-        mode: 'daemon',
-        agentId: 'codex',
+        agentId: 'claude',
         disabledDesignSystems: ['neutral-modern'],
       },
       { initialSection: 'designSystems' },

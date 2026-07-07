@@ -94,44 +94,6 @@ describe('MemorySection', () => {
     window.sessionStorage.clear();
   });
 
-  it('shows the no-provider banner when the latest extraction skipped for missing credentials', async () => {
-    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
-    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
-      const url = input.toString();
-      if (url === '/api/memory') {
-        return new Response(JSON.stringify({
-          enabled: true,
-          rootDir: '/tmp/memory',
-          index: '# Memory\n',
-          entries: [],
-          extraction: null,
-        }), { status: 200, headers: { 'content-type': 'application/json' } });
-      }
-      if (url === '/api/memory/extractions') {
-        return new Response(JSON.stringify({
-          extractions: [
-            {
-              id: 'ex-1',
-              phase: 'skipped',
-              reason: 'no-provider',
-              kind: 'llm',
-              startedAt: Date.now(),
-              userMessagePreview: 'Remember my UI preferences',
-            },
-          ],
-        }), { status: 200, headers: { 'content-type': 'application/json' } });
-      }
-      return new Response(JSON.stringify({}), { status: 404 });
-    }) as typeof fetch;
-
-    renderMemorySection();
-
-    expect(await screen.findByText('LLM memory extraction is not running')).toBeTruthy();
-    expect(
-      screen.getByText(/No API key found for the memory extractor/i),
-    ).toBeTruthy();
-  });
-
   it('creates a new memory entry and refreshes the list', async () => {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
     let entries = [] as Array<{

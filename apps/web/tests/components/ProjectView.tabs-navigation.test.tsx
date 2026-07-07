@@ -150,10 +150,6 @@ const mockedFetchProjectFiles = vi.mocked(fetchProjectFiles);
 const mockedNavigate = vi.mocked(navigate);
 
 const config: AppConfig = {
-  mode: 'api',
-  apiKey: '',
-  baseUrl: '',
-  model: '',
   agentId: null,
   skillId: null,
   designSystemId: null,
@@ -191,7 +187,6 @@ function renderProjectView(props?: {
       designTemplates={[] as SkillSummary[]}
       designSystems={props?.designSystems ?? ([] as DesignSystemSummary[])}
       daemonLive
-      onModeChange={vi.fn()}
       onAgentChange={vi.fn()}
       onAgentModelChange={vi.fn()}
       onRefreshAgents={vi.fn()}

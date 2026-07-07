@@ -24,16 +24,9 @@ vi.mock('../../src/providers/registry', async () => {
 const originalFetch = globalThis.fetch;
 
 const baseConfig: AppConfig = {
-  mode: 'api',
-  apiKey: 'sk-test',
-  apiProtocol: 'anthropic',
-  baseUrl: 'https://api.anthropic.com',
-  model: 'claude-sonnet-4-5',
-  apiProviderBaseUrl: 'https://api.anthropic.com',
   agentId: null,
   skillId: null,
   designSystemId: null,
-  composio: { apiKeyConfigured: true },
   orbit: {
     enabled: false,
     time: '09:00',
@@ -88,13 +81,12 @@ const orbitTemplates = [
 
 const clipboardDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'clipboard');
 
-type OnPersist = (cfg: AppConfig, options?: { forceMediaProviderSync?: boolean }) => void | Promise<void>;
+type OnPersist = (cfg: AppConfig) => void | Promise<void>;
 type OnClose = () => void;
 
 function renderOrbitSettings(
   initial: Partial<AppConfig> = {},
   options: {
-    composioApiKeyConfigured?: boolean;
     onPersist?: OnPersist;
     onClose?: OnClose;
   } = {},
@@ -107,17 +99,12 @@ function renderOrbitSettings(
       initial={{
         ...baseConfig,
         ...initial,
-        composio: {
-          apiKeyConfigured: options.composioApiKeyConfigured ?? true,
-          ...(initial.composio ?? {}),
-        },
       }}
       agents={[]}
       daemonLive
       appVersionInfo={null}
       initialSection="orbit"
       onPersist={onPersist}
-      onPersistComposioKey={vi.fn<(composio: AppConfig['composio']) => void>()}
       onClose={onClose}
       onRefreshAgents={vi.fn<() => void>()}
     />,
@@ -163,7 +150,6 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
         appVersionInfo={null}
         initialSection="orbit"
         onPersist={vi.fn()}
-        onPersistComposioKey={vi.fn()}
         onClose={vi.fn()}
         onRefreshAgents={vi.fn()}
       />,
@@ -208,7 +194,6 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
           appVersionInfo={null}
           initialSection="orbit"
           onPersist={vi.fn()}
-          onPersistComposioKey={vi.fn()}
           onClose={vi.fn()}
           onRefreshAgents={vi.fn()}
         />
@@ -221,7 +206,7 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
     });
   });
 
-  it('locks Orbit controls until a connector is connected and routes the gate CTA to Connectors', async () => {
+  it('locks Orbit controls until a connector is connected', async () => {
     vi.mocked(fetchConnectors).mockResolvedValue([]);
     vi.mocked(fetchDesignTemplates).mockResolvedValue(orbitTemplates);
     vi.mocked(fetchSkills).mockResolvedValue([]);
@@ -233,7 +218,7 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
       throw new Error(`Unexpected fetch: ${url}`);
     }) as typeof fetch;
 
-    renderOrbitSettings({}, { composioApiKeyConfigured: false });
+    renderOrbitSettings({});
 
     await waitFor(() => {
       expect(screen.getByTestId('orbit-config-gate')).toBeTruthy();
@@ -242,13 +227,6 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
     expect(screen.getByRole('switch', { name: /Off/i }).hasAttribute('disabled')).toBe(true);
     expect((screen.getByLabelText('Daily Orbit run time') as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByLabelText('Orbit prompt template') as HTMLSelectElement).disabled).toBe(true);
-
-    fireEvent.click(screen.getByTestId('orbit-config-gate-action'));
-
-    await waitFor(() => {
-      expect(screen.getAllByRole('heading', { name: 'Connectors' }).length).toBeGreaterThan(0);
-      expect(screen.getByPlaceholderText('Paste Composio API key')).toBeTruthy();
-    });
   });
 
   it('autosaves Orbit schedule and prompt template edits after connectors are available', async () => {
@@ -300,7 +278,6 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
             templateSkillId: 'orbit-editorial',
           },
         }),
-        expect.any(Object),
       );
     });
   });
@@ -360,7 +337,6 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
         appVersionInfo={null}
         initialSection="orbit"
         onPersist={vi.fn()}
-        onPersistComposioKey={vi.fn()}
         onClose={vi.fn()}
         onRefreshAgents={vi.fn()}
       />,
@@ -419,7 +395,6 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
         appVersionInfo={null}
         initialSection="orbit"
         onPersist={vi.fn()}
-        onPersistComposioKey={vi.fn()}
         onClose={vi.fn()}
         onRefreshAgents={vi.fn()}
       />,
@@ -560,7 +535,6 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
         appVersionInfo={null}
         initialSection="orbit"
         onPersist={vi.fn()}
-        onPersistComposioKey={vi.fn()}
         onClose={vi.fn()}
         onRefreshAgents={vi.fn()}
       />,
@@ -631,7 +605,6 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
         appVersionInfo={null}
         initialSection="orbit"
         onPersist={vi.fn()}
-        onPersistComposioKey={vi.fn()}
         onClose={vi.fn()}
         onRefreshAgents={vi.fn()}
       />,
@@ -687,7 +660,6 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
         appVersionInfo={null}
         initialSection="orbit"
         onPersist={vi.fn()}
-        onPersistComposioKey={vi.fn()}
         onClose={vi.fn()}
         onRefreshAgents={vi.fn()}
       />,
@@ -759,7 +731,6 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
         appVersionInfo={null}
         initialSection="orbit"
         onPersist={vi.fn()}
-        onPersistComposioKey={vi.fn()}
         onClose={vi.fn()}
         onRefreshAgents={vi.fn()}
       />,
@@ -843,7 +814,6 @@ describe('SettingsDialog Orbit connector gate refresh', () => {
         appVersionInfo={null}
         initialSection="orbit"
         onPersist={vi.fn()}
-        onPersistComposioKey={vi.fn()}
         onClose={vi.fn()}
         onRefreshAgents={vi.fn()}
       />,

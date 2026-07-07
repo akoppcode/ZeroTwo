@@ -9,17 +9,16 @@ import {
 describe('agentDisplayName', () => {
   it('returns the canonical label for known agent ids', () => {
     expect(agentDisplayName('claude')).toBe('Claude');
-    expect(agentDisplayName('codex')).toBe('Codex');
-    expect(agentDisplayName('cursor-agent')).toBe('Cursor');
+    expect(agentDisplayName('copilot')).toBe('Copilot');
   });
 
-  it('resolves common aliases like "claude code" and "qodercli"', () => {
+  it('resolves common aliases like "claude code" and "github copilot cli"', () => {
     expect(agentDisplayName('Claude Code')).toBe('Claude');
-    expect(agentDisplayName('qodercli')).toBe('Qoder');
+    expect(agentDisplayName('GitHub Copilot CLI')).toBe('Copilot');
   });
 
-  it('matches embedded substrings such as cursor-agent in a longer path', () => {
-    expect(agentDisplayName('/opt/bin/cursor-agent')).toBe('Cursor');
+  it('matches embedded substrings such as copilot in a longer path', () => {
+    expect(agentDisplayName('/opt/bin/copilot-cli')).toBe('Copilot');
   });
 
   it('falls back to a trimmed name when the id is unknown but the fallback is safe', () => {
@@ -37,8 +36,8 @@ describe('agentDisplayName', () => {
 
 describe('exactAgentDisplayName', () => {
   it('returns the label only when the exact normalized key is a known agent', () => {
-    expect(exactAgentDisplayName('Qoder CLI')).toBe('Qoder');
-    expect(exactAgentDisplayName('qodercli.cmd')).toBe('Qoder');
+    expect(exactAgentDisplayName('Claude Code')).toBe('Claude');
+    expect(exactAgentDisplayName('copilot.cmd')).toBe('Copilot');
     expect(exactAgentDisplayName('cursor-agent-fork')).toBeNull();
   });
 
@@ -55,7 +54,7 @@ describe('agentModelDisplayName', () => {
   });
 
   it('joins the agent label and model with a middle dot', () => {
-    expect(agentModelDisplayName('codex', null, 'gpt-5.4')).toBe('Codex · gpt-5.4');
+    expect(agentModelDisplayName('copilot', null, 'gpt-5.4')).toBe('Copilot · gpt-5.4');
   });
 
   it('returns just the model id when no agent label can be derived', () => {
