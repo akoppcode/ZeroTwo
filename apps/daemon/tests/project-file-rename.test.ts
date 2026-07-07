@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { projectFileRenameTestHooks } from '../src/projects.js';
 import { startServer } from '../src/server.js';
+import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 
 describe('project file rename route', () => {
   let server: http.Server;
@@ -200,7 +201,7 @@ describe('project file rename route', () => {
     expect(await readFile(path.join(folder, 'renamed-note.txt'), 'utf8')).toBe('imported');
   });
 
-  it('rejects source paths that escape through a symlinked directory', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('rejects source paths that escape through a symlinked directory', async () => {
     const folder = mkdtempSync(path.join(tmpdir(), 'od-rename-symlink-source-'));
     const outside = mkdtempSync(path.join(tmpdir(), 'od-rename-outside-source-'));
     tempDirs.push(folder, outside);
@@ -214,7 +215,7 @@ describe('project file rename route', () => {
     await expect(stat(path.join(folder, 'renamed.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('rejects target paths that escape through a symlinked directory', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('rejects target paths that escape through a symlinked directory', async () => {
     const folder = mkdtempSync(path.join(tmpdir(), 'od-rename-symlink-target-'));
     const outside = mkdtempSync(path.join(tmpdir(), 'od-rename-outside-target-'));
     tempDirs.push(folder, outside);

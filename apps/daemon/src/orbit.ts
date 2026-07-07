@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { renameWithRetry } from './windows-rename-retry.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
@@ -292,7 +293,7 @@ async function writeLastSummary(dataDir: string, summary: OrbitActivitySummary):
       : store.lastRunsByTemplate,
   };
   await writeFile(tmp, `${JSON.stringify(nextStore, null, 2)}\n`, 'utf8');
-  await rename(tmp, target);
+  await renameWithRetry(tmp, target);
 }
 
 function nextDailyRunAt(time: string, now = new Date()): Date {

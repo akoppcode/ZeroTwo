@@ -18,6 +18,25 @@ import {
 const dataDir = path.join(process.env.OD_DATA_DIR ?? process.cwd(), 'memory-connectors-test');
 const originalFetch = globalThis.fetch;
 
+// Connector memory extraction now runs exclusively through the chat Local CLI
+// (Claude Code) — the BYOK/OpenAI API-key extraction protocol was removed. Kept
+// tests drive that path with a stub runner that returns the model's JSON, in
+// place of the old global fetch mock.
+const DEFAULT_MEMORY_ENTRIES_JSON = JSON.stringify({
+  entries: [
+    {
+      type: 'project',
+      name: 'OpenDesign design memory',
+      description: 'Connector memories should stay design-related',
+      body: 'OpenDesign connector memories should focus on design preferences, UI decisions, and visual references rather than generic app activity.',
+    },
+  ],
+});
+
+function memoryCliRunner(payload: string = DEFAULT_MEMORY_ENTRIES_JSON) {
+  return vi.fn(async (_input: { system?: string; user?: string }) => payload);
+}
+
 const notionDefinition: ConnectorCatalogDefinition = {
   id: 'notion',
   name: 'Notion',
@@ -128,7 +147,9 @@ describe('connector memory extraction', () => {
       projectsRoot: process.cwd(),
       projectRoot: process.cwd(),
       connectorIds: ['notion'],
+      chatAgentId: 'claude',
       service,
+      localCliRunner: memoryCliRunner(),
     });
 
     expect(result.attemptedLLM).toBe(true);
@@ -201,7 +222,9 @@ describe('connector memory extraction', () => {
       projectsRoot: process.cwd(),
       projectRoot: process.cwd(),
       connectorIds: ['notion'],
+      chatAgentId: 'claude',
       service,
+      localCliRunner: memoryCliRunner(),
     });
 
     expect(executeCalls.length).toBeGreaterThan(1);
@@ -267,7 +290,9 @@ describe('connector memory extraction', () => {
       projectsRoot: process.cwd(),
       projectRoot: process.cwd(),
       connectorIds: ['notion'],
+      chatAgentId: 'claude',
       service,
+      localCliRunner: memoryCliRunner(),
     });
 
     expect(executeCalls.length).toBeGreaterThan(1);
@@ -364,7 +389,9 @@ describe('connector memory extraction', () => {
       projectsRoot: process.cwd(),
       projectRoot: process.cwd(),
       connectorIds: ['notion'],
+      chatAgentId: 'claude',
       service,
+      localCliRunner: memoryCliRunner(),
     });
 
     const emptyFallbackCall = executeCalls.find((call) => (call.input as { query?: string }).query === '');
@@ -483,11 +510,14 @@ describe('connector memory extraction', () => {
       },
     } as unknown as ConnectorService;
 
+    const localCliRunner = memoryCliRunner();
     const result = await suggestMemoryFromConnectors(dataDir, {
       projectsRoot: process.cwd(),
       projectRoot: process.cwd(),
       connectorIds: ['notion'],
+      chatAgentId: 'claude',
       service,
+      localCliRunner,
     });
 
     expect(executeCalls).toEqual([
@@ -506,10 +536,8 @@ describe('connector memory extraction', () => {
         summary: expect.stringContaining('Read page content: 设计思路'),
       }),
     ]);
-    const fetchMock = vi.mocked(globalThis.fetch);
-    const [, init] = fetchMock.mock.calls[0]!;
-    const requestBody = JSON.parse(String(init?.body));
-    expect(requestBody.messages[1].content).toContain('comfyui 用黑色 logo');
+    const [runnerCall] = localCliRunner.mock.calls;
+    expect(String(runnerCall?.[0]?.user)).toContain('comfyui 用黑色 logo');
     expect(result.suggestions).toHaveLength(1);
   });
 
@@ -595,7 +623,9 @@ describe('connector memory extraction', () => {
       projectsRoot: process.cwd(),
       projectRoot: process.cwd(),
       connectorIds: ['notion'],
+      chatAgentId: 'claude',
       service,
+      localCliRunner: memoryCliRunner(),
     });
 
     expect(executeCalls.some((call) => call.toolName === broadSearchTool.name)).toBe(true);
@@ -788,7 +818,24 @@ describe('connector memory extraction', () => {
       projectsRoot: process.cwd(),
       projectRoot: process.cwd(),
       connectorIds: ['notion'],
+      chatAgentId: 'claude',
       service: createNotionService(),
+      localCliRunner: memoryCliRunner(JSON.stringify({
+        entries: [
+          {
+            type: 'reference',
+            name: 'GitHub context summary',
+            description: 'Summary from GitHub',
+            body: 'OpenDesign read GitHub via List notifications. Summary: Found 5 readable items from GitHub. Save this if it should be reused as context in future chats.',
+          },
+          {
+            type: 'feedback',
+            name: 'UI density preference',
+            description: 'The user prefers denser design interfaces',
+            body: 'The user prefers OpenDesign UI to use higher information density with clear hierarchy instead of spacious marketing-style cards.',
+          },
+        ],
+      })),
     });
 
     expect(result.suggestions).toEqual([
@@ -847,286 +894,6 @@ describe('connector memory extraction', () => {
     });
   });
 
-  it('uses OpenCode Local CLI for same-as-chat connector suggestions', async () => {
-    await writeMemoryConfig(dataDir, { extraction: null });
-    const localCliRunner = vi.fn(async () => JSON.stringify({
-      entries: [
-        {
-          type: 'project',
-          name: 'OpenCode design memory',
-          description: 'Connector memory should use OpenCode',
-          body: 'OpenDesign connector memory extraction should use the same OpenCode Local CLI selected for chat instead of falling back to an OpenAI API key.',
-        },
-      ],
-    }));
-
-    const result = await suggestMemoryFromConnectors(dataDir, {
-      projectsRoot: process.cwd(),
-      projectRoot: process.cwd(),
-      connectorIds: ['notion'],
-      chatAgentId: 'opencode',
-      chatModel: 'openai/gpt-5',
-      service: createNotionService(),
-      localCliRunner,
-    });
-
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-    expect(localCliRunner).toHaveBeenCalledWith(expect.objectContaining({
-      agentId: 'opencode',
-      model: 'openai/gpt-5',
-      projectRoot: process.cwd(),
-      dataDir,
-    }));
-    expect(result.suggestions).toEqual([
-      expect.objectContaining({
-        type: 'project',
-        name: 'OpenCode design memory',
-      }),
-    ]);
-    expect(listExtractions()[0]).toMatchObject({
-      kind: 'connector',
-      phase: 'success',
-      provider: {
-        kind: 'openai',
-        model: 'openai/gpt-5',
-        credentialSource: 'chat-cli',
-      },
-    });
-  });
-
-  it('uses Codex Local CLI for same-as-chat connector suggestions', async () => {
-    await writeMemoryConfig(dataDir, { extraction: null });
-    const localCliRunner = vi.fn(async () => JSON.stringify({
-      entries: [
-        {
-          type: 'project',
-          name: 'Codex design memory',
-          description: 'Connector memory should use Codex',
-          body: 'OpenDesign connector memory extraction should use the same Codex Local CLI selected for chat instead of falling back to an OpenAI API key.',
-        },
-      ],
-    }));
-
-    const result = await suggestMemoryFromConnectors(dataDir, {
-      projectsRoot: process.cwd(),
-      projectRoot: process.cwd(),
-      connectorIds: ['notion'],
-      chatAgentId: 'codex',
-      chatModel: 'gpt-5',
-      service: createNotionService(),
-      localCliRunner,
-    });
-
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-    expect(localCliRunner).toHaveBeenCalledWith(expect.objectContaining({
-      agentId: 'codex',
-      model: 'gpt-5',
-      projectRoot: process.cwd(),
-      dataDir,
-    }));
-    expect(result.suggestions).toEqual([
-      expect.objectContaining({
-        type: 'project',
-        name: 'Codex design memory',
-      }),
-    ]);
-    expect(listExtractions()[0]).toMatchObject({
-      kind: 'connector',
-      phase: 'success',
-      provider: {
-        kind: 'openai',
-        model: 'gpt-5',
-        credentialSource: 'chat-cli',
-      },
-    });
-  });
-
-  it('runs Codex Local CLI through JSON event stream with stdin prompt', async () => {
-    await writeMemoryConfig(dataDir, { extraction: null });
-    const tempDir = await fsp.mkdtemp(path.join(tmpdir(), 'od-codex-memory-'));
-    const binPath = path.join(tempDir, 'codex');
-    const capturePath = path.join(tempDir, 'capture.json');
-    const previousPath = process.env.PATH;
-    const previousCapture = process.env.OD_MEMORY_CODEX_ARGS_OUT;
-
-    await fsp.writeFile(
-      binPath,
-      `#!/usr/bin/env node
-const fs = require('node:fs');
-const args = process.argv.slice(2);
-const stdin = fs.readFileSync(0, 'utf8');
-fs.writeFileSync(process.env.OD_MEMORY_CODEX_ARGS_OUT, JSON.stringify({ args, stdin }));
-process.stdout.write(JSON.stringify({
-  type: 'item.completed',
-  item: {
-    type: 'agent_message',
-    text: JSON.stringify({
-      entries: [{
-        type: 'project',
-        name: 'Codex stdin prompt',
-        description: 'Codex memory used stdin',
-        body: 'OpenDesign connector memory extraction should pass the compacted prompt to Codex stdin and parse the JSON event stream response.'
-      }]
-    })
-  }
-}) + '\\n');
-`,
-      'utf8',
-    );
-    await fsp.chmod(binPath, 0o755);
-
-    try {
-      process.env.PATH = `${tempDir}${path.delimiter}${previousPath ?? ''}`;
-      process.env.OD_MEMORY_CODEX_ARGS_OUT = capturePath;
-
-      const result = await suggestMemoryFromConnectors(dataDir, {
-        projectsRoot: process.cwd(),
-        projectRoot: process.cwd(),
-        connectorIds: ['notion'],
-        chatAgentId: 'codex',
-        chatModel: 'gpt-5',
-        service: createNotionService(),
-      });
-
-      expect(globalThis.fetch).not.toHaveBeenCalled();
-      expect(result.suggestions).toEqual([
-        expect.objectContaining({
-          type: 'project',
-          name: 'Codex stdin prompt',
-        }),
-      ]);
-
-      const captured = JSON.parse(await fsp.readFile(capturePath, 'utf8'));
-      expect(captured.args).toEqual(expect.arrayContaining([
-        'exec',
-        '--json',
-        '--skip-git-repo-check',
-        '-C',
-        process.cwd(),
-        '--model',
-        'gpt-5',
-      ]));
-      expect(captured.stdin).toContain('You are a design-memory extractor');
-      expect(captured.stdin).toContain('OpenDesign connector memory should collect design preferences');
-    } finally {
-      if (previousPath == null) {
-        delete process.env.PATH;
-      } else {
-        process.env.PATH = previousPath;
-      }
-      if (previousCapture == null) {
-        delete process.env.OD_MEMORY_CODEX_ARGS_OUT;
-      } else {
-        process.env.OD_MEMORY_CODEX_ARGS_OUT = previousCapture;
-      }
-      await fsp.rm(tempDir, { recursive: true, force: true });
-    }
-  });
-
-  it('runs OpenCode Local CLI memory extraction with the prompt on stdin', async () => {
-    await writeMemoryConfig(dataDir, { extraction: null });
-    const tempDir = await fsp.mkdtemp(path.join(tmpdir(), 'od-opencode-memory-'));
-    const binPath = path.join(tempDir, 'opencode-cli');
-    const capturePath = path.join(tempDir, 'capture.json');
-    const previousPath = process.env.PATH;
-    const previousCapture = process.env.OD_MEMORY_OPENCODE_ARGS_OUT;
-
-    // Model the real `opencode run` arg parser: `-f, --file` is a yargs
-    // *array* option, so it greedily swallows every following non-flag
-    // token as a file path. Any captured path that doesn't exist makes the
-    // real CLI exit 1 with "File not found: <token>" — which is exactly how
-    // a trailing positional message after `--file` crashed extraction. The
-    // supported one-shot shape is bare `run` with the prompt on stdin.
-    await fsp.writeFile(
-      binPath,
-      `#!/usr/bin/env node
-const fs = require('node:fs');
-const args = process.argv.slice(2);
-const stdin = fs.readFileSync(0, 'utf8');
-const files = [];
-const fileFlag = args.findIndex((a) => a === '--file' || a === '-f');
-if (fileFlag >= 0) {
-  for (let i = fileFlag + 1; i < args.length; i += 1) {
-    if (args[i].startsWith('-')) break;
-    files.push(args[i]);
-  }
-}
-fs.writeFileSync(process.env.OD_MEMORY_OPENCODE_ARGS_OUT, JSON.stringify({ args, stdin, files }));
-for (const f of files) {
-  if (!fs.existsSync(f)) {
-    process.stderr.write('Error: File not found: ' + f + '\\n');
-    process.exit(1);
-  }
-}
-process.stdout.write(JSON.stringify({
-  type: 'text',
-  part: {
-    type: 'text',
-    text: JSON.stringify({
-      entries: [{
-        type: 'project',
-        name: 'OpenCode stdin prompt',
-        description: 'OpenCode memory used stdin',
-        body: 'OpenDesign connector memory extraction should pass the compacted prompt to OpenCode on stdin and parse the JSON event stream response.'
-      }]
-    })
-  }
-}) + '\\n');
-`,
-      'utf8',
-    );
-    await fsp.chmod(binPath, 0o755);
-
-    try {
-      process.env.PATH = `${tempDir}${path.delimiter}${previousPath ?? ''}`;
-      process.env.OD_MEMORY_OPENCODE_ARGS_OUT = capturePath;
-
-      const result = await suggestMemoryFromConnectors(dataDir, {
-        projectsRoot: process.cwd(),
-        projectRoot: process.cwd(),
-        connectorIds: ['notion'],
-        chatAgentId: 'opencode',
-        chatModel: 'openai/gpt-5',
-        service: createNotionService(),
-      });
-
-      expect(globalThis.fetch).not.toHaveBeenCalled();
-      expect(result.suggestions).toEqual([
-        expect.objectContaining({
-          type: 'project',
-          name: 'OpenCode stdin prompt',
-        }),
-      ]);
-
-      const captured = JSON.parse(await fsp.readFile(capturePath, 'utf8'));
-      expect(captured.args).toEqual(expect.arrayContaining([
-        'run',
-        '--format',
-        'json',
-        'openai/gpt-5',
-      ]));
-      // The prompt rides on stdin like the chat-run path; no `--file`
-      // attachment (whose array option would swallow any trailing message).
-      expect(captured.args).not.toContain('--file');
-      expect(captured.args).not.toContain('-f');
-      expect(captured.files).toEqual([]);
-      expect(captured.stdin).toContain('You are a design-memory extractor');
-      expect(captured.stdin).toContain('OpenDesign connector memory should collect design preferences');
-    } finally {
-      if (previousPath == null) {
-        delete process.env.PATH;
-      } else {
-        process.env.PATH = previousPath;
-      }
-      if (previousCapture == null) {
-        delete process.env.OD_MEMORY_OPENCODE_ARGS_OUT;
-      } else {
-        process.env.OD_MEMORY_OPENCODE_ARGS_OUT = previousCapture;
-      }
-      await fsp.rm(tempDir, { recursive: true, force: true });
-    }
-  });
-
   it('reads connected app context and saves connector-sourced memory', async () => {
     const executeCalls: Array<{ connectorId: string; toolName: string; input: unknown }> = [];
     const service = createNotionService(executeCalls);
@@ -1135,7 +902,9 @@ process.stdout.write(JSON.stringify({
       projectsRoot: process.cwd(),
       projectRoot: process.cwd(),
       connectorIds: ['notion'],
+      chatAgentId: 'claude',
       service,
+      localCliRunner: memoryCliRunner(),
     });
 
     expect(result.attemptedLLM).toBe(true);

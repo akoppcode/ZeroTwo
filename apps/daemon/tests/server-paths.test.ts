@@ -42,13 +42,13 @@ describe('resolveDaemonCliPath', () => {
 
   it('uses the packaged daemon CLI path override before package resolution', () => {
     expect(resolveDaemonCliPath({ OD_DAEMON_CLI_PATH: '/app/prebundled/daemon-cli.mjs' })).toBe(
-      '/app/prebundled/daemon-cli.mjs',
+      path.resolve('/app/prebundled/daemon-cli.mjs'),
     );
   });
 
   it('uses OD_BIN as a fallback override for bundled wrapper invocations', () => {
     expect(resolveDaemonCliPath({ OD_BIN: '/app/prebundled/daemon-cli.mjs' })).toBe(
-      '/app/prebundled/daemon-cli.mjs',
+      path.resolve('/app/prebundled/daemon-cli.mjs'),
     );
   });
 });
@@ -135,6 +135,6 @@ describe('resolveDaemonPluginPreviewsDir', () => {
         resourceRoot: '/res/open-design',
         projectRoot,
       }),
-    ).toBe(path.join(projectRoot, 'rel', 'previews'));
+    ).toBe(path.resolve(projectRoot, 'rel', 'previews'));
   });
 });

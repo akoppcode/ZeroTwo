@@ -31,6 +31,15 @@ function mockOpenAiEntries(entries: unknown[]): void {
   ) as typeof fetch;
 }
 
+// Distillation now runs exclusively through the chat Local CLI (Claude Code) —
+// the BYOK/OpenAI API-key path was removed. Stub that runner to return the
+// model's JSON.
+function memoryCliRunner(entries: unknown[]) {
+  return vi.fn(async (_input: { system?: string; user?: string }) =>
+    JSON.stringify({ entries }),
+  );
+}
+
 describe('annotation → memory distillation', () => {
   beforeEach(async () => {
     await fsp.rm(memoryDir(dataDir), { recursive: true, force: true });
@@ -46,7 +55,7 @@ describe('annotation → memory distillation', () => {
   });
 
   it('auto-keeps feedback + rule memory from preview comments, no manual Keep', async () => {
-    mockOpenAiEntries([
+    const localCliRunner = memoryCliRunner([
       {
         type: 'rule',
         name: 'Primary buttons use brand green',
@@ -81,7 +90,7 @@ describe('annotation → memory distillation', () => {
           ],
           userMessage: '调整一下首屏',
         },
-        { projectRoot: process.cwd() },
+        { projectRoot: process.cwd(), chatAgentId: 'claude', localCliRunner },
       );
     } finally {
       memoryEvents.off('change', onChange);
@@ -106,11 +115,9 @@ describe('annotation → memory distillation', () => {
     expect(extract).toMatchObject({ source: 'annotation', count: 2 });
 
     // The model saw the distiller system prompt and the user's comment.
-    const fetchMock = vi.mocked(globalThis.fetch);
-    const [, init] = fetchMock.mock.calls[0]!;
-    const body = JSON.parse(String((init as RequestInit)?.body));
-    expect(body.messages[0].content).toContain('memory distiller');
-    expect(body.messages[1].content).toContain('主按钮应该用品牌绿');
+    const [runnerCall] = localCliRunner.mock.calls;
+    expect(String(runnerCall?.[0]?.system)).toContain('memory distiller');
+    expect(String(runnerCall?.[0]?.user)).toContain('主按钮应该用品牌绿');
   });
 
   it('skips annotations that carry no comment (no provider call)', async () => {
@@ -125,7 +132,7 @@ describe('annotation → memory distillation', () => {
   });
 
   it('drops non-feedback/rule candidates the model returns from a critique', async () => {
-    mockOpenAiEntries([
+    const localCliRunner = memoryCliRunner([
       {
         type: 'project',
         name: 'Redesign sprint',
@@ -147,7 +154,7 @@ describe('annotation → memory distillation', () => {
           { comment: 'too sparse, pack more in', label: 'Section', selectionKind: 'element' },
         ],
       },
-      { projectRoot: process.cwd() },
+      { projectRoot: process.cwd(), chatAgentId: 'claude', localCliRunner },
     );
 
     expect(written).toHaveLength(1);

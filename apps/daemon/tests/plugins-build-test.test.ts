@@ -20,8 +20,8 @@ describe('runBuildTest — explicit overrides', () => {
   it('reports status=passing when both commands exit 0', async () => {
     const report = await runBuildTest({
       cwd: tmp,
-      buildCommand: 'true',
-      testCommand:  'true',
+      buildCommand: 'exit 0',
+      testCommand:  'exit 0',
     });
     expect(report.build.status).toBe('passing');
     expect(report.tests.status).toBe('passing');
@@ -45,7 +45,7 @@ describe('runBuildTest — explicit overrides', () => {
   it('skips a half cleanly when the command is null + records a reason', async () => {
     const report = await runBuildTest({
       cwd: tmp,
-      buildCommand: 'true',
+      buildCommand: 'exit 0',
       testCommand:  null,
     });
     expect(report.build.status).toBe('passing');
@@ -61,7 +61,7 @@ describe('runBuildTest — explicit overrides', () => {
     // Produce ~64 KiB of output; cap is 1 KiB.
     const report = await runBuildTest({
       cwd: tmp,
-      buildCommand: 'yes "X" | head -c 65536',
+      buildCommand: 'node -e "process.stdout.write(String.fromCharCode(88).repeat(65536))"',
       testCommand:  null,
       logBudgetBytes: 1024,
     });
@@ -77,7 +77,7 @@ describe('runBuildTest — package.json inference', () => {
       path.join(tmp, 'package.json'),
       JSON.stringify({
         name: 'fixture',
-        scripts: { typecheck: 'true', test: 'true' },
+        scripts: { typecheck: 'exit 0', test: 'exit 0' },
       }),
     );
     const report = await runBuildTest({ cwd: tmp });
@@ -90,7 +90,7 @@ describe('runBuildTest — package.json inference', () => {
   it('prefers pnpm when pnpm-lock.yaml exists', async () => {
     await writeFile(
       path.join(tmp, 'package.json'),
-      JSON.stringify({ name: 'fixture', scripts: { test: 'true' } }),
+      JSON.stringify({ name: 'fixture', scripts: { test: 'exit 0' } }),
     );
     await writeFile(path.join(tmp, 'pnpm-lock.yaml'), '');
     const report = await runBuildTest({ cwd: tmp });
@@ -103,8 +103,8 @@ describe('writeBuildTestReport', () => {
   it('writes critique/build-test.json + critique/build-test.log under cwd', async () => {
     const report = await runBuildTest({
       cwd: tmp,
-      buildCommand: 'true',
-      testCommand:  'true',
+      buildCommand: 'exit 0',
+      testCommand:  'exit 0',
     });
     const { jsonPath, logPath } = await writeBuildTestReport({ cwd: tmp, report });
     const json = JSON.parse(await readFile(jsonPath, 'utf8'));

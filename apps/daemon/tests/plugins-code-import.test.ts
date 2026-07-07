@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile, symlink } from 'node:fs/promis
 import os from 'node:os';
 import path from 'node:path';
 import { runCodeImport } from '../src/plugins/atoms/code-import.js';
+import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 
 let repo: string;
 let cwd: string;
@@ -63,7 +64,7 @@ describe('runCodeImport', () => {
     expect(skipped).toEqual(['.git', 'dist', 'node_modules']);
   });
 
-  it('marks symlinks as skipped without following them', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('marks symlinks as skipped without following them', async () => {
     await writeFile(path.join(repo, 'real.ts'), 'export const x = 1;\n');
     await symlink('real.ts', path.join(repo, 'link.ts'));
     const index = await runCodeImport({ repoPath: repo, cwd });

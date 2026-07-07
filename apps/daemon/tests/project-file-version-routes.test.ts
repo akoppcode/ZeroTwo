@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { getProjectFileVersionRootStats } from '../src/project-file-versions.js';
 import { projectFileWriteTestHooks } from '../src/projects.js';
 import { startServer } from '../src/server.js';
+import { DIR_READONLY_ENFORCED } from './platform-capabilities.js';
 
 describe('project file version routes', () => {
   let server: http.Server;
@@ -193,7 +194,10 @@ describe('project file version routes', () => {
     expect(await rawResponse.text()).toBe('<html><body>uploaded</body></html>');
   });
 
-  it('returns a typed warning when restore writes the file but cannot append the restore version', async () => {
+  // Failure injection makes the version root read-only via chmod 0o555; Windows
+  // (and root on POSIX) does not enforce that, so the append cannot be forced to
+  // fail there. Gate on a runtime probe rather than weaken the assertion.
+  it.skipIf(!DIR_READONLY_ENFORCED)('returns a typed warning when restore writes the file but cannot append the restore version', async () => {
     const projectId = await createProject();
     await writeProjectFile(projectId, 'brand.html', '<html><body>old</body></html>');
     const createResponse = await fetch(`${baseUrl}/api/projects/${projectId}/files/brand.html/versions`, {

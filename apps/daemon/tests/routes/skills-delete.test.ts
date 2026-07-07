@@ -23,6 +23,7 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { startServer } from '../../src/server.js';
+import { SYMLINK_SUPPORTED } from '../platform-capabilities.js';
 
 describe('DELETE /api/skills/:id', () => {
   let server: http.Server;
@@ -85,7 +86,7 @@ describe('DELETE /api/skills/:id', () => {
     expect(existsSync(dir)).toBe(false);
   });
 
-  it('removes a symlinked local install without following the link to the source tree', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('removes a symlinked local install without following the link to the source tree', async () => {
     // Local-path install: `installFromTarget` symlinks the user's source
     // directory into USER_SKILLS_DIR. Deleting must unlink the symlink,
     // not recurse into and wipe the user's own files.

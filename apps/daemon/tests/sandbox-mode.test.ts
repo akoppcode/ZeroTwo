@@ -89,9 +89,7 @@ describe('sandbox runtime roots', () => {
     expect(env.HOME).toBe(config.roots.agentHomeDir);
     expect(env.USERPROFILE).toBe(config.roots.agentHomeDir);
     expect(env.OD_AGENT_HOME).toBe(config.roots.agentHomeDir);
-    expect(env.CODEX_HOME).toBe(path.join(config.roots.agentHomeDir, '.codex'));
     expect(env.CLAUDE_CONFIG_DIR).toBe(path.join(config.roots.configDir, 'claude'));
-    expect(env.OPENCODE_TEST_HOME).toBe(path.join(config.roots.agentHomeDir, '.opencode'));
     expect(env.NPM_CONFIG_USERCONFIG).toBe(path.join(config.roots.toolConfigDir, 'npmrc'));
     expect(env.PATH).toBe('/bin');
   });

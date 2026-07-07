@@ -230,9 +230,14 @@ test('resolveAgentExecutable prefers a configured CLAUDE_BIN override over PATH 
   const dir = mkdtempSync(join(tmpdir(), 'od-claude-bin-'));
   try {
     return withEnvSnapshot(['PATH', 'OD_AGENT_HOME'], () => {
-      const configured = join(dir, 'claude-custom');
-      writeFileSync(configured, '#!/bin/sh\nexit 0\n');
-      chmodSync(configured, 0o755);
+      const isWin = process.platform === 'win32';
+      const configured = join(dir, isWin ? 'claude-custom.cmd' : 'claude-custom');
+      if (isWin) {
+        writeFileSync(configured, '@echo off\r\nexit /b 0\r\n');
+      } else {
+        writeFileSync(configured, '#!/bin/sh\nexit 0\n');
+        chmodSync(configured, 0o755);
+      }
       process.env.PATH = '';
       process.env.OD_AGENT_HOME = dir;
 
@@ -251,13 +256,23 @@ test('resolveAgentExecutable prefers a configured CLAUDE_BIN override over PATH 
 test('inspectAgentExecutableResolution reports configured and PATH Claude binaries separately', () => {
   const dir = mkdtempSync(join(tmpdir(), 'od-claude-bin-inspect-'));
   try {
-    return withEnvSnapshot(['PATH', 'OD_AGENT_HOME'], () => {
-      const configured = join(dir, 'claude-custom');
-      const fallback = join(dir, 'claude');
-      writeFileSync(configured, '#!/bin/sh\nexit 0\n');
-      writeFileSync(fallback, '#!/bin/sh\nexit 0\n');
-      chmodSync(configured, 0o755);
-      chmodSync(fallback, 0o755);
+    return withEnvSnapshot(['PATH', 'PATHEXT', 'OD_AGENT_HOME'], () => {
+      const isWin = process.platform === 'win32';
+      // On Windows the PATH resolver reconstructs the resolved path as
+      // basename + a PATHEXT entry, so the fallback file's extension casing
+      // must match a pinned PATHEXT entry for pathResolvedPath to compare equal.
+      const configured = join(dir, isWin ? 'claude-custom.CMD' : 'claude-custom');
+      const fallback = join(dir, isWin ? 'claude.CMD' : 'claude');
+      if (isWin) {
+        writeFileSync(configured, '@echo off\r\nexit /b 0\r\n');
+        writeFileSync(fallback, '@echo off\r\nexit /b 0\r\n');
+        process.env.PATHEXT = '.EXE;.CMD;.BAT';
+      } else {
+        writeFileSync(configured, '#!/bin/sh\nexit 0\n');
+        writeFileSync(fallback, '#!/bin/sh\nexit 0\n');
+        chmodSync(configured, 0o755);
+        chmodSync(fallback, 0o755);
+      }
       process.env.PATH = dir;
       process.env.OD_AGENT_HOME = dir;
 
@@ -288,10 +303,15 @@ test('resolveAgentExecutable supports configured binary overrides per adapter', 
       process.env.PATH = '';
       process.env.OD_AGENT_HOME = dir;
 
+      const isWin = process.platform === 'win32';
       for (const [id, binName, envKey] of cases) {
-        const configured = join(dir, `${binName}-custom`);
-        writeFileSync(configured, '#!/bin/sh\nexit 0\n');
-        chmodSync(configured, 0o755);
+        const configured = join(dir, isWin ? `${binName}-custom.cmd` : `${binName}-custom`);
+        if (isWin) {
+          writeFileSync(configured, '@echo off\r\nexit /b 0\r\n');
+        } else {
+          writeFileSync(configured, '#!/bin/sh\nexit 0\n');
+          chmodSync(configured, 0o755);
+        }
 
         const resolved = resolveAgentExecutable(
           minimalAgentDef({ id, bin: binName }),

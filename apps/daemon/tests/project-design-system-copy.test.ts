@@ -5,6 +5,26 @@ import { join } from 'node:path';
 import { register } from 'prom-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { READ_BLOCKED_BY_CHMOD } from './platform-capabilities.js';
+
+// Windows keeps the daemon SQLite files (app.sqlite / -wal / -shm) briefly
+// locked after the server shuts down, whereas POSIX unlinks open files freely.
+// Retry the temp-dir teardown, then leave the OS to reclaim it, rather than let
+// a Windows-only file lock fail an otherwise-passing test.
+async function removeDataDir(dir: string): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rm(dir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'EBUSY' && code !== 'EPERM' && code !== 'ENOTEMPTY') throw err;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+}
+
 type StartedServer = {
   url: string;
   server: Server;
@@ -24,7 +44,7 @@ describe('project design-system copy route', () => {
   afterEach(async () => {
     await stopServer();
     register.clear();
-    if (dataDir) await rm(dataDir, { recursive: true, force: true });
+    if (dataDir) await removeDataDir(dataDir);
     dataDir = null;
     if (originalDataDir === undefined) delete process.env.OD_DATA_DIR;
     else process.env.OD_DATA_DIR = originalDataDir;
@@ -107,7 +127,10 @@ describe('project design-system copy route', () => {
     );
   }, 60_000);
 
-  it('fails design-system workspace creation when a source file cannot be copied', async () => {
+  // The failure is injected by chmod-ing a source file to 0o000; Windows (and
+  // root on POSIX) cannot make a file unreadable to its owner, so the copy
+  // cannot be forced to fail there. Gate on a runtime probe.
+  it.skipIf(!READ_BLOCKED_BY_CHMOD)('fails design-system workspace creation when a source file cannot be copied', async () => {
     dataDir = await mkdtemp(join(tmpdir(), 'od-project-ds-copy-fail-'));
     started = await startIsolatedServer(dataDir);
 

@@ -677,7 +677,7 @@ process.exit(result.status ?? 0);
       process.env.OD_PROMPT_CAPTURE = capturePath;
       try {
         await withFakeAgent(
-          'opencode',
+          'claude',
           `
 const fs = require('node:fs');
 let input = '';
@@ -702,7 +702,7 @@ process.stdin.on('end', () => {
               '--inputs',
               JSON.stringify({ topic }),
               '--agent',
-              'opencode',
+              'claude',
               '--follow',
             ], { timeout: 60_000 });
             expect(run.stdout).toContain('[run] started run');

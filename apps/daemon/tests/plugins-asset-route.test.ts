@@ -19,6 +19,7 @@ import Database from 'better-sqlite3';
 import { startServer } from '../src/server.js';
 import { migratePlugins } from '../src/plugins/persistence.js';
 import { defaultRegistryRoots, upsertInstalledPlugin } from '../src/plugins/registry.js';
+import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 
 let server: http.Server;
 let baseUrl: string;
@@ -87,12 +88,16 @@ beforeAll(async () => {
   const installedInternalDir = path.join(defaultRegistryRoots().userPluginsRoot, 'asset-plugin', 'internal-assets');
   await mkdir(installedInternalDir, { recursive: true });
   await writeFile(path.join(installedInternalDir, 'nested-internal.txt'), 'nested internal secret');
-  await symlink(
-    secretPath,
-    path.join(installedSurfacesDir, 'leak.txt'),
-  );
-  await symlink(outsideDir, path.join(installedSurfacesDir, 'linked-outside'), 'dir');
-  await symlink(installedInternalDir, path.join(installedSurfacesDir, 'linked-internal'), 'dir');
+  // Symlink creation is an OS-level privilege on Windows; when unavailable
+  // the symlink-leak tests below are skipped, so skip their setup too.
+  if (SYMLINK_SUPPORTED) {
+    await symlink(
+      secretPath,
+      path.join(installedSurfacesDir, 'leak.txt'),
+    );
+    await symlink(outsideDir, path.join(installedSurfacesDir, 'linked-outside'), 'dir');
+    await symlink(installedInternalDir, path.join(installedSurfacesDir, 'linked-internal'), 'dir');
+  }
   void migratePlugins;
   void upsertInstalledPlugin;
   void Database;
@@ -135,19 +140,19 @@ describe('GET /api/plugins/:id/asset/*', () => {
     expect(resp.status).toBe(404);
   });
 
-  it('rejects symlinked assets inside the plugin root', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('rejects symlinked assets inside the plugin root', async () => {
     const resp = await fetch(`${baseUrl}/api/plugins/asset-plugin/asset/surfaces/leak.txt`);
     expect(resp.status).toBe(404);
     expect(await resp.text()).not.toContain('outside secret');
   });
 
-  it('rejects assets reached through a symlinked directory inside the plugin root', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('rejects assets reached through a symlinked directory inside the plugin root', async () => {
     const resp = await fetch(`${baseUrl}/api/plugins/asset-plugin/asset/surfaces/linked-outside/nested-secret.txt`);
     expect(resp.status).toBe(404);
     expect(await resp.text()).not.toContain('nested outside secret');
   });
 
-  it('rejects assets reached through an internal symlinked directory inside the plugin root', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('rejects assets reached through an internal symlinked directory inside the plugin root', async () => {
     const resp = await fetch(`${baseUrl}/api/plugins/asset-plugin/asset/surfaces/linked-internal/nested-internal.txt`);
     expect(resp.status).toBe(404);
     expect(await resp.text()).not.toContain('nested internal secret');

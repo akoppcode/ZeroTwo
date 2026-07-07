@@ -254,7 +254,7 @@ async function downloadAssets(args: {
           continue;
         }
         const ext = args.assetFormat === 'jpg' ? 'jpg' : args.assetFormat;
-        const safeId = id.replace(/[^A-Za-z0-9_:-]+/g, '-');
+        const safeId = id.replace(/[^A-Za-z0-9_-]+/g, '-');
         await fsp.writeFile(path.join(args.assetsDir, `${safeId}.${ext}`), buf);
       } catch (err) {
         issues.push({ id, type: 'asset', reason: `download error: ${(err as Error).message}` });

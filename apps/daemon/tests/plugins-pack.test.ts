@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { x as tarExtract, t as tarList } from 'tar';
 import { packPlugin, PackPluginError } from '../src/plugins/pack.js';
+import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 
 let folder: string;
 let parent: string;
@@ -71,7 +72,7 @@ describe('packPlugin', () => {
     expect(entries).toEqual(['open-design.json']);
   });
 
-  it('skips symlinks both at walk time and at filter time', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('skips symlinks both at walk time and at filter time', async () => {
     await writeFile(path.join(folder, 'open-design.json'), JSON.stringify({ name: 'p', version: '0.0.1' }));
     await writeFile(path.join(folder, 'real.txt'), 'real');
     await symlink('real.txt', path.join(folder, 'link.txt'));

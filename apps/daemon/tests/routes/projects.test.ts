@@ -19,6 +19,7 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { startServer } from '../../src/server.js';
+import { SYMLINK_SUPPORTED } from '../platform-capabilities.js';
 
 describe('GET /api/projects/:id resolvedDir', () => {
   let server: http.Server;
@@ -1182,7 +1183,7 @@ describe('project locations routes', () => {
     expect(body.error?.message).toMatch(/invalid project id/i);
   });
 
-  it('POST /api/projects with projectLocationId rejects when target path already exists as a symlink', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('POST /api/projects with projectLocationId rejects when target path already exists as a symlink', async () => {
     const extDir = makeTempDir();
     await putProjectLocations([{ id: 'sym-ext', name: 'Symlink External', path: extDir }]);
 

@@ -67,7 +67,10 @@ function errorCode(err: unknown): string | undefined {
 
 function isExistingTargetError(err: unknown): boolean {
   const code = errorCode(err);
-  return code === 'EEXIST' || code === 'ENOTEMPTY';
+  // Windows reports EPERM/EACCES (not EEXIST/ENOTEMPTY) when a rename targets an
+  // existing non-empty directory, so the dir-replace recovery must treat those
+  // as "target exists" too.
+  return code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'EPERM' || code === 'EACCES';
 }
 
 function fileVersionKey(fileName: string): string {

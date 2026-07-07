@@ -18,17 +18,24 @@ test('claude probes auth status so rescans reflect CLI auth changes', async () =
   const dir = mkdtempSync(join(tmpdir(), 'od-agents-claude-auth-'));
   try {
     await withEnvSnapshot(['PATH', 'OD_AGENT_HOME', 'CLAUDE_BIN'], async () => {
-      const claudeBin = join(dir, 'claude');
-      writeFileSync(
-        claudeBin,
-        `#!/bin/sh
+      const claudeBin = join(dir, process.platform === 'win32' ? 'claude.cmd' : 'claude');
+      if (process.platform === 'win32') {
+        writeFileSync(
+          claudeBin,
+          '@echo off\r\nif "%~1"=="--version" (\r\n  echo 2.1.168\r\n  exit /b 0\r\n)\r\nif "%~1"=="-p" (\r\n  echo --include-partial-messages --add-dir\r\n  exit /b 0\r\n)\r\nif "%~1"=="auth" if "%~2"=="status" (\r\n  echo {"authenticated":true,"source":"claude.ai"}\r\n  exit /b 0\r\n)\r\nexit /b 0\r\n',
+        );
+      } else {
+        writeFileSync(
+          claudeBin,
+          `#!/bin/sh
 if [ "$1" = "--version" ]; then echo "2.1.168 (Claude Code)"; exit 0; fi
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "--include-partial-messages --add-dir"; exit 0; fi
 if [ "$1" = "auth" ] && [ "$2" = "status" ]; then echo '{"authenticated":true,"source":"claude.ai"}'; exit 0; fi
 exit 0
 `,
-      );
-      chmodSync(claudeBin, 0o755);
+        );
+        chmodSync(claudeBin, 0o755);
+      }
       process.env.OD_AGENT_HOME = dir;
       process.env.PATH = dir;
       delete process.env.CLAUDE_BIN;

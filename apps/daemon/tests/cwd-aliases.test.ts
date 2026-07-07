@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SKILLS_CWD_ALIAS, stageActiveSkill } from '../src/cwd-aliases.js';
+import { EXEC_BIT_SUPPORTED, SYMLINK_SUPPORTED } from './platform-capabilities.js';
 
 function fresh(): string {
   return mkdtempSync(path.join(tmpdir(), 'od-skill-stage-'));
@@ -255,7 +256,7 @@ describe('stageActiveSkill', () => {
     },
   );
 
-  it('falls back to a dereferenced stream copy when the native copy fails with EPERM', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('falls back to a dereferenced stream copy when the native copy fails with EPERM', async () => {
     // Repro for the Docker/ZFS report: `fs.cp` -> copy_file_range(2) is
     // rejected with EPERM across the image-layer -> bind-mount boundary
     // and Node doesn't fall back. The real errno only appears on those
@@ -297,7 +298,7 @@ describe('stageActiveSkill', () => {
     expect(messages.some((m) => m.includes('stream copy'))).toBe(true);
   });
 
-  it('preserves the source exec bit through the stream-copy fallback (EPERM path)', async () => {
+  it.skipIf(!EXEC_BIT_SUPPORTED)('preserves the source exec bit through the stream-copy fallback (EPERM path)', async () => {
     // Regression for PR #3249 review: skills shell out to staged helper
     // scripts, so the fallback copy must keep the source's exec bit. A
     // plain stream copy would reset it to the default 0644 and the agent

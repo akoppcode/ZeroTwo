@@ -476,6 +476,7 @@ import { registerMcpRoutes } from './mcp-routes.js';
 import { registerLiveArtifactRoutes } from './routes/live-artifact.js';
 import { registerDesignSystemToolRoutes } from './routes/design-system-tool.js';
 import { registerDeployRoutes, registerDeploymentCheckRoutes } from './routes/deploy.js';
+import { registerAppShellRoutes } from './routes/app-shell.js';
 import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './routes/project/index.js';
 import { registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
 import { registerChatRoutes } from './routes/chat.js';
@@ -2709,6 +2710,16 @@ export async function startServer({
     projectStore: projectStoreDeps,
   });
   registerDeploymentCheckRoutes(app, { db, http: httpDeps, deploy: deployDeps });
+  // Local-only app-shell routes (app-config, dir probes, orbit control, native
+  // dialogs, research) — recovered from the removed media route module.
+  registerAppShellRoutes(app, {
+    http: httpDeps,
+    paths: pathDeps,
+    appConfig: appConfigDeps,
+    orbit: orbitDeps,
+    nativeDialogs: nativeDialogDeps,
+    research: researchDeps,
+  });
   app.use('/frames', express.static(FRAMES_DIR));
   registerProjectExportRoutes(app, {
     db,
@@ -2769,7 +2780,7 @@ export async function startServer({
       } else {
         source = typeof body.source === 'string' ? body.source : '';
         if (!source) return res.status(400).json({ error: 'source is required' });
-        const looksAbsolute = source.startsWith('/') || source.startsWith('./') || source.startsWith('~');
+        const looksAbsolute = path.isAbsolute(source) || source.startsWith('./') || source.startsWith('~');
         const looksGithub = source.startsWith('github:');
         const looksHttps = /^https:\/\//i.test(source);
         if (!looksAbsolute && !looksGithub && !looksHttps) {

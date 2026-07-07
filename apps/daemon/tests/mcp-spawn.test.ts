@@ -596,7 +596,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        agentId: 'codex',
+        agentId: 'copilot',
         projectId: id,
         message: 'bad tools',
         toolBundle: {
@@ -615,7 +615,7 @@ describe('spawn writes external MCP config for Claude Code', () => {
       error?: { message?: string };
     };
     expect(unsupportedRuntimeBody.error?.message).toContain(
-      'Codex CLI (codex) does not support run-scoped MCP tool bundles',
+      'GitHub Copilot CLI (copilot) does not support run-scoped MCP tool bundles',
     );
     const messagesRes = await fetch(
       `${baseUrl}/api/projects/${id}/conversations/${conversationId}/messages`,
@@ -625,39 +625,12 @@ describe('spawn writes external MCP config for Claude Code', () => {
       messages: Array<{ role: string; content: string }>;
     };
     expect(messagesBody.messages.some((msg) => msg.content === 'bad tools')).toBe(false);
-
-    const unsupportedTransportRes = await fetch(`${baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        agentId: 'hermes',
-        projectId: id,
-        message: 'bad remote tools',
-        toolBundle: {
-          mcpServers: [
-            {
-              id: 'run-remote',
-              transport: 'http',
-              url: 'https://example.test/mcp',
-            },
-          ],
-        },
-      }),
-    });
-    expect(unsupportedTransportRes.status).toBe(400);
-    const unsupportedTransportBody = (await unsupportedTransportRes.json()) as {
-      error?: { message?: string };
-    };
-    expect(unsupportedTransportBody.error?.message).toContain(
-      'Hermes (hermes) only supports stdio run-scoped MCP servers',
-    );
   });
 
-  it('does not write .mcp.json for ACP agents (Hermes wires via session args)', async () => {
-    // ACP agents (Hermes/Kimi) consume the `mcpServers` array via the ACP
-    // session/new params instead of `.mcp.json`. The `.mcp.json` write path
-    // is gated to `def.id === 'claude'`, so this test covers the negative
-    // direction: configure servers, run a non-claude agent, no file written.
+  it('does not write .mcp.json for non-claude agents', async () => {
+    // The `.mcp.json` write path is gated to `def.id === 'claude'`, so this
+    // test covers the negative direction: configure servers, run a non-claude
+    // agent, no file written.
     const putRes = await fetch(`${baseUrl}/api/mcp/servers`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },

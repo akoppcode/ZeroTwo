@@ -350,12 +350,14 @@ describe('sanitizeMcpServer headers', () => {
 });
 
 describe('isManagedProjectCwd', () => {
-  const projectsDir = '/abs/.od/projects';
+  // Built with path.sep so the native separator matches the source's
+  // `projectsDir + path.sep` check on both POSIX and Windows.
+  const projectsDir = path.join(path.sep, 'abs', '.od', 'projects');
 
   it('accepts a real per-project subdir', () => {
-    expect(isManagedProjectCwd('/abs/.od/projects/abc', projectsDir)).toBe(true);
+    expect(isManagedProjectCwd(path.join(projectsDir, 'abc'), projectsDir)).toBe(true);
     expect(
-      isManagedProjectCwd('/abs/.od/projects/abc/sub', projectsDir),
+      isManagedProjectCwd(path.join(projectsDir, 'abc', 'sub'), projectsDir),
     ).toBe(true);
   });
 
@@ -364,11 +366,13 @@ describe('isManagedProjectCwd', () => {
   });
 
   it('rejects a git-linked baseDir outside of projects-dir', () => {
-    expect(isManagedProjectCwd('/home/me/code/repo', projectsDir)).toBe(false);
+    expect(
+      isManagedProjectCwd(path.join(path.sep, 'home', 'me', 'code', 'repo'), projectsDir),
+    ).toBe(false);
   });
 
   it('rejects PROJECT_ROOT-shaped fallback', () => {
-    expect(isManagedProjectCwd('/abs', projectsDir)).toBe(false);
+    expect(isManagedProjectCwd(path.join(path.sep, 'abs'), projectsDir)).toBe(false);
   });
 
   it('rejects null / undefined cwd', () => {
@@ -378,11 +382,11 @@ describe('isManagedProjectCwd', () => {
   });
 
   it('rejects path-prefix collisions (different sibling dir)', () => {
-    // `/abs/.od/projects-other` starts with `/abs/.od/projects` as a string,
-    // but is NOT a child of `/abs/.od/projects/`. Strict-separator check
-    // makes sure we don't accidentally write to an unrelated tree.
+    // `<projectsDir>-other` starts with `<projectsDir>` as a string, but is
+    // NOT a child of `<projectsDir><sep>`. Strict-separator check makes sure
+    // we don't accidentally write to an unrelated tree.
     expect(
-      isManagedProjectCwd('/abs/.od/projects-other/x', projectsDir),
+      isManagedProjectCwd(`${projectsDir}-other${path.sep}x`, projectsDir),
     ).toBe(false);
   });
 });

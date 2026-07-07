@@ -36,10 +36,15 @@ describe('daemon sidecar startup', () => {
     const { setDesktopAuthSecret } = await import('../src/desktop-auth.js');
     const { startDaemonSidecar } = await import('../src/sidecar/server.js');
     const root = await mkdtemp(join(tmpdir(), 'od-daemon-sidecar-'));
+    // Windows maps net.listen(path) to named pipes, so a filesystem .sock path
+    // fails with EACCES. Match production, which uses a \\.\pipe\ name there.
+    const ipc = process.platform === 'win32'
+      ? `\\\\.\\pipe\\od-daemon-sidecar-${process.pid}-${randomBytes(6).toString('hex')}`
+      : join(root, 'daemon.sock');
     const handle = await startDaemonSidecar({
       app: APP_KEYS.DAEMON,
       base: root,
-      ipc: join(root, 'daemon.sock'),
+      ipc,
       mode: SIDECAR_MODES.DEV,
       namespace: 'test',
       source: SIDECAR_SOURCES.TOOLS_DEV,

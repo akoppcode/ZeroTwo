@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import { parseByteRange, resolveProjectFilePath } from '../src/projects.js';
 import { startServer } from '../src/server.js';
+import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 
 // ---------------------------------------------------------------------------
 // parseByteRange — RFC 7233 unit tests
@@ -135,7 +136,7 @@ describe('resolveProjectFilePath', () => {
     ).rejects.toThrow();
   });
 
-  it('rejects symlink escapes inside managed projects', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('rejects symlink escapes inside managed projects', async () => {
     const outsideRoot = mkdtempSync(path.join(tmpdir(), 'od-range-outside-'));
     try {
       await writeFile(path.join(outsideRoot, 'secret.txt'), 'secret');

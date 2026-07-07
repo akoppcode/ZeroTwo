@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync, realpathSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { validateLinkedDirs } from '../src/linked-dirs.js';
+import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 
 /** Resolve macOS /var -> /private/var etc. so assertions match realpathSync. */
 function real(p: string): string {
@@ -109,7 +110,7 @@ test('resolves and normalizes paths', () => {
   }
 });
 
-test('resolves symlinks to real paths', () => {
+test.skipIf(!SYMLINK_SUPPORTED)('resolves symlinks to real paths', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'od-linked-'));
   const inner = join(tmp, 'inner');
   const link = join(tmp, 'link');

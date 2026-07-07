@@ -82,7 +82,7 @@ describe('exportPlugin', () => {
   it('target=claude-plugin writes SKILL.md + .claude-plugin/plugin.json', async () => {
     const snap = persistSampleSnapshot();
     const result = await exportPlugin({ db, snapshotId: snap.snapshotId, target: 'claude-plugin', outDir: tmpDir });
-    expect(result.files.some((f) => f.endsWith('.claude-plugin/plugin.json'))).toBe(true);
+    expect(result.files.some((f) => f.endsWith(path.join('.claude-plugin', 'plugin.json')))).toBe(true);
     const cpRaw = await readFile(path.join(result.folder, '.claude-plugin', 'plugin.json'), 'utf8');
     const cp = JSON.parse(cpRaw);
     expect(cp.name).toBe('sample-plugin');

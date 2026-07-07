@@ -9,6 +9,7 @@ import {
   GITHUB_URL_RE,
   SAFE_NAME_RE,
 } from '../src/library-install.js';
+import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 
 describe('sanitizeRepoName', () => {
   it('extracts repo name from a github URL', () => {
@@ -113,19 +114,19 @@ describe('containsSymlink', () => {
     expect(await containsSymlink(root)).toBe(false);
   });
 
-  it('detects a top-level symlink', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('detects a top-level symlink', async () => {
     await writeFile(path.join(root, 'secret-target'), 'x');
     await symlink(path.join(root, 'secret-target'), path.join(root, 'evil.md'));
     expect(await containsSymlink(root)).toBe(true);
   });
 
-  it('detects a symlink nested in a subdirectory', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('detects a symlink nested in a subdirectory', async () => {
     await mkdir(path.join(root, 'a', 'b'), { recursive: true });
     await symlink('/etc/hostname', path.join(root, 'a', 'b', 'link.txt'));
     expect(await containsSymlink(root)).toBe(true);
   });
 
-  it('detects a symlink that points at a directory without following it', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('detects a symlink that points at a directory without following it', async () => {
     // A symlinked dir must be flagged, not descended into (following it could
     // recurse outside the tree).
     const outside = await mkdtemp(path.join(tmpdir(), 'od-symlink-outside-'));

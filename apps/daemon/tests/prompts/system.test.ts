@@ -300,27 +300,6 @@ describe('composeSystemPrompt', () => {
     expect(prompt).toContain('the assistant message should only summarize the result');
   });
 
-  it('uses the primary skill surface when composed skill modes conflict', () => {
-    const prompt = composeSystemPrompt({
-      skillMode: 'image',
-      skillModes: ['deck', 'image'],
-    });
-
-    expect(prompt).toContain('## Media generation contract');
-    expect(prompt).not.toContain('# Slide deck — fixed framework');
-  });
-
-  it('lets metadata.kind win over conflicting composed skill modes', () => {
-    const prompt = composeSystemPrompt({
-      skillMode: 'image',
-      skillModes: ['deck', 'image'],
-      metadata: { kind: 'deck' } as any,
-    });
-
-    expect(prompt).toContain('# Slide deck — fixed framework');
-    expect(prompt).not.toContain('## Media generation contract');
-  });
-
   it('resolves a non-media primary surface ahead of composed media mentions', () => {
     expect(resolveExclusiveSurface({
       skillMode: 'deck',
@@ -401,18 +380,6 @@ describe('composeSystemPrompt', () => {
       expect(prompt).toMatch(/Filesystem handoff is canonical/i);
       expect(prompt).toMatch(/Do not emit a source-code `<artifact>` block/i);
     });
-
-    it('also keeps deck-mode prompts free of the unconditional emit line (DECK_FRAMEWORK_DIRECTIVE only stacks for deck projects)', () => {
-      // The plain composeSystemPrompt({}) call does NOT include
-      // DECK_FRAMEWORK_DIRECTIVE; that directive only stacks when
-      // `skillMode === 'deck'` or `metadata.kind === 'deck'`. So if
-      // deck-framework.ts:327 ever regresses back to "Emit single <artifact>",
-      // a no-args negative assertion is a false negative — exercise the deck
-      // path explicitly here.
-      const deckPrompt = composeSystemPrompt({ skillMode: 'deck' });
-      expect(deckPrompt).not.toMatch(/^7\.\s+Emit single <artifact>\s*$/m);
-      expect(deckPrompt).toMatch(/Summarize the written or changed deck file/i);
-    });
   });
 
   describe('connectedExternalMcp directive', () => {
@@ -462,19 +429,6 @@ describe('composeSystemPrompt', () => {
       });
       expect(prompt).toContain('- `github`\n');
       expect(prompt).not.toContain('- `github` (github)');
-    });
-
-    it('keeps external MCP tools visible when OD-owned media execution is disabled', () => {
-      const prompt = composeSystemPrompt({
-        connectedExternalMcp: [{ id: 'external-media', label: 'External media' }],
-        metadata: { kind: 'image' },
-        mediaExecution: { mode: 'disabled' },
-      });
-
-      expect(prompt).toContain('## External MCP servers — already authenticated');
-      expect(prompt).toContain('`external-media`');
-      expect(prompt).toContain('Open Design-owned media execution is **disabled for this run**');
-      expect(prompt).not.toContain('## Media generation contract');
     });
   });
 

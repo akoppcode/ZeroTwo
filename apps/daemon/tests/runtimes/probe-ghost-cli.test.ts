@@ -98,10 +98,10 @@ describe('probe (issue #658) — ghost CLI after the binary is uninstalled', () 
       const { detectAgents } = await import('../../src/runtimes/detection.js');
 
       const agents = await detectAgents();
-      const codex = agents.find((agent) => agent.id === 'codex');
+      const claude = agents.find((agent) => agent.id === 'claude');
 
-      expect(codex).toBeDefined();
-      expect(codex?.available).toBe(false);
+      expect(claude).toBeDefined();
+      expect(claude?.available).toBe(false);
     });
   }
 
@@ -117,10 +117,10 @@ describe('probe (issue #658) — ghost CLI after the binary is uninstalled', () 
       const { detectAgents } = await import('../../src/runtimes/detection.js');
 
       const agents = await detectAgents();
-      const codex = agents.find((agent) => agent.id === 'codex');
+      const claude = agents.find((agent) => agent.id === 'claude');
 
-      expect(codex).toBeDefined();
-      expect(codex?.available).toBe(false);
+      expect(claude).toBeDefined();
+      expect(claude?.available).toBe(false);
     });
   }
 
@@ -132,11 +132,11 @@ describe('probe (issue #658) — ghost CLI after the binary is uninstalled', () 
     const { detectAgents } = await import('../../src/runtimes/detection.js');
 
     const agents = await detectAgents();
-    const codex = agents.find((agent) => agent.id === 'codex');
+    const claude = agents.find((agent) => agent.id === 'claude');
 
-    expect(codex).toBeDefined();
-    expect(codex?.available).toBe(true);
-    expect(codex?.version).toBeNull();
+    expect(claude).toBeDefined();
+    expect(claude?.available).toBe(true);
+    expect(claude?.version).toBeNull();
   });
 
   it('keeps available=true on a generic non-zero exit (e.g. exit 1 from an adapter with no --version flag)', async () => {
@@ -144,49 +144,23 @@ describe('probe (issue #658) — ghost CLI after the binary is uninstalled', () 
     const { detectAgents } = await import('../../src/runtimes/detection.js');
 
     const agents = await detectAgents();
-    const codex = agents.find((agent) => agent.id === 'codex');
+    const claude = agents.find((agent) => agent.id === 'claude');
 
-    expect(codex).toBeDefined();
-    expect(codex?.available).toBe(true);
-    expect(codex?.version).toBeNull();
+    expect(claude).toBeDefined();
+    expect(claude?.available).toBe(true);
+    expect(claude?.version).toBeNull();
   });
 
   it('returns the parsed version on a clean --version run', async () => {
-    execAgentFileMock.mockResolvedValue({ stdout: 'codex 1.2.3\n', stderr: '' });
+    execAgentFileMock.mockResolvedValue({ stdout: 'claude 1.2.3\n', stderr: '' });
     const { detectAgents } = await import('../../src/runtimes/detection.js');
 
     const agents = await detectAgents();
-    const codex = agents.find((agent) => agent.id === 'codex');
+    const claude = agents.find((agent) => agent.id === 'claude');
 
-    expect(codex).toBeDefined();
-    expect(codex?.available).toBe(true);
-    expect(codex?.version).toBe('codex 1.2.3');
-  });
-
-  it('honors Trae CLI adapter-specific version probe timeout', async () => {
-    execAgentFileMock.mockResolvedValue({ stdout: 'agent 1.2.3\n', stderr: '' });
-    resolveAgentLaunchMock.mockImplementation((def: { id: string }) => ({
-      configuredOverridePath: null,
-      pathResolvedPath: `/fake/bin/${def.id}`,
-      selectedPath: `/fake/bin/${def.id}`,
-      launchPath: `/fake/bin/${def.id}`,
-      launchKind: 'selected' as const,
-      childPathPrepend: ['/fake/bin'],
-      diagnostic: null,
-    }));
-    const { detectAgents } = await import('../../src/runtimes/detection.js');
-
-    await detectAgents();
-
-    const traeVersionCall = execAgentFileMock.mock.calls.find(
-      ([command, args]) =>
-        command === '/fake/bin/trae-cli' &&
-        Array.isArray(args) &&
-        args.join('\0') === '--version',
-    );
-
-    expect(traeVersionCall).toBeDefined();
-    expect(traeVersionCall?.[2]).toMatchObject({ timeout: 10_000 });
+    expect(claude).toBeDefined();
+    expect(claude?.available).toBe(true);
+    expect(claude?.version).toBe('claude 1.2.3');
   });
 
   it('keeps the default version probe timeout for other runtimes', async () => {
@@ -204,51 +178,15 @@ describe('probe (issue #658) — ghost CLI after the binary is uninstalled', () 
 
     await detectAgents();
 
-    const codexVersionCall = execAgentFileMock.mock.calls.find(
+    const claudeVersionCall = execAgentFileMock.mock.calls.find(
       ([command, args]) =>
-        command === '/fake/bin/codex' &&
+        command === '/fake/bin/claude' &&
         Array.isArray(args) &&
         args.join('\0') === '--version',
     );
 
-    expect(codexVersionCall).toBeDefined();
-    expect(codexVersionCall?.[2]).toMatchObject({ timeout: 3000 });
-  });
-
-  it('reports missing Trae CLI as unavailable without breaking full detection', async () => {
-    resolveAgentLaunchMock.mockImplementation((def: { id: string }) => {
-      if (def.id === 'trae-cli') {
-        return {
-          configuredOverridePath: null,
-          pathResolvedPath: null,
-          selectedPath: null,
-          launchPath: null,
-          launchKind: 'unresolved' as const,
-          childPathPrepend: [],
-          diagnostic: null,
-        };
-      }
-      return {
-        configuredOverridePath: null,
-        pathResolvedPath: `/fake/bin/${def.id}`,
-        selectedPath: `/fake/bin/${def.id}`,
-        launchPath: `/fake/bin/${def.id}`,
-        launchKind: 'selected' as const,
-        childPathPrepend: ['/fake/bin'],
-        diagnostic: null,
-      };
-    });
-    execAgentFileMock.mockResolvedValue({ stdout: 'agent 1.2.3\n', stderr: '' });
-    const { detectAgents } = await import('../../src/runtimes/detection.js');
-
-    const agents = await detectAgents();
-    const traeCli = agents.find((agent) => agent.id === 'trae-cli');
-    const codex = agents.find((agent) => agent.id === 'codex');
-
-    expect(traeCli).toBeDefined();
-    expect(traeCli?.available).toBe(false);
-    expect(codex).toBeDefined();
-    expect(codex?.available).toBe(true);
+    expect(claudeVersionCall).toBeDefined();
+    expect(claudeVersionCall?.[2]).toMatchObject({ timeout: 3000 });
   });
 
   it('reports unavailable for a stale configured override even when a different PATH binary exists', async () => {
@@ -282,10 +220,10 @@ describe('probe (issue #658) — ghost CLI after the binary is uninstalled', () 
     );
     // Force a stale configured override + a working PATH candidate.
     execAgentFileMock.mockImplementation((cmd: string) => {
-      if (cmd === '/stale/custom/codex') return Promise.reject(spawnError('ENOENT'));
-      return Promise.resolve({ stdout: 'codex 1.4.2\n', stderr: '' });
+      if (cmd === '/stale/custom/claude') return Promise.reject(spawnError('ENOENT'));
+      return Promise.resolve({ stdout: 'claude 1.4.2\n', stderr: '' });
     });
-    const configuredEnv = { codex: { CODEX_BIN: '/stale/custom/codex' } };
+    const configuredEnv = { claude: { CLAUDE_BIN: '/stale/custom/claude' } };
 
     // The resolver tries the configured override first; we don't have
     // a real PATH candidate on this CI host but we have a configured
@@ -294,40 +232,40 @@ describe('probe (issue #658) — ghost CLI after the binary is uninstalled', () 
     // verify the chain ends up at the same place detection probes.
     const { detectAgents } = await import('../../src/runtimes/detection.js');
     const agents = await detectAgents(configuredEnv);
-    const codex = agents.find((agent) => agent.id === 'codex');
+    const claude = agents.find((agent) => agent.id === 'claude');
 
-    expect(codex).toBeDefined();
+    expect(claude).toBeDefined();
     // Detection must report unavailable rather than swap to a hypothetical
     // PATH candidate, because resolveAgentLaunch (which chat-run
     // resolution uses) will pick whatever the same call returns.
     const resolvedForRun = realResolveAgentLaunch(
-      // re-run AGENT_DEFS's codex entry through the real resolver to
+      // re-run AGENT_DEFS's claude entry through the real resolver to
       // get the executable resolveAgentBin would pick at chat time.
       // The detection side already validated this path.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { id: 'codex', bin: 'codex' } as any,
-      configuredEnv.codex,
+      { id: 'claude', bin: 'claude' } as any,
+      configuredEnv.claude,
     );
     if (resolvedForRun.selectedPath && resolvedForRun.launchPath) {
       // If the resolver found a working PATH binary, detection must
       // have reported available=true with the SAME path.
-      expect(codex?.available).toBe(true);
-      expect(codex?.path).toBe(resolvedForRun.selectedPath);
+      expect(claude?.available).toBe(true);
+      expect(claude?.path).toBe(resolvedForRun.selectedPath);
     } else {
       // Otherwise detection must report unavailable rather than invent
       // a different path.
-      expect(codex?.available).toBe(false);
-      expect(codex?.path).toBeUndefined();
+      expect(claude?.available).toBe(false);
+      expect(claude?.path).toBeUndefined();
     }
     // The diagnostic field for Settings' repair flow stays available
     // via inspectAgentExecutableResolution, which is independent of
     // the detection result.
     const inspection = inspectAgentExecutableResolution(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { id: 'codex', bin: 'codex' } as any,
-      configuredEnv.codex,
+      { id: 'claude', bin: 'claude' } as any,
+      configuredEnv.claude,
     );
     expect(inspection.configuredOverridePath === null
-      || inspection.configuredOverridePath === '/stale/custom/codex').toBe(true);
+      || inspection.configuredOverridePath === '/stale/custom/claude').toBe(true);
   });
 });

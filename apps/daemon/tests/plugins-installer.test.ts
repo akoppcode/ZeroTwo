@@ -12,6 +12,7 @@ import { migratePlugins } from '../src/plugins/persistence.js';
 import { installFromLocalFolder, installPlugin, uninstallPlugin } from '../src/plugins/installer.js';
 import { listInstalledPlugins } from '../src/plugins/registry.js';
 import { addMarketplace, resolvePluginInMarketplaces } from '../src/plugins/marketplaces.js';
+import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 import type { InstalledPluginRecord } from '@open-design/contracts';
 
 let tmpRoot: string;
@@ -78,7 +79,7 @@ describe('installFromLocalFolder', () => {
     expect(list[0]?.fsPath).toBe(path.join(pluginsRoot, 'sample-plugin'));
   });
 
-  it('rejects symbolic links inside the source tree', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('rejects symbolic links inside the source tree', async () => {
     // Create a benign symlink — the installer must refuse anything that
     // could escape the staged folder.
     const linkPath = path.join(sourceFolder, 'evil-link');

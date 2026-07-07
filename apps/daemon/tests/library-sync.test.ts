@@ -22,6 +22,7 @@ import {
 } from '../src/db.js';
 import { listLibraryAssets } from '../src/library-store.js';
 import { reconcileLibrary } from '../src/library-sync.js';
+import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 import type Database from 'better-sqlite3';
 
 let db: Database.Database;
@@ -209,7 +210,7 @@ describe('reconcileLibrary', () => {
     );
   });
 
-  it('does not register a design-system preview that is a symlink', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('does not register a design-system preview that is a symlink', async () => {
     const root = path.join(designSystemsDir, DS_DIR);
     await mkdir(root, { recursive: true });
     await writeFile(path.join(designSystemsDir, 'outside.html'), '<!doctype html><h1>Secret</h1>');

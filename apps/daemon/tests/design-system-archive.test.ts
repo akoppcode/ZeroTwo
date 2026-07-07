@@ -9,6 +9,7 @@ import {
   buildDesignSystemSkillsMarkdown,
   buildUserDesignSystemArchive,
 } from '../src/design-systems/index.js';
+import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 
 const DESIGN_MD = `# Acme Brand
 
@@ -80,7 +81,7 @@ describe('buildUserDesignSystemArchive', () => {
     expect(await buildUserDesignSystemArchive(root, 'user:does-not-exist')).toBeNull();
   });
 
-  it('never follows a symlink out of the design-system root into the ZIP', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('never follows a symlink out of the design-system root into the ZIP', async () => {
     // A crafted package drops a symlink that points at a daemon-readable file
     // outside its own directory. The archive must not follow it — otherwise the
     // download becomes an arbitrary-file-read exfiltration path.

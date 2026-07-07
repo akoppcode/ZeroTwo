@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { renameSyncWithRetry } from '../windows-rename-retry.js';
 
 export interface ComposioConfig {
   apiKey: string;
@@ -85,7 +86,7 @@ function writeRawConfig(config: ComposioConfig): void {
   fs.mkdirSync(path.dirname(configFilePath), { recursive: true, mode: 0o700 });
   const tempPath = `${configFilePath}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-  fs.renameSync(tempPath, configFilePath);
+  renameSyncWithRetry(tempPath, configFilePath);
   fs.chmodSync(configFilePath, 0o600);
 }
 

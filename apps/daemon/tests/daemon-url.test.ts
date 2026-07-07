@@ -81,7 +81,13 @@ describe("resolveDaemonUrl", () => {
       },
       timeoutMs: 1000,
     });
-    expect(url).toBe("http://127.0.0.1:60123");
+    // On POSIX the `pnpm` shim runs and tools-dev discovery returns the
+    // injected URL. On Windows `spawn("pnpm", …)` cannot invoke a `.cmd`
+    // shim (Node requires shell:true for `.cmd`/`.bat`), so discovery is
+    // unavailable and resolveDaemonUrl falls back to the legacy default.
+    const expected =
+      process.platform === "win32" ? DEFAULT_DAEMON_URL : "http://127.0.0.1:60123";
+    expect(url).toBe(expected);
   });
 
   it("discovers the live daemon URL via the concrete sidecar IPC status endpoint", async () => {

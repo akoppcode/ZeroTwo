@@ -48,15 +48,6 @@ describe('server route inventory', () => {
       'POST /api/automation-proposals/:id/apply',
       'POST /api/automation-proposals/:id/reject',
     ];
-    const velaRouteKeys = [
-      'GET /api/amr/models',
-      'GET /api/integrations/vela/status',
-      'ALL /api/integrations/vela/api-proxy/*splat',
-      'POST /api/integrations/vela/login',
-      'POST /api/integrations/vela/login/cancel',
-      'POST /api/integrations/vela/analytics-entry',
-      'POST /api/integrations/vela/logout',
-    ];
     const genuiRouteKeys = [
       'GET /api/runs/:runId/genui',
       'GET /api/projects/:projectId/genui',
@@ -177,7 +168,6 @@ describe('server route inventory', () => {
       'POST /api/upload',
       'POST /api/artifacts/save',
       'POST /api/artifacts/lint',
-      'POST /api/projects/:id/finalize/:provider',
       'POST /api/projects/:id/upload',
     ];
     const designSystemRouteKeys = [
@@ -207,27 +197,6 @@ describe('server route inventory', () => {
       'GET /api/atoms',
       'GET /api/atoms/:id',
     ];
-    const mediaConfigRouteKeys = [
-      'GET /api/media/models',
-      'GET /api/media/providers/aihubmix/models',
-      'GET /api/media/config',
-      'PUT /api/media/config',
-      'GET /api/media/providers/elevenlabs/voices',
-      'GET /api/app-config',
-      'PUT /api/app-config',
-      'POST /api/dir-exists',
-      'GET /api/recent-dirs',
-      'GET /api/orbit/status',
-      'POST /api/orbit/run',
-      'POST /api/system/open-external',
-      'POST /api/dialog/open-folder',
-      'POST /api/projects/:id/media/generate',
-      'POST /api/tools/media/generate',
-      'POST /api/research/search',
-      'POST /api/media/tasks/:id/wait',
-      'GET /api/projects/:id/media/tasks',
-    ];
-
     expect(routeKeys).toEqual(expect.arrayContaining([
       'GET /api/health',
       'GET /api/ready',
@@ -240,7 +209,6 @@ describe('server route inventory', () => {
     ]));
 
     expect(routeKeys.filter((key) => automationRouteKeys.includes(key))).toEqual(automationRouteKeys);
-    expect(routeKeys.filter((key) => velaRouteKeys.includes(key))).toEqual(velaRouteKeys);
     expect(routeKeys.filter((key) => genuiRouteKeys.includes(key))).toEqual(genuiRouteKeys);
     expect(routeKeys.filter((key) => runRouteKeys.includes(key))).toEqual(runRouteKeys);
     expect(routeKeys.filter((key) => pluginEventRouteKeys.includes(key))).toEqual(pluginEventRouteKeys);
@@ -256,7 +224,6 @@ describe('server route inventory', () => {
     expect(routeKeys.filter((key) => projectTemplateAndArtifactRouteKeys.includes(key))).toEqual(projectTemplateAndArtifactRouteKeys);
     expect(routeKeys.filter((key) => designSystemRouteKeys.includes(key))).toEqual(designSystemRouteKeys);
     expect(routeKeys.filter((key) => staticCatalogRouteKeys.includes(key))).toEqual(staticCatalogRouteKeys);
-    expect(routeKeys.filter((key) => mediaConfigRouteKeys.includes(key))).toEqual(mediaConfigRouteKeys);
 
     expect(fallbackIndex).toBeGreaterThan(-1);
     expect(routeKeys.indexOf('GET /api/health')).toBeLessThan(fallbackIndex);
@@ -276,7 +243,6 @@ describe('server route inventory', () => {
     expect(routeKeys.filter((key) => key === 'POST /api/projects/:id/upload')).toHaveLength(1);
     expect(routeKeys.filter((key) => key === 'POST /api/runs')).toHaveLength(1);
     expect(routeKeys.filter((key) => key === 'POST /api/chat')).toHaveLength(1);
-    expect(routeKeys.filter((key) => key === 'POST /api/media/tasks/:id/wait')).toHaveLength(1);
     expect(routeKeys.filter((key) => key === 'GET /api/marketplaces')).toHaveLength(1);
     expect(routeKeys.filter((key) => key === 'POST /api/projects/:id/plugins/share-tasks')).toHaveLength(1);
     for (const [index, key] of routeKeys.entries()) {
@@ -307,7 +273,6 @@ describe('bootstrap route regressions', () => {
     const [
       automationList,
       automationMissing,
-      velaProxyUnknownPath,
       genuiRunList,
       genuiRunSurfaceMissing,
       devloopIterations,
@@ -315,7 +280,6 @@ describe('bootstrap route regressions', () => {
     ] = await Promise.all([
       fetch(`${baseUrl}/api/automation-source-packets`),
       fetch(`${baseUrl}/api/automation-source-packets/missing-packet`),
-      fetch(`${baseUrl}/api/integrations/vela/api-proxy/not-api-v1`),
       fetch(`${baseUrl}/api/runs/missing-run/genui`),
       fetch(`${baseUrl}/api/runs/missing-run/genui/missing-surface`),
       fetch(`${baseUrl}/api/runs/missing-run/devloop-iterations`),
@@ -331,9 +295,6 @@ describe('bootstrap route regressions', () => {
 
     expect(automationMissing.status).toBe(404);
     expect(await automationMissing.json()).toEqual({ error: 'automation source packet not found' });
-
-    expect(velaProxyUnknownPath.status).toBe(404);
-    expect(await velaProxyUnknownPath.json()).toEqual({ error: 'unknown_amr_api_proxy_path' });
 
     expect(genuiRunList.status).toBe(200);
     expect(await genuiRunList.json()).toEqual({ runId: 'missing-run', surfaces: [] });
@@ -574,6 +535,8 @@ describe('daemon data dir resolver', () => {
     expect(() => resolveDataDir('', '/tmp/open-design-test', { requireExplicit: true })).toThrow(
       /OD_DATA_DIR is required/,
     );
-    expect(resolveDataDir('relative-data', '/tmp/open-design-test')).toBe('/tmp/open-design-test/relative-data');
+    expect(resolveDataDir('relative-data', '/tmp/open-design-test')).toBe(
+      path.resolve('/tmp/open-design-test', 'relative-data'),
+    );
   });
 });

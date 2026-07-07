@@ -673,7 +673,11 @@ describe('app-config projectLocations', () => {
     ];
     await writeAppConfig(dataDir, { projectLocations: locs });
     const cfg = await readAppConfig(dataDir);
-    expect(cfg.projectLocations).toEqual(locs);
+    // Stored paths are normalized (backslashes on Windows), so compare
+    // against the OS-normalized form rather than the raw POSIX input.
+    expect(cfg.projectLocations).toEqual(
+      locs.map((loc) => ({ ...loc, path: path.normalize(loc.path) })),
+    );
   });
 
   it('normalizes ~/ paths via expandHomePrefix', async () => {

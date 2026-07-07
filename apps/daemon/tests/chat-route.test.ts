@@ -7,7 +7,6 @@ import {
   promises as fsp,
   readFileSync,
   rmSync,
-  writeFileSync,
 } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -22,11 +21,9 @@ import {
   startServer,
 } from '../src/server.js';
 import { skillCwdAliasSegment } from '../src/cwd-aliases.js';
-import { getAgentDef } from '../src/agents.js';
 import { readMemoryConfig, writeMemoryConfig } from '../src/memory.js';
 import { upsertMessage } from '../src/db.js';
 
-const FAKE_VELA_FIXTURE = resolve(process.cwd(), 'tests', 'fixtures', 'fake-vela.mjs');
 
 async function withFakeAgent<T>(
   binName: string,
@@ -182,465 +179,6 @@ describe('/api/chat', () => {
     expect(body).toContain('AGENT_UNAVAILABLE');
   });
 
-  it('marks json stream runs failed when an error frame exits with code 0', async () => {
-    const conversationId = `conv-${randomUUID()}`;
-
-    await withFakeAgent(
-      'opencode',
-      `
-console.log(JSON.stringify({
-  type: 'error',
-  error: { message: 'model not found: fake-opencode-model' },
-}));
-process.exit(0);
-`,
-      async () => {
-        const response = await fetch(`${baseUrl}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'opencode',
-            conversationId,
-            message: 'hello',
-          }),
-        });
-        const body = await response.text();
-
-        expect(response.ok).toBe(true);
-        expect(body).toContain('AGENT_EXECUTION_FAILED');
-        expect(body).toContain('model not found: fake-opencode-model');
-        expect(body).toContain('"status":"failed"');
-        expect(body).not.toContain('"status":"succeeded"');
-
-        const runsResponse = await fetch(
-          `${baseUrl}/api/runs?conversationId=${encodeURIComponent(conversationId)}`,
-        );
-        const runsBody = (await runsResponse.json()) as {
-          runs: Array<{ conversationId: string | null; status: string; exitCode: number | null }>;
-        };
-
-        expect(runsBody.runs).toHaveLength(1);
-        expect(runsBody.runs[0]).toMatchObject({
-          conversationId,
-          status: 'failed',
-          exitCode: 1,
-        });
-      },
-    );
-  });
-
-  it('marks OpenCode tool-only runs failed when no assistant output is produced', async () => {
-    const conversationId = `conv-${randomUUID()}`;
-
-    await withFakeAgent(
-      'opencode',
-      `
-console.log(JSON.stringify({ type: 'step_start', sessionID: 'opencode-tool-only-session' }));
-console.log(JSON.stringify({
-  type: 'tool_use',
-  sessionID: 'opencode-tool-only-session',
-  part: {
-    tool: 'Read',
-    callID: 'call-read-1',
-    state: {
-      status: 'completed',
-      input: JSON.stringify({ file: 'src/app.ts' }),
-      output: 'file contents',
-    },
-  },
-}));
-console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 0 } } }));
-process.exit(0);
-`,
-      async () => {
-        const response = await fetch(`${baseUrl}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'opencode',
-            conversationId,
-            message: 'read the file and summarize it',
-          }),
-        });
-        const body = await response.text();
-
-        expect(response.ok).toBe(true);
-        expect(body).toContain('"type":"tool_use"');
-        expect(body).toContain('"type":"tool_result"');
-        expect(body).toContain('AGENT_EXECUTION_FAILED');
-        expect(body).toContain('Agent completed without producing any output');
-        expect(body).toContain('"status":"failed"');
-        expect(body).not.toContain('"status":"succeeded"');
-
-        const runsResponse = await fetch(
-          `${baseUrl}/api/runs?conversationId=${encodeURIComponent(conversationId)}`,
-        );
-        const runsBody = (await runsResponse.json()) as {
-          runs: Array<{ conversationId: string | null; status: string; exitCode: number | null }>;
-        };
-
-        expect(runsBody.runs).toHaveLength(1);
-        expect(runsBody.runs[0]).toMatchObject({
-          conversationId,
-          status: 'failed',
-          exitCode: 0,
-        });
-      },
-    );
-  });
-
-  it('passes OPENCODE_CONFIG_CONTENT external_directory rules for the managed project cwd', async () => {
-    if (!process.env.OD_DATA_DIR) {
-      throw new Error('OD_DATA_DIR is required for OpenCode cwd permission tests');
-    }
-
-    const projectId = `proj-${randomUUID()}`;
-    const markerDir = await fsp.mkdtemp(join(tmpdir(), 'od-opencode-config-'));
-    tempDirs.push(markerDir);
-    const envFile = join(markerDir, 'opencode-config-content.json');
-    const cwdFile = join(markerDir, 'cwd.txt');
-
-    const createProjectResponse = await fetch(`${baseUrl}/api/projects`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: projectId, name: 'OpenCode cwd permission fixture' }),
-    });
-    expect(createProjectResponse.ok).toBe(true);
-
-    await withFakeAgent(
-      'opencode',
-      `
-const fs = require('node:fs');
-process.stdin.resume();
-process.stdin.on('end', () => {
-  fs.writeFileSync(${JSON.stringify(envFile)}, process.env.OPENCODE_CONFIG_CONTENT || '');
-  fs.writeFileSync(${JSON.stringify(cwdFile)}, process.cwd());
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: 'cwd-permission-ok' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
-  process.exit(0);
-});
-`,
-      async () => {
-        const response = await fetch(`${baseUrl}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'opencode',
-            projectId,
-            message: 'hello',
-          }),
-        });
-        const body = await response.text();
-
-        expect(response.ok).toBe(true);
-        expect(body).toContain('cwd-permission-ok');
-
-        const effectiveCwd = (await fsp.readFile(cwdFile, 'utf8')).trim();
-        const raw = await fsp.readFile(envFile, 'utf8');
-        const parsed = JSON.parse(raw) as {
-          permission?: {
-            external_directory?: Record<string, string>;
-          };
-        };
-
-        const externalDirectory = parsed.permission?.external_directory ?? {};
-        const cwdAliases = new Set([effectiveCwd]);
-        if (effectiveCwd.startsWith('/private/var/')) {
-          cwdAliases.add(effectiveCwd.replace(/^\/private\/var\//, '/var/'));
-        }
-        const allowedCwd = [...cwdAliases].find(
-          (cwd) =>
-            externalDirectory[cwd] === 'allow' &&
-            externalDirectory[`${cwd}/*`] === 'allow' &&
-            externalDirectory[`${cwd}/**`] === 'allow',
-        );
-        expect(allowedCwd).toBeTruthy();
-      },
-    );
-  });
-
-  it('passes BYOK provider config to the daemon-backed OpenCode runtime', async () => {
-    if (!process.env.OD_DATA_DIR) {
-      throw new Error('OD_DATA_DIR is required for BYOK OpenCode config tests');
-    }
-
-    const projectId = `proj-${randomUUID()}`;
-    const markerDir = await fsp.mkdtemp(join(tmpdir(), 'od-byok-opencode-config-'));
-    tempDirs.push(markerDir);
-    const envFile = join(markerDir, 'opencode-config-content.json');
-    const keyFile = join(markerDir, 'byok-key.txt');
-    const argsFile = join(markerDir, 'args.json');
-
-    const createProjectResponse = await fetch(`${baseUrl}/api/projects`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: projectId, name: 'BYOK OpenCode fixture' }),
-    });
-    expect(createProjectResponse.ok).toBe(true);
-
-    await withFakeAgent(
-      'opencode',
-      `
-const fs = require('node:fs');
-process.stdin.resume();
-process.stdin.on('end', () => {
-  fs.writeFileSync(${JSON.stringify(envFile)}, process.env.OPENCODE_CONFIG_CONTENT || '');
-  fs.writeFileSync(${JSON.stringify(keyFile)}, process.env.OPEN_DESIGN_BYOK_API_KEY || '');
-  fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)));
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: 'byok-opencode-ok' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
-  process.exit(0);
-});
-`,
-      async () => {
-        const response = await fetch(`${baseUrl}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'byok-opencode',
-            projectId,
-            message: 'hello',
-            model: 'deepseek-v4-flash',
-            byokProvider: {
-              protocol: 'senseaudio',
-              apiKey: 'sk-test-byok',
-              baseUrl: 'https://api.senseaudio.cn',
-            },
-          }),
-        });
-        const body = await response.text();
-
-        expect(response.ok).toBe(true);
-        expect(body).toContain('byok-opencode-ok');
-
-        expect(await fsp.readFile(keyFile, 'utf8')).toBe('sk-test-byok');
-        expect(JSON.parse(await fsp.readFile(argsFile, 'utf8'))).toEqual([
-          'run',
-          '--format',
-          'json',
-          '-m',
-          'open-design-byok/deepseek-v4-flash',
-        ]);
-        const parsed = JSON.parse(await fsp.readFile(envFile, 'utf8')) as {
-          provider?: Record<string, {
-            npm?: string;
-            options?: Record<string, unknown>;
-            models?: Record<string, unknown>;
-          }>;
-        };
-        const provider = parsed.provider?.['open-design-byok'];
-        expect(provider).toMatchObject({
-          npm: '@ai-sdk/openai-compatible',
-          options: {
-            baseURL: 'https://api.senseaudio.cn',
-            apiKey: '{env:OPEN_DESIGN_BYOK_API_KEY}',
-          },
-        });
-        expect(provider?.models?.['deepseek-v4-flash']).toEqual({
-          name: 'deepseek-v4-flash',
-          limit: {
-            context: 128_000,
-            output: 16_384,
-          },
-        });
-        expect(JSON.stringify(parsed)).not.toContain('sk-test-byok');
-      },
-    );
-  });
-
-  it('passes keyless BYOK provider config without auth fields to OpenCode', async () => {
-    if (!process.env.OD_DATA_DIR) {
-      throw new Error('OD_DATA_DIR is required for BYOK OpenCode config tests');
-    }
-
-    const projectId = `proj-${randomUUID()}`;
-    const markerDir = await fsp.mkdtemp(join(tmpdir(), 'od-byok-opencode-keyless-'));
-    tempDirs.push(markerDir);
-    const envFile = join(markerDir, 'opencode-config-content.json');
-    const keyFile = join(markerDir, 'byok-key.txt');
-    const argsFile = join(markerDir, 'args.json');
-
-    const createProjectResponse = await fetch(`${baseUrl}/api/projects`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: projectId, name: 'BYOK keyless OpenCode fixture' }),
-    });
-    expect(createProjectResponse.ok).toBe(true);
-
-    await withFakeAgent(
-      'opencode',
-      `
-const fs = require('node:fs');
-process.stdin.resume();
-process.stdin.on('end', () => {
-  fs.writeFileSync(${JSON.stringify(envFile)}, process.env.OPENCODE_CONFIG_CONTENT || '');
-  fs.writeFileSync(${JSON.stringify(keyFile)}, process.env.OPEN_DESIGN_BYOK_API_KEY || '');
-  fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)));
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: 'byok-opencode-keyless-ok' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
-  process.exit(0);
-});
-`,
-      async () => {
-        const response = await fetch(`${baseUrl}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'byok-opencode',
-            projectId,
-            message: 'hello',
-            model: 'model',
-            byokProvider: {
-              protocol: 'openai',
-              apiKey: '',
-              baseUrl: 'http://127.0.0.1:8000/v1',
-              requiresApiKey: false,
-            },
-          }),
-        });
-        const body = await response.text();
-
-        expect(response.ok).toBe(true);
-        expect(body).toContain('byok-opencode-keyless-ok');
-
-        expect(await fsp.readFile(keyFile, 'utf8')).toBe('');
-        expect(JSON.parse(await fsp.readFile(argsFile, 'utf8'))).toEqual([
-          'run',
-          '--format',
-          'json',
-          '-m',
-          'open-design-byok/model',
-        ]);
-        const rawConfig = await fsp.readFile(envFile, 'utf8');
-        const parsed = JSON.parse(rawConfig) as {
-          provider?: Record<string, {
-            npm?: string;
-            options?: Record<string, unknown>;
-            models?: Record<string, unknown>;
-          }>;
-        };
-        const provider = parsed.provider?.['open-design-byok'];
-        expect(provider).toMatchObject({
-          npm: '@ai-sdk/openai',
-          options: {
-            baseURL: 'http://127.0.0.1:8000/v1',
-          },
-        });
-        expect(provider?.options).not.toHaveProperty('apiKey');
-        expect(rawConfig).not.toContain('OPEN_DESIGN_BYOK_API_KEY');
-      },
-    );
-  });
-
-  it('does not pass forged BYOK provider config to other local runtimes', async () => {
-    if (!process.env.OD_DATA_DIR) {
-      throw new Error('OD_DATA_DIR is required for BYOK OpenCode config tests');
-    }
-
-    const projectId = `proj-${randomUUID()}`;
-    const markerDir = await fsp.mkdtemp(join(tmpdir(), 'od-byok-opencode-isolation-'));
-    tempDirs.push(markerDir);
-    const envFile = join(markerDir, 'opencode-config-content.json');
-    const keyFile = join(markerDir, 'byok-key.txt');
-
-    const createProjectResponse = await fetch(`${baseUrl}/api/projects`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: projectId, name: 'BYOK isolation fixture' }),
-    });
-    expect(createProjectResponse.ok).toBe(true);
-
-    await withFakeAgent(
-      'opencode',
-      `
-const fs = require('node:fs');
-process.stdin.resume();
-process.stdin.on('end', () => {
-  fs.writeFileSync(${JSON.stringify(envFile)}, process.env.OPENCODE_CONFIG_CONTENT || '');
-  fs.writeFileSync(${JSON.stringify(keyFile)}, process.env.OPEN_DESIGN_BYOK_API_KEY || '');
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: 'opencode-ok' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
-  process.exit(0);
-});
-`,
-      async () => {
-        const response = await fetch(`${baseUrl}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'opencode',
-            projectId,
-            message: 'hello',
-            model: 'deepseek-v4-flash',
-            byokProvider: {
-              protocol: 'senseaudio',
-              apiKey: 'sk-test-byok',
-              baseUrl: 'https://api.senseaudio.cn',
-            },
-          }),
-        });
-        const body = await response.text();
-
-        expect(response.ok).toBe(true);
-        expect(body).toContain('opencode-ok');
-        expect(await fsp.readFile(keyFile, 'utf8')).toBe('');
-        expect(await fsp.readFile(envFile, 'utf8')).not.toContain('open-design-byok');
-        expect(await fsp.readFile(envFile, 'utf8')).not.toContain('sk-test-byok');
-      },
-    );
-  });
-
-  it('strips inherited OpenCode server auth env before spawning the opencode CLI', async () => {
-    const inheritedPassword = process.env.OPENCODE_SERVER_PASSWORD;
-    process.env.OPENCODE_SERVER_PASSWORD = 'test-parent-server-password';
-
-    const markerDir = await fsp.mkdtemp(join(tmpdir(), 'od-opencode-env-'));
-    tempDirs.push(markerDir);
-    const envFile = join(markerDir, 'opencode-server-password.txt');
-
-    try {
-      await withFakeAgent(
-        'opencode',
-        `
-const fs = require('node:fs');
-process.stdin.resume();
-process.stdin.on('end', () => {
-  fs.writeFileSync(${JSON.stringify(envFile)}, process.env.OPENCODE_SERVER_PASSWORD || '');
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: 'opencode-env-ok' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
-  process.exit(0);
-});
-`,
-        async () => {
-          const response = await fetch(`${baseUrl}/api/chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              agentId: 'opencode',
-              message: 'hello',
-            }),
-          });
-          const body = await response.text();
-
-          expect(response.ok).toBe(true);
-          expect(body).toContain('opencode-env-ok');
-          expect(await fsp.readFile(envFile, 'utf8')).toBe('');
-        },
-      );
-    } finally {
-      if (inheritedPassword == null) {
-        delete process.env.OPENCODE_SERVER_PASSWORD;
-      } else {
-        process.env.OPENCODE_SERVER_PASSWORD = inheritedPassword;
-      }
-    }
-  });
-
 
   it('reuses an existing assistant message row instead of creating a duplicate when assistantMessageId is supplied', async () => {
     if (!process.env.OD_DATA_DIR) {
@@ -680,13 +218,13 @@ process.stdin.on('end', () => {
     }
 
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 process.stdin.resume();
 process.stdin.on('end', () => {
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: 'reused-assistant-row-ok' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: 'reused-assistant-row-ok' } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -695,7 +233,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             projectId,
             conversationId,
             assistantMessageId,
@@ -722,190 +260,6 @@ process.stdin.on('end', () => {
     }
   });
 
-  it('rewrites the OpenCode scanner overflow into a generic retry message', async () => {
-    const conversationId = `conv-${randomUUID()}`;
-
-    await withFakeAgent(
-      'opencode',
-      `
-process.stderr.write('json-rpc id 4: opencode event stream: read opencode SSE: bufio.Scanner: token too long\\n');
-process.exit(1);
-`,
-      async () => {
-        const response = await fetch(`${baseUrl}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'opencode',
-            conversationId,
-            message: 'hello',
-          }),
-        });
-        const body = await response.text();
-
-        expect(response.ok).toBe(true);
-        expect(body).toContain('AGENT_EXECUTION_FAILED');
-        expect(body).toContain('The run failed due to an unknown upstream streaming error. Please retry.');
-        expect(body).toContain('event: stderr');
-        expect(body).toContain('"status":"failed"');
-      },
-    );
-  });
-
-  it('survives transient AMR Link catalog failures without aborting the run', async () => {
-    // The run preflight resolves the AMR catalog through the shared
-    // AmrModelLoadingCache, which degrades to the offline `vela model preset`
-    // seed whenever the authoritative `vela model list` is momentarily
-    // unavailable (and refreshes the remote catalog in the background). So a
-    // transient catalog failure must NOT abort the run — the per-run path no
-    // longer blocks on a synchronous `model list` retry loop.
-    const previousRuntimeKey = process.env.VELA_RUNTIME_KEY;
-    const previousLinkUrl = process.env.VELA_LINK_URL;
-    const stateFile = join(tmpdir(), `od-amr-model-retry-${randomUUID()}.json`);
-    try {
-      // Unique key so the shared model cache key is unique per test run.
-      process.env.VELA_RUNTIME_KEY = `fake-runtime-key-${randomUUID()}`;
-      process.env.VELA_LINK_URL = 'https://amr-link.open-design.ai/v1';
-
-      await withFakeAgent(
-        'vela',
-        `
-const { existsSync, readFileSync, writeFileSync } = require('node:fs');
-const { spawn } = require('node:child_process');
-const fixture = ${JSON.stringify(FAKE_VELA_FIXTURE)};
-const stateFile = ${JSON.stringify(stateFile)};
-const args = process.argv.slice(2);
-if (args[0] === 'model' && args[1] === 'list') {
-  const state = existsSync(stateFile)
-    ? JSON.parse(readFileSync(stateFile, 'utf8'))
-    : { attempts: 0 };
-  state.attempts += 1;
-  writeFileSync(stateFile, JSON.stringify(state), 'utf8');
-  if (state.attempts < 3) {
-    process.stderr.write('Get "https://amr-link.open-design.ai/v1/models": context deadline exceeded\\n');
-    process.exit(1);
-  }
-}
-const child = spawn(process.execPath, [fixture, ...args], {
-  stdio: 'inherit',
-  env: process.env,
-});
-child.on('exit', (code, signal) => {
-  if (signal) process.kill(process.pid, signal);
-  process.exit(code ?? 0);
-});
-`,
-        async () => {
-          const response = await fetch(`${baseUrl}/api/chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              agentId: 'amr',
-              message: 'hello',
-              model: 'deepseek-v3.2',
-            }),
-          });
-          const body = await response.text();
-
-          expect(response.ok).toBe(true);
-          expect(body).toContain('"type":"text_delta","delta":"Hello from fake "');
-          expect(body).toContain('"type":"text_delta","delta":"vela."');
-          expect(body).not.toContain('model_catalog_unavailable');
-          expect(body).not.toContain('AMR_MODEL_UNAVAILABLE');
-          // The catalog probe runs at least once (remote attempted, then the
-          // run proceeds from the preset seed). We no longer assert an exact
-          // synchronous retry count: the remote retry/backoff now happens in
-          // the cache's background refresh, not on the per-run hot path.
-          const attempts = JSON.parse(readFileSync(stateFile, 'utf8')) as { attempts: number };
-          expect(attempts.attempts).toBeGreaterThanOrEqual(1);
-        },
-      );
-    } finally {
-      rmSync(stateFile, { force: true });
-      if (previousRuntimeKey == null) delete process.env.VELA_RUNTIME_KEY;
-      else process.env.VELA_RUNTIME_KEY = previousRuntimeKey;
-      if (previousLinkUrl == null) delete process.env.VELA_LINK_URL;
-      else process.env.VELA_LINK_URL = previousLinkUrl;
-    }
-  });
-
-  it('proceeds with the AMR run via the cached/preset catalog when the live model list is unavailable', async () => {
-    // Red spec for the packaged-prerelease "AMR model the selected model is not
-    // available from Vela" report: the run preflight used to do a fresh,
-    // blocking `vela model list` (authoritative remote catalog) on EVERY run
-    // and fail-close the run whenever that single call timed out / errored —
-    // even though the user is logged in, the model picker already shows a
-    // model (seeded from the offline `vela model preset`), and the selected
-    // model is real. Under CorpLink/飞连 the remote call routinely exceeds the
-    // 10s timeout, so a logged-in user with a valid model could not run AMR at
-    // all. The fix reuses the shared AmrModelLoadingCache (cached remote when
-    // hot, otherwise the offline preset seed) instead of a per-run blocking
-    // remote probe, so a transient `model list` failure no longer kills the run.
-    const previousRuntimeKey = process.env.VELA_RUNTIME_KEY;
-    const previousLinkUrl = process.env.VELA_LINK_URL;
-    try {
-      // A unique runtime key both marks the user as logged-in AND makes the
-      // shared model cache key unique so this case never reuses another test's
-      // cached remote catalog.
-      process.env.VELA_RUNTIME_KEY = `fake-runtime-key-${randomUUID()}`;
-      process.env.VELA_LINK_URL = 'https://amr-link.open-design.ai/v1';
-
-      await withFakeAgent(
-        'vela',
-        `
-const { spawn } = require('node:child_process');
-const fixture = ${JSON.stringify(FAKE_VELA_FIXTURE)};
-const args = process.argv.slice(2);
-// Simulate a persistently unreachable authoritative catalog (gateway
-// timeout / 飞连 congestion): every \`vela model list\` fails. \`model preset\`,
-// \`login\`, and \`agent run\` still delegate to the fixture, mirroring the real
-// CLI where the offline preset and the ACP run do not need the gateway.
-if (args[0] === 'model' && args[1] === 'list') {
-  process.stderr.write('Get "https://amr-link.open-design.ai/v1/models": context deadline exceeded\\n');
-  process.exit(1);
-}
-const child = spawn(process.execPath, [fixture, ...args], {
-  stdio: 'inherit',
-  env: process.env,
-});
-child.on('exit', (code, signal) => {
-  if (signal) process.kill(process.pid, signal);
-  process.exit(code ?? 0);
-});
-`,
-        async () => {
-          const response = await fetch(`${baseUrl}/api/chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              agentId: 'amr',
-              message: 'hello',
-              // Present in the preset seed (DEFAULT_MODEL_PRESET_JSON) but the
-              // live `model list` is unavailable, so only the preset path can
-              // surface it.
-              model: 'glm-5.1',
-            }),
-          });
-          const body = await response.text();
-
-          expect(response.ok).toBe(true);
-          // The run must NOT be fail-closed on the unavailable live catalog.
-          expect(body).not.toContain('AMR_MODEL_UNAVAILABLE');
-          expect(body).not.toContain('model_catalog_unavailable');
-          expect(body).not.toContain('is not available from Vela');
-          // It must actually proceed into the ACP run and stream assistant text.
-          expect(body).toContain('"type":"text_delta","delta":"Hello from fake "');
-          expect(body).toContain('"type":"text_delta","delta":"vela."');
-        },
-      );
-    } finally {
-      if (previousRuntimeKey == null) delete process.env.VELA_RUNTIME_KEY;
-      else process.env.VELA_RUNTIME_KEY = previousRuntimeKey;
-      if (previousLinkUrl == null) delete process.env.VELA_LINK_URL;
-      else process.env.VELA_LINK_URL = previousLinkUrl;
-    }
-  });
-
   it('allows plugin authoring to succeed when the requested generated-plugin artifacts exist before close', async () => {
     const projectId = `proj-plugin-authoring-success-${randomUUID()}`;
 
@@ -929,7 +283,7 @@ child.on('exit', (code, signal) => {
     expect(conversationId).toBeTruthy();
 
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 const fs = require('node:fs');
 const path = require('node:path');
@@ -939,9 +293,9 @@ process.stdin.on('end', () => {
   fs.mkdirSync(pluginDir, { recursive: true });
   fs.writeFileSync(path.join(pluginDir, 'open-design.json'), JSON.stringify({ name: 'generated-plugin' }, null, 2));
   fs.writeFileSync(path.join(pluginDir, 'SKILL.md'), '# Generated plugin\\n');
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: '我来帮你创建一个通用的 Open Design 插件脚手架。先读取文档规范，再生成插件文件。' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: '我来帮你创建一个通用的 Open Design 插件脚手架。先读取文档规范，再生成插件文件。' } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -950,7 +304,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             projectId,
             conversationId,
             pluginId: 'od-plugin-authoring',
@@ -999,13 +353,13 @@ process.stdin.on('end', () => {
     expect(conversationId).toBeTruthy();
 
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 process.stdin.resume();
 process.stdin.on('end', () => {
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: '我来帮你创建一个通用的 Open Design 插件脚手架。先读取文档规范，再生成插件文件。' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: '我来帮你创建一个通用的 Open Design 插件脚手架。先读取文档规范，再生成插件文件。' } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -1014,7 +368,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             projectId,
             conversationId,
             pluginId: 'od-plugin-authoring',
@@ -1077,13 +431,13 @@ process.stdin.on('end', () => {
     expect(conversationId).toBeTruthy();
 
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 process.stdin.resume();
 process.stdin.on('end', () => {
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: '先确认几个问题再开始搭建。\\n<question-form id="discovery" title="Plugin brief">\\n{"questions":[{"id":"purpose","label":"What should it do?","type":"text"}]}\\n</question-form>' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: '先确认几个问题再开始搭建。\\n<question-form id="discovery" title="Plugin brief">\\n{"questions":[{"id":"purpose","label":"What should it do?","type":"text"}]}\\n</question-form>' } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -1092,7 +446,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             projectId,
             conversationId,
             pluginId: 'od-plugin-authoring',
@@ -1141,13 +495,13 @@ process.stdin.on('end', () => {
     expect(conversationId).toBeTruthy();
 
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 process.stdin.resume();
 process.stdin.on('end', () => {
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: '先确认几个问题再开始搭建。\\n<ask-question id="discovery" title="Plugin brief">\\n{"questions":[{"id":"purpose","label":"What should it do?","type":"text"}]}\\n</ask-question>' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: '先确认几个问题再开始搭建。\\n<ask-question id="discovery" title="Plugin brief">\\n{"questions":[{"id":"purpose","label":"What should it do?","type":"text"}]}\\n</ask-question>' } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -1156,7 +510,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             projectId,
             conversationId,
             pluginId: 'od-plugin-authoring',
@@ -1205,13 +559,13 @@ process.stdin.on('end', () => {
     expect(conversationId).toBeTruthy();
 
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 process.stdin.resume();
 process.stdin.on('end', () => {
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: '先确认几个问题。\\n<question-form id="discovery">\\nWhat should it do? (free text)\\n</question-form>' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: '先确认几个问题。\\n<question-form id="discovery">\\nWhat should it do? (free text)\\n</question-form>' } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -1220,7 +574,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             projectId,
             conversationId,
             pluginId: 'od-plugin-authoring',
@@ -1267,13 +621,13 @@ process.stdin.on('end', () => {
     expect(conversationId).toBeTruthy();
 
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 process.stdin.resume();
 process.stdin.on('end', () => {
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: 'İstanbul brief — 先确认几个问题。\\n<ask-question id="discovery" title="Plugin brief">\\n{"questions":[{"id":"purpose","label":"What should it do?","type":"text"}]}\\n</ask-question>' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: 'İstanbul brief — 先确认几个问题。\\n<ask-question id="discovery" title="Plugin brief">\\n{"questions":[{"id":"purpose","label":"What should it do?","type":"text"}]}\\n</ask-question>' } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -1282,7 +636,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             projectId,
             conversationId,
             pluginId: 'od-plugin-authoring',
@@ -1309,7 +663,7 @@ process.stdin.on('end', () => {
     // trailing guard line; this test pins the literal so a future
     // refactor cannot silently drop it.
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 let prompt = '';
 process.stdin.setEncoding('utf8');
@@ -1322,9 +676,9 @@ process.stdin.on('end', () => {
       ? 'has-echo-guard'
       : 'missing-echo-guard',
   ];
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: checks.join('\\n') } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: checks.join('\\n') } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -1333,7 +687,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             message: 'hello',
           }),
         });
@@ -1348,7 +702,7 @@ process.stdin.on('end', () => {
 
   it('injects @-mention skillIds into the composed system prompt', async () => {
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 let prompt = '';
 process.stdin.setEncoding('utf8');
@@ -1361,9 +715,9 @@ process.stdin.on('end', () => {
     prompt.includes('# FAQ Page Skill') ? 'has-faq-skill-body' : 'missing-faq-skill-body',
     prompt.includes('category filtering') ? 'has-faq-skill-content' : 'missing-faq-skill-content',
   ];
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: checks.join('\\n') } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: checks.join('\\n') } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -1372,7 +726,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             message: 'build an faq page',
             skillIds: ['faq-page'],
           }),
@@ -1418,22 +772,22 @@ if (stagedChecklist !== ${JSON.stringify(expectedChecklist)}) {
 }
 process.stdin.resume();
 process.stdin.on('end', () => {
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: 'staged-skill-side-files-before-spawn' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: 'staged-skill-side-files-before-spawn' } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `;
 
     await withFakeAgent(
-      'opencode',
+      'copilot',
       fakeAgentScript,
       async () => {
         const response = await fetch(`${baseUrl}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             projectId,
             message: 'draft the release notes',
             skillIds: ['release-notes-one-pager'],
@@ -1492,22 +846,22 @@ if (JSON.stringify(stagedBodies) !== JSON.stringify(expectedBodies)) {
 }
 process.stdin.resume();
 process.stdin.on('end', () => {
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: 'multi-staged-skill-side-files-before-spawn' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: 'multi-staged-skill-side-files-before-spawn' } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `;
 
     await withFakeAgent(
-      'opencode',
+      'copilot',
       fakeAgentScript,
       async () => {
         const response = await fetch(`${baseUrl}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             projectId,
             message: 'compose multiple skills',
             skillIds: ['release-notes-one-pager', 'swiss-creative-mode-template'],
@@ -1519,154 +873,6 @@ process.stdin.on('end', () => {
         expect(body).toContain('multi-staged-skill-side-files-before-spawn');
       },
     );
-  });
-
-  it('propagates the composed skill mode for ad-hoc-only deck skills', async () => {
-    await withFakeAgent(
-      'opencode',
-      `
-let prompt = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => {
-  prompt += chunk;
-});
-process.stdin.on('end', () => {
-  const checks = [
-    prompt.includes('## Composed skill — open-design-landing-deck') ? 'has-deck-skill-header' : 'missing-deck-skill-header',
-    prompt.includes('# Slide deck — fixed framework (this is non-negotiable for deck mode)') ? 'has-deck-framework' : 'missing-deck-framework',
-  ];
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: checks.join('\\n') } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
-  process.exit(0);
-});
-`,
-      async () => {
-        const response = await fetch(`${baseUrl}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'opencode',
-            message: 'build an editorial brand deck',
-            skillIds: ['open-design-landing-deck'],
-          }),
-        });
-        const body = await response.text();
-
-        expect(response.ok).toBe(true);
-        expect(body).toContain('has-deck-skill-header');
-        expect(body).toContain('has-deck-framework');
-        expect(body).not.toContain('missing-deck-skill-header');
-        expect(body).not.toContain('missing-deck-framework');
-      },
-    );
-  });
-
-  it('preserves a persisted media skill as the primary surface over a composed deck mention', async () => {
-    await withFakeAgent(
-      'opencode',
-      `
-let prompt = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => {
-  prompt += chunk;
-});
-process.stdin.on('end', () => {
-  const checks = [
-    prompt.includes('# imagegen') ? 'has-base-image-skill-body' : 'missing-base-image-skill-body',
-    prompt.includes('## Composed skill — open-design-landing-deck') ? 'has-composed-deck-skill-header' : 'missing-composed-deck-skill-header',
-    prompt.includes('## Media generation contract (load-bearing — overrides softer wording above)') ? 'has-image-contract' : 'missing-image-contract',
-    prompt.includes('# Slide deck — fixed framework (this is non-negotiable for deck mode)') ? 'unexpected-deck-framework' : 'kept-deck-framework-out',
-  ];
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: checks.join('\\n') } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
-  process.exit(0);
-});
-`,
-      async () => {
-        const response = await fetch(`${baseUrl}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'opencode',
-            message: 'generate an image while also referencing a deck template',
-            skillId: 'imagegen',
-            skillIds: ['open-design-landing-deck'],
-          }),
-        });
-        const body = await response.text();
-
-        expect(response.ok).toBe(true);
-        expect(body).toContain('has-base-image-skill-body');
-        expect(body).toContain('has-composed-deck-skill-header');
-        expect(body).toContain('has-image-contract');
-        expect(body).toContain('kept-deck-framework-out');
-        expect(body).not.toContain('missing-base-image-skill-body');
-        expect(body).not.toContain('missing-composed-deck-skill-header');
-        expect(body).not.toContain('missing-image-contract');
-        expect(body).not.toContain('unexpected-deck-framework');
-      },
-    );
-  });
-
-  it('honors mediaExecution on legacy chat requests', async () => {
-    const conversationId = `conv-${randomUUID()}`;
-
-    const response = await fetch(`${baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        agentId: `missing-agent-${randomUUID()}`,
-        conversationId,
-        message: 'plan an image without using OD media',
-        skillId: 'imagegen',
-        mediaExecution: {
-          mode: 'disabled',
-          allowedSurfaces: ['image'],
-        },
-      }),
-    });
-    const body = await response.text();
-
-    expect(response.ok).toBe(true);
-    expect(body).toContain('unknown agent');
-
-    const runsResponse = await fetch(
-      `${baseUrl}/api/runs?conversationId=${encodeURIComponent(conversationId)}`,
-    );
-    const runsBody = await runsResponse.json() as {
-      runs: Array<{ mediaExecution?: { mode?: string; allowedSurfaces?: string[] } }>;
-    };
-    expect(runsBody.runs).toHaveLength(1);
-    expect(runsBody.runs[0]?.mediaExecution).toMatchObject({
-      mode: 'disabled',
-      allowedSurfaces: ['image'],
-    });
-  });
-
-  it('rejects invalid mediaExecution on legacy chat requests', async () => {
-    const conversationId = `conv-${randomUUID()}`;
-    const response = await fetch(`${baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        agentId: 'opencode',
-        conversationId,
-        message: 'generate an image',
-        mediaExecution: { mode: 'provider-router' },
-      }),
-    });
-    const body = await response.text();
-
-    expect(response.status).toBe(400);
-    expect(body).toContain('mediaExecution.mode');
-
-    const runsResponse = await fetch(
-      `${baseUrl}/api/runs?conversationId=${encodeURIComponent(conversationId)}`,
-    );
-    const runsBody = await runsResponse.json() as { runs: unknown[] };
-    expect(runsBody.runs).toEqual([]);
   });
 
   it('propagates ad-hoc skill critique policy into the chat resolver', async () => {
@@ -1700,7 +906,7 @@ This skill should suppress critique when selected through skillIds.
 
     try {
       await withFakeAgent(
-        'opencode',
+        'copilot',
         `
 let prompt = '';
 process.stdin.setEncoding('utf8');
@@ -1712,9 +918,9 @@ process.stdin.on('end', () => {
     prompt.includes('## Composed skill — ${skillId}') ? 'has-opt-out-skill-header' : 'missing-opt-out-skill-header',
     prompt.includes('<CRITIQUE_RUN') ? 'unexpected-critique-panel' : 'critique-panel-disabled-by-skill-policy',
   ];
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: checks.join('\\n') } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: checks.join('\\n') } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -1723,7 +929,7 @@ process.stdin.on('end', () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              agentId: 'opencode',
+              agentId: 'copilot',
               designSystemId: 'default',
               message: 'draft an opt-out skill artifact',
               skillIds: [skillId],
@@ -1784,7 +990,7 @@ process.stdin.on('end', () => {
     expect(createProjectBody.appliedPluginSnapshotId).toBeTruthy();
 
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 let prompt = '';
 process.stdin.setEncoding('utf8');
@@ -1797,9 +1003,9 @@ process.stdin.on('end', () => {
     prompt.includes('## Composed skill — faq-page') ? 'has-composed-skill-header' : 'missing-composed-skill-header',
     prompt.includes('# FAQ Page Skill') ? 'has-composed-skill-body' : 'missing-composed-skill-body',
   ];
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: checks.join('\\n') } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: checks.join('\\n') } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -1808,7 +1014,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             projectId,
             message: 'build a plugin-backed faq page',
             appliedPluginSnapshotId: createProjectBody.appliedPluginSnapshotId,
@@ -1890,7 +1096,7 @@ process.stdin.on('end', () => {
       expect(pluginAlias).not.toBe(userAlias);
 
       await withFakeAgent(
-        'opencode',
+        'copilot',
         `
 const fs = require('node:fs');
 const pluginSkill = fs.readFileSync(${JSON.stringify(`.od-skills/${pluginAlias}/SKILL.md`)}, 'utf8');
@@ -1905,9 +1111,9 @@ if (userChecklist !== ${JSON.stringify(userChecklist)}) {
 }
 process.stdin.resume();
 process.stdin.on('end', () => {
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: 'colliding-skill-dirs-staged' } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: 'colliding-skill-dirs-staged' } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -1916,7 +1122,7 @@ process.stdin.on('end', () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              agentId: 'opencode',
+              agentId: 'copilot',
               projectId,
               message: 'use both plugin and user skill side files',
               appliedPluginSnapshotId: createProjectBody.appliedPluginSnapshotId,
@@ -1940,7 +1146,7 @@ process.stdin.on('end', () => {
 
   it('canonicalizes aliased skill ids before deduping composed skills', async () => {
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 let prompt = '';
 process.stdin.setEncoding('utf8');
@@ -1953,9 +1159,9 @@ process.stdin.on('end', () => {
     hasDuplicateComposedAlias ? 'duplicate-alias-composed-skill' : 'deduped-alias-composed-skill',
     prompt.includes('# open-design-landing') ? 'has-base-alias-skill-body' : 'missing-base-alias-skill-body',
   ];
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: checks.join('\\n') } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: checks.join('\\n') } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -1964,7 +1170,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             message: 'build the Open Design landing page',
             skillId: 'editorial-collage',
             skillIds: ['open-design-landing'],
@@ -1981,569 +1187,14 @@ process.stdin.on('end', () => {
     );
   });
 
-  it('classifies Cursor Agent authentication stderr as a typed run error', async () => {
-    await withFakeAgent(
-      'cursor-agent',
-      `
-const args = process.argv.slice(2);
-if (args[0] === '--version') {
-  console.log('2026.05.07-test');
-  process.exit(0);
-}
-if (args[0] === 'models') {
-  console.log('auto');
-  process.exit(0);
-}
-console.error("Authentication required. Please run 'agent login' first, or set CURSOR_API_KEY environment variable.");
-process.exit(1);
-`,
-      async () => {
-        const createResponse = await fetch(`${baseUrl}/api/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'cursor-agent',
-            message: 'hello',
-          }),
-        });
-        expect(createResponse.status).toBe(202);
-        const { runId } = await createResponse.json() as { runId: string };
-
-        const eventsController = new AbortController();
-        const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-          signal: eventsController.signal,
-        });
-        const eventsBody = await readSseUntil(eventsResponse, 'AGENT_AUTH_REQUIRED');
-        eventsController.abort();
-        const statusBody = await waitForRunStatus(baseUrl, runId);
-
-        expect(eventsBody).toContain('event: error');
-        expect(eventsBody).toContain('AGENT_AUTH_REQUIRED');
-        expect(eventsBody).toContain('cursor-agent login');
-        expect(eventsBody).toContain('cursor-agent status');
-        expect(statusBody.status).toBe('failed');
-      },
-    );
-  });
-
-  it('classifies Cursor Agent Not logged in stderr as a typed run error', async () => {
-    await withFakeAgent(
-      'cursor-agent',
-      `
-const args = process.argv.slice(2);
-if (args[0] === '--version') {
-  console.log('2026.05.07-test');
-  process.exit(0);
-}
-if (args[0] === 'models') {
-  console.log('auto');
-  process.exit(0);
-}
-console.error('Not logged in');
-process.exit(1);
-`,
-      async () => {
-        const createResponse = await fetch(`${baseUrl}/api/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'cursor-agent',
-            message: 'hello',
-          }),
-        });
-        expect(createResponse.status).toBe(202);
-        const { runId } = await createResponse.json() as { runId: string };
-
-        const eventsController = new AbortController();
-        const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-          signal: eventsController.signal,
-        });
-        const eventsBody = await readSseUntil(eventsResponse, 'AGENT_AUTH_REQUIRED');
-        eventsController.abort();
-        const statusBody = await waitForRunStatus(baseUrl, runId);
-
-        expect(eventsBody).toContain('event: error');
-        expect(eventsBody).toContain('AGENT_AUTH_REQUIRED');
-        expect(eventsBody).toContain('cursor-agent login');
-        expect(eventsBody).toContain('cursor-agent status');
-        expect(statusBody.status).toBe('failed');
-      },
-    );
-  });
-
-  it('classifies Cursor Agent stdout auth text as a typed run error', async () => {
-    await withFakeAgent(
-      'cursor-agent',
-      `
-const args = process.argv.slice(2);
-if (args[0] === '--version') {
-  console.log('2026.05.07-test');
-  process.exit(0);
-}
-if (args[0] === 'models') {
-  console.log('auto');
-  process.exit(0);
-}
-console.log('ConnectError: [unauthenticated]');
-process.exit(1);
-`,
-      async () => {
-        const createResponse = await fetch(`${baseUrl}/api/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'cursor-agent',
-            message: 'hello',
-          }),
-        });
-        expect(createResponse.status).toBe(202);
-        const { runId } = await createResponse.json() as { runId: string };
-
-        const eventsController = new AbortController();
-        const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-          signal: eventsController.signal,
-        });
-        const eventsBody = await readSseUntil(eventsResponse, 'AGENT_AUTH_REQUIRED');
-        eventsController.abort();
-        const statusBody = await waitForRunStatus(baseUrl, runId);
-
-        expect(eventsBody).toContain('event: error');
-        expect(eventsBody).toContain('AGENT_AUTH_REQUIRED');
-        expect(eventsBody).toContain('cursor-agent login');
-        expect(eventsBody).toContain('cursor-agent status');
-        expect(eventsBody).not.toContain('AGENT_EXECUTION_FAILED');
-        expect(statusBody.status).toBe('failed');
-      },
-    );
-  });
-
-  it('classifies Cursor Agent stdout error payloads as typed auth failures', async () => {
-    const cursorErrorLine = JSON.stringify({
-      type: 'error',
-      message: 'Error: [unauthenticated] Error',
-    });
-    await withFakeAgent(
-      'cursor-agent',
-      `
-const args = process.argv.slice(2);
-if (args[0] === '--version') {
-  console.log('2026.05.07-test');
-  process.exit(0);
-}
-if (args[0] === 'models') {
-  console.log('auto');
-  process.exit(0);
-}
-console.log(${JSON.stringify(cursorErrorLine)});
-process.exit(1);
-`,
-      async () => {
-        const createResponse = await fetch(`${baseUrl}/api/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'cursor-agent',
-            message: 'hello',
-          }),
-        });
-        expect(createResponse.status).toBe(202);
-        const { runId } = await createResponse.json() as { runId: string };
-
-        const eventsController = new AbortController();
-        const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-          signal: eventsController.signal,
-        });
-        const eventsBody = await readSseUntil(eventsResponse, 'AGENT_AUTH_REQUIRED');
-        eventsController.abort();
-        const statusBody = await waitForRunStatus(baseUrl, runId);
-
-        expect(eventsBody).toContain('event: error');
-        expect(eventsBody).toContain('AGENT_AUTH_REQUIRED');
-        expect(eventsBody).toContain('cursor-agent login');
-        expect(eventsBody).toContain('cursor-agent status');
-        expect(eventsBody).not.toContain('AGENT_EXECUTION_FAILED');
-        expect(statusBody.status).toBe('failed');
-      },
-    );
-  });
-
-  it('classifies DeepSeek TUI config guidance as typed auth failures', async () => {
-    await withFakeAgent(
-      'deepseek',
-      `
-const args = process.argv.slice(2);
-if (args[0] === '--version') {
-  console.log('deepseek 0.3.0-test');
-  process.exit(0);
-}
-console.error('KEY=<your-key> deepseek --api-key <your-key>');
-console.error('api_key = "<your-key>" in ~/.deepseek/config.toml');
-process.exit(1);
-`,
-      async () => {
-        const deepseek = getAgentDef('deepseek');
-        expect(deepseek).toBeDefined();
-        const originalBudget = deepseek?.maxPromptArgBytes;
-        if (deepseek) deepseek.maxPromptArgBytes = 200_000;
-        try {
-          const createResponse = await fetch(`${baseUrl}/api/runs`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              agentId: 'deepseek',
-              message: 'hello',
-            }),
-          });
-          expect(createResponse.status).toBe(202);
-          const { runId } = await createResponse.json() as { runId: string };
-
-          const eventsController = new AbortController();
-          const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-            signal: eventsController.signal,
-          });
-          const eventsBody = await readSseUntil(eventsResponse, 'AGENT_AUTH_REQUIRED');
-          eventsController.abort();
-          const statusBody = await waitForRunStatus(baseUrl, runId);
-
-          expect(eventsBody).toContain('event: error');
-          expect(eventsBody).toContain('AGENT_AUTH_REQUIRED');
-          expect(eventsBody).toContain('~/.deepseek/config.toml');
-          expect(eventsBody).toContain('DEEPSEEK_API_KEY');
-          expect(eventsBody).not.toContain('cursor-agent login');
-          expect(eventsBody).not.toContain('AGENT_EXECUTION_FAILED');
-          expect(statusBody.status).toBe('failed');
-        } finally {
-          if (deepseek) {
-            if (originalBudget === undefined) {
-              delete deepseek.maxPromptArgBytes;
-            } else {
-              deepseek.maxPromptArgBytes = originalBudget;
-            }
-          }
-        }
-      },
-    );
-  });
-
-  it('suppresses Antigravity auth stdout and emits AGENT_AUTH_REQUIRED without an event: stdout delta', async () => {
-    await withFakeAgent(
-      'agy',
-      `
-const args = process.argv.slice(2);
-if (args[0] === '--version') {
-  console.log('1.107.0-test');
-  process.exit(0);
-}
-// Simulate agy chat - printing the OAuth prompt and exiting 0
-process.stdout.write('Authentication required. Please visit the URL to log in: https://accounts.google.com/o/oauth2/auth?client_id=12345&redirect_uri=antigravity-redirect\\n');
-process.stdout.write('Waiting for authentication (timeout 30s)...\\n');
-process.stdout.write('Error: authentication timed out.\\n');
-process.exit(0);
-`,
-      async () => {
-        const createResponse = await fetch(`${baseUrl}/api/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'antigravity',
-            message: 'hello',
-          }),
-        });
-        expect(createResponse.status).toBe(202);
-        const { runId } = await createResponse.json() as { runId: string };
-
-        const eventsController = new AbortController();
-        const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-          signal: eventsController.signal,
-        });
-        const eventsBody = await readSseUntil(eventsResponse, 'AGENT_AUTH_REQUIRED');
-        eventsController.abort();
-        const statusBody = await waitForRunStatus(baseUrl, runId);
-
-        expect(eventsBody).toContain('event: error');
-        expect(eventsBody).toContain('AGENT_AUTH_REQUIRED');
-        expect(eventsBody).not.toContain('event: stdout');
-        expect(eventsBody).not.toContain('accounts.google.com');
-        expect(statusBody.status).toBe('failed');
-      },
-    );
-  });
-
-  it('parses successful Antigravity Gemini JSONL output instead of forwarding raw stdout', async () => {
-    await withFakeAgent(
-      'agy',
-      `
-const args = process.argv.slice(2);
-if (args[0] === '--version') {
-  console.log('1.107.0-test');
-  process.exit(0);
-}
-process.stdout.write(JSON.stringify({ type: 'init', session_id: 'agy-1', model: 'gemini-3.5-flash' }) + '\\n');
-process.stdout.write(JSON.stringify({ type: 'message', role: 'assistant', content: 'Hello from Antigravity.', delta: true }) + '\\n');
-process.stdout.write(JSON.stringify({ type: 'result', status: 'success', stats: { input_tokens: 4, output_tokens: 5, cached: 0, duration_ms: 25 } }) + '\\n');
-process.exit(0);
-`,
-      async () => {
-        const createResponse = await fetch(`${baseUrl}/api/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'antigravity',
-            message: 'hello',
-          }),
-        });
-        expect(createResponse.status).toBe(202);
-        const { runId } = await createResponse.json() as { runId: string };
-
-        const eventsController = new AbortController();
-        const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-          signal: eventsController.signal,
-        });
-        const eventsBody = await readSseUntil(eventsResponse, 'event: final');
-        eventsController.abort();
-        const statusBody = await waitForRunStatus(baseUrl, runId);
-
-        expect(eventsBody).toContain('event: agent');
-        expect(eventsBody).toContain('"type":"text_delta","delta":"Hello from Antigravity."');
-        expect(eventsBody).toContain('"type":"usage"');
-        expect(eventsBody).not.toContain('event: stdout');
-        expect(eventsBody).not.toContain('"role":"assistant"');
-        expect(statusBody.status).toBe('succeeded');
-      },
-    );
-  });
-
-  it('forwards Antigravity plain stdout JSONL when it lacks the Gemini init marker', async () => {
-    await withFakeAgent(
-      'agy',
-      `
-const args = process.argv.slice(2);
-if (args[0] === '--version') {
-  console.log('1.107.0-test');
-  process.exit(0);
-}
-process.stdout.write(JSON.stringify({ type: 'error', message: 'requested JSONL output' }) + '\\n');
-process.exit(0);
-`,
-      async () => {
-        const createResponse = await fetch(`${baseUrl}/api/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'antigravity',
-            message: 'return JSONL',
-          }),
-        });
-        expect(createResponse.status).toBe(202);
-        const { runId } = await createResponse.json() as { runId: string };
-
-        const eventsController = new AbortController();
-        const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-          signal: eventsController.signal,
-        });
-        const eventsBody = await readSseUntil(eventsResponse, 'event: final');
-        eventsController.abort();
-        const statusBody = await waitForRunStatus(baseUrl, runId);
-
-        expect(eventsBody).toContain('event: stdout');
-        expect(eventsBody).toContain('requested JSONL output');
-        expect(eventsBody).not.toContain('event: error');
-        expect(statusBody.status).toBe('succeeded');
-      },
-    );
-  });
-
-  it('fails Antigravity Gemini JSONL output with no visible assistant content', async () => {
-    await withFakeAgent(
-      'agy',
-      `
-const args = process.argv.slice(2);
-if (args[0] === '--version') {
-  console.log('1.107.0-test');
-  process.exit(0);
-}
-process.stdout.write(JSON.stringify({ type: 'init', session_id: 'agy-1', model: 'gemini-3.5-flash' }) + '\\n');
-process.stdout.write(JSON.stringify({ type: 'result', status: 'success', stats: { input_tokens: 4, output_tokens: 0, cached: 0, duration_ms: 25 } }) + '\\n');
-process.exit(0);
-`,
-      async () => {
-        const createResponse = await fetch(`${baseUrl}/api/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'antigravity',
-            message: 'hello',
-          }),
-        });
-        expect(createResponse.status).toBe(202);
-        const { runId } = await createResponse.json() as { runId: string };
-
-        const eventsController = new AbortController();
-        const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-          signal: eventsController.signal,
-        });
-        const eventsBody = await readSseUntil(eventsResponse, 'Agent completed without producing any output');
-        eventsController.abort();
-        const statusBody = await waitForRunStatus(baseUrl, runId);
-
-        expect(eventsBody).toContain('event: agent');
-        expect(eventsBody).toContain('"type":"usage"');
-        expect(eventsBody).toContain('event: error');
-        expect(eventsBody).toContain('AGENT_EXECUTION_FAILED');
-        expect(eventsBody).not.toContain('event: stdout');
-        expect(statusBody.status).toBe('failed');
-      },
-    );
-  });
-
-  it('surfaces Qoder assistant error records through the SSE error channel', async () => {
-    const qoderErrorLine = JSON.stringify({
-      type: 'assistant',
-      message: { content: [] },
-      error: { message: 'Qoder authentication expired' },
-    });
-    await withFakeAgent(
-      'qodercli',
-      `console.log(${JSON.stringify(qoderErrorLine)});\nprocess.exit(0);\n`,
-      async () => {
-        const createResponse = await fetch(`${baseUrl}/api/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'qoder',
-            message: 'hello',
-          }),
-        });
-        expect(createResponse.status).toBe(202);
-        const { runId } = await createResponse.json() as { runId: string };
-
-        const eventsController = new AbortController();
-        const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-          signal: eventsController.signal,
-        });
-        const eventsBody = await readSseUntil(eventsResponse, 'event: error');
-        eventsController.abort();
-        const statusBody = await waitForRunStatus(baseUrl, runId);
-
-        expect(eventsBody).toContain('event: error');
-        expect(eventsBody).toContain('Qoder authentication expired');
-        expect(eventsBody).not.toContain('event: agent\\ndata: {"type":"error"');
-        expect(statusBody.status).toBe('failed');
-      },
-    );
-  });
-
-  it('marks reasoning-only stream runs failed when no assistant output is produced', async () => {
-    const reasoningLine = JSON.stringify({
-      type: 'assistant',
-      message: {
-        content: [
-          {
-            type: 'thinking',
-            thinking: 'I should inspect the project before answering.',
-          },
-        ],
-      },
-    });
-    const resultLine = JSON.stringify({
-      type: 'result',
-      is_error: false,
-      usage: { input_tokens: 1, output_tokens: 0 },
-    });
-
-    await withFakeAgent(
-      'qodercli',
-      `
-console.log(${JSON.stringify(reasoningLine)});
-console.log(${JSON.stringify(resultLine)});
-process.exit(0);
-`,
-      async () => {
-        const createResponse = await fetch(`${baseUrl}/api/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'qoder',
-            message: 'think but do not answer',
-          }),
-        });
-        expect(createResponse.status).toBe(202);
-        const { runId } = await createResponse.json() as { runId: string };
-
-        const eventsController = new AbortController();
-        const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-          signal: eventsController.signal,
-        });
-        const eventsBody = await readSseUntil(
-          eventsResponse,
-          'Agent completed without producing any output',
-        );
-        eventsController.abort();
-        const statusBody = await waitForRunStatus(baseUrl, runId);
-
-        expect(eventsBody).toContain('"type":"thinking_delta"');
-        expect(eventsBody).toContain('AGENT_EXECUTION_FAILED');
-        expect(eventsBody).toContain('Agent completed without producing any output');
-        expect(eventsBody).not.toContain('"status":"succeeded"');
-        expect(statusBody.status).toBe('failed');
-      },
-    );
-  });
-
-  it('fails Qoder runs when the result reports is_error with exit code 0', async () => {
-    const qoderResultLine = JSON.stringify({
-      type: 'result',
-      subtype: 'error',
-      duration_ms: 17,
-      is_error: true,
-      stop_reason: 'tool_use_failed',
-      total_cost_usd: 0,
-      usage: {
-        input_tokens: 3,
-        output_tokens: 1,
-      },
-    });
-    await withFakeAgent(
-      'qodercli',
-      `console.log(${JSON.stringify(qoderResultLine)});\nprocess.exit(0);\n`,
-      async () => {
-        const createResponse = await fetch(`${baseUrl}/api/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: 'qoder',
-            message: 'hello',
-          }),
-        });
-        expect(createResponse.status).toBe(202);
-        const { runId } = await createResponse.json() as { runId: string };
-
-        const eventsController = new AbortController();
-        const eventsResponse = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
-          signal: eventsController.signal,
-        });
-        const eventsBody = await readSseUntil(eventsResponse, 'event: error');
-        eventsController.abort();
-        const statusBody = await waitForRunStatus(baseUrl, runId);
-
-        expect(eventsBody).toContain('event: agent');
-        expect(eventsBody).toContain('"type":"usage"');
-        expect(eventsBody).toContain('"isError":true');
-        expect(eventsBody).toContain('event: error');
-        expect(eventsBody).toContain('Qoder run failed: tool_use_failed');
-        expect(statusBody.status).toBe('failed');
-      },
-    );
-  });
-
   it('fails stalled json-stream runs after the inactivity timeout elapses', async () => {
     const previous = process.env.OD_CHAT_RUN_INACTIVITY_TIMEOUT_MS;
     process.env.OD_CHAT_RUN_INACTIVITY_TIMEOUT_MS = '500';
     try {
       await withFakeAgent(
-        'opencode',
+        'copilot',
         `
-console.log(JSON.stringify({ type: 'step_start' }));
+console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
 process.on('SIGTERM', () => process.exit(143));
 setInterval(() => {}, 1000);
 `,
@@ -2552,7 +1203,7 @@ setInterval(() => {}, 1000);
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              agentId: 'opencode',
+              agentId: 'copilot',
               message: 'hello',
             }),
           });
@@ -2569,7 +1220,7 @@ setInterval(() => {}, 1000);
 
           expect(eventsBody).toContain('event: error');
           expect(eventsBody).toContain('Agent stalled without emitting any new output');
-          expect(eventsBody).toContain('Phase details: spawned agent opencode;');
+          expect(eventsBody).toContain('Phase details: spawned agent copilot;');
           expect(eventsBody).not.toContain('spawned agent binary');
           expect(eventsBody).toMatch(/stdout arrived: (yes|no)/);
           expect(statusBody.status).toBe('failed');
@@ -2675,10 +1326,10 @@ process.exit(1);
     process.env.OD_CHAT_RUN_INACTIVITY_TIMEOUT_MS = '10000000000';
     try {
       await withFakeAgent(
-        'opencode',
+        'copilot',
         `
 setTimeout(() => {
-  console.log(JSON.stringify({ type: 'text', part: { text: 'done' } }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: 'done' } }));
   process.exit(0);
 }, 50);
 `,
@@ -2687,7 +1338,7 @@ setTimeout(() => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              agentId: 'opencode',
+              agentId: 'copilot',
               message: 'hello',
             }),
           });
@@ -2712,9 +1363,9 @@ setTimeout(() => {
     process.env.OD_CHAT_RUN_INACTIVITY_TIMEOUT_MS = '500';
     try {
       await withFakeAgent(
-        'opencode',
+        'copilot',
         `
-console.log(JSON.stringify({ type: 'step_start' }));
+console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
 process.on('SIGTERM', () => {});
 setInterval(() => {}, 1000);
 `,
@@ -2723,7 +1374,7 @@ setInterval(() => {}, 1000);
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              agentId: 'opencode',
+              agentId: 'copilot',
               message: 'hello',
             }),
           });
@@ -2759,7 +1410,7 @@ setInterval(() => {}, 1000);
     process.env.OD_CAPTURE_PROMPT_PATH = capturePath;
     try {
       await withFakeAgent(
-        'opencode',
+        'copilot',
         `
 const fs = require('node:fs');
 let input = '';
@@ -2767,7 +1418,7 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
   fs.writeFileSync(process.env.OD_CAPTURE_PROMPT_PATH, input, 'utf8');
-  console.log(JSON.stringify({ type: 'text', part: { text: 'building now' } }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: 'building now' } }));
 });
 `,
         async () => {
@@ -2791,7 +1442,7 @@ process.stdin.on('end', () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              agentId: 'opencode',
+              agentId: 'copilot',
               message: transcript,
               currentPrompt: formAnswers,
             }),
@@ -2837,7 +1488,7 @@ process.stdin.on('end', () => {
 
     const conversationId = `conv-${randomUUID()}`;
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 let prompt = '';
 process.stdin.setEncoding('utf8');
@@ -2849,9 +1500,9 @@ process.stdin.on('end', () => {
     prompt.includes('## Active design system') ? 'has-active-design-system' : 'missing-active-design-system',
     prompt.includes('Treat the following DESIGN.md as authoritative') ? 'has-design-system-contract' : 'missing-design-system-contract',
   ];
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: checks.join('\\n') } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: checks.join('\\n') } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -2860,7 +1511,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             projectId,
             conversationId,
             message: 'draft a branded artifact',
@@ -2914,7 +1565,7 @@ process.stdin.on('end', () => {
 
     const conversationId = `conv-${randomUUID()}`;
     await withFakeAgent(
-      'opencode',
+      'copilot',
       `
 let prompt = '';
 process.stdin.setEncoding('utf8');
@@ -2926,9 +1577,9 @@ process.stdin.on('end', () => {
     prompt.includes('## Active design system') ? 'has-active-design-system' : 'missing-active-design-system',
     prompt.includes('Treat the following DESIGN.md as authoritative') ? 'has-design-system-contract' : 'missing-design-system-contract',
   ];
-  console.log(JSON.stringify({ type: 'step_start' }));
-  console.log(JSON.stringify({ type: 'text', part: { text: checks.join('\\n') } }));
-  console.log(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 1, output: 1 } } }));
+  console.log(JSON.stringify({ type: 'assistant.turn_start', data: {} }));
+  console.log(JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: checks.join('\\n') } }));
+  console.log(JSON.stringify({ type: 'result', success: true, usage: {} }));
   process.exit(0);
 });
 `,
@@ -2937,7 +1588,7 @@ process.stdin.on('end', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            agentId: 'opencode',
+            agentId: 'copilot',
             projectId,
             conversationId,
             designSystemId: missingDesignSystemId,
@@ -2984,7 +1635,7 @@ describe('daemon run creation during shutdown', () => {
     };
     try {
       await withFakeAgent(
-        'opencode',
+        'copilot',
         `
 process.on('SIGTERM', () => {});
 setInterval(() => {}, 1000);
@@ -2993,7 +1644,7 @@ setInterval(() => {}, 1000);
           const activeResponse = await fetch(`${started.url}/api/runs`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agentId: 'opencode', message: 'hello' }),
+            body: JSON.stringify({ agentId: 'copilot', message: 'hello' }),
           });
           expect(activeResponse.status).toBe(202);
           const { runId } = await activeResponse.json() as { runId: string };
@@ -3004,12 +1655,12 @@ setInterval(() => {}, 1000);
           const runResponse = await fetch(`${started.url}/api/runs`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agentId: 'opencode', message: 'late run' }),
+            body: JSON.stringify({ agentId: 'copilot', message: 'late run' }),
           });
           const chatResponse = await fetch(`${started.url}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agentId: 'opencode', message: 'late chat' }),
+            body: JSON.stringify({ agentId: 'copilot', message: 'late chat' }),
           });
 
           expect(runResponse.status).toBe(503);

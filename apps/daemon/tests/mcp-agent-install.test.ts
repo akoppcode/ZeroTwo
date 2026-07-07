@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -62,7 +63,7 @@ describe('JSON-config agents', () => {
   it('cursor merges a stdio entry under mcpServers', () => {
     const plan = planAgentInstall('cursor', SPEC, ctx());
     if (plan.kind !== 'json') throw new Error('expected json');
-    expect(plan.configPath).toBe('/home/u/.cursor/mcp.json');
+    expect(plan.configPath).toBe(path.join('/home/u', '.cursor', 'mcp.json'));
     expect(plan.keyPath).toEqual(['mcpServers']);
     expect(plan.entry).toEqual({
       command: SPEC.command,
@@ -101,8 +102,8 @@ describe('JSON-config agents', () => {
     const mac = planAgentInstall('cline', SPEC, ctx('darwin'));
     const linux = planAgentInstall('cline', SPEC, ctx('linux'));
     if (mac.kind !== 'json' || linux.kind !== 'json') throw new Error('expected json');
-    expect(mac.configPath).toContain('Library/Application Support/Code/User');
-    expect(linux.configPath).toContain('.config/Code/User');
+    expect(mac.configPath).toContain(path.join('Library', 'Application Support', 'Code', 'User'));
+    expect(linux.configPath).toContain(path.join('.config', 'Code', 'User'));
     expect(mac.configPath).toContain('saoudrizwan.claude-dev');
   });
 });

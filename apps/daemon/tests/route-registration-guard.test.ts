@@ -11,9 +11,6 @@ describe('route registration guard', () => {
     expect(guardedRouteKey('post', '/api/projects/:id/export/pdf')).toBe(
       'POST /api/projects/:id/export/pdf',
     );
-    expect(guardedRouteKey('post', '/api/projects/:id/media/generate')).toBe(
-      'POST /api/projects/:id/media/generate',
-    );
     expect(guardedRouteKey('get', '/api/projects/:id/export/pdf')).toBeNull();
     expect(guardedRouteKey('post', '/api/runs')).toBeNull();
   });
@@ -21,11 +18,11 @@ describe('route registration guard', () => {
   it('throws when a guarded route is registered twice', () => {
     const app = express();
     installRouteRegistrationGuard(app);
-    app.post('/api/projects/:id/media/generate', (_req, res) => res.end());
+    app.post('/api/projects/:id/export/pdf', (_req, res) => res.end());
 
     expect(() => {
-      app.post('/api/projects/:id/media/generate', (_req, res) => res.end());
-    }).toThrow(/duplicate guarded route registration: POST \/api\/projects\/:id\/media\/generate/);
+      app.post('/api/projects/:id/export/pdf', (_req, res) => res.end());
+    }).toThrow(/duplicate guarded route registration: POST \/api\/projects\/:id\/export\/pdf/);
   });
 
   it('does not blanket reject non-sensitive duplicate routes', () => {

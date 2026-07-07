@@ -7,6 +7,7 @@ import {
   importGitHubDesignSystemProject,
   parseGitHubRepoUrl,
 } from '../../src/design-systems/github-import.js';
+import { POSIX_SHELL_SCRIPT_SUPPORTED } from '../platform-capabilities.js';
 
 describe('parseGitHubRepoUrl', () => {
   it('normalizes public GitHub repository URLs to clone URLs', () => {
@@ -91,7 +92,7 @@ exit 1
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  it('clones a public GitHub URL and imports through the local project format', async () => {
+  it.skipIf(!POSIX_SHELL_SCRIPT_SUPPORTED)('clones a public GitHub URL and imports through the local project format', async () => {
     const result = await importGitHubDesignSystemProject(
       'https://github.com/acme/design-kit',
       tmpRoot,

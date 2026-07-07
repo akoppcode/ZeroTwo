@@ -14,6 +14,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { POSIX_SHELL_SCRIPT_SUPPORTED } from './platform-capabilities.js';
 import { skillCwdAliasSegment, SKILLS_CWD_ALIAS } from '../src/cwd-aliases.js';
 import {
   deleteUserSkill,
@@ -287,7 +288,9 @@ describe('listSkills', () => {
     expect(skill.body).toContain('open -na "Google Chrome" --args');
     expect(skill.body).toContain('for i in {1..20}');
     expect(skill.body).toContain('agent-browser connect http://127.0.0.1:9223');
-    expect(skill.body).toContain('Never run\n`agent-browser open` before `agent-browser connect`');
+    // The on-disk SKILL.md is checked out with CRLF on Windows; normalize
+    // before matching a substring that spans a line boundary.
+    expect(skill.body.replace(/\r\n/g, '\n')).toContain('Never run\n`agent-browser open` before `agent-browser connect`');
     expect(skill.body).toContain('--remote-debugging-port=9223');
     expect(skill.body).toContain('Chrome crashed before CDP became available');
     expect(skill.body).toContain('command -v agent-browser');
@@ -298,7 +301,7 @@ describe('listSkills', () => {
     expect(skill.body).toContain('pkill -f -- "--user-data-dir=${CHROME_USER_DATA_DIR}"');
   });
 
-  it('keeps html-ppt PNG export on one managed Chromium screenshot path', async () => {
+  it.skipIf(!POSIX_SHELL_SCRIPT_SUPPORTED)('keeps html-ppt PNG export on one managed Chromium screenshot path', async () => {
     const skills = await listSkills(designTemplatesRoot);
     const skill = skills.find((entry: { id: string }) => entry.id === 'html-ppt');
     const renderScript = readFileSync(

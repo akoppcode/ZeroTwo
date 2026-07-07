@@ -210,7 +210,7 @@ describe('runFigmaExtract — asset rasterisation', () => {
       offlineAssets: false,
     });
     const assets = (await readdir(path.join(cwd, 'figma', 'assets'))).sort();
-    expect(assets).toEqual(['3:2.svg', '3:3.svg']);
+    expect(assets).toEqual(['3-2.svg', '3-3.svg']);
     expect(report.meta.unsupportedNodes.find((u) => u.id === '3:2' && u.type === 'asset')).toBeUndefined();
   });
 
@@ -230,7 +230,7 @@ describe('runFigmaExtract — asset rasterisation', () => {
     const issues = report.meta.unsupportedNodes.filter((u) => u.type === 'asset');
     expect(issues.find((i) => i.id === '3:2')?.reason).toMatch(/no download URL/);
     const assets = await readdir(path.join(cwd, 'figma', 'assets'));
-    expect(assets).toEqual(['3:3.svg']);
+    expect(assets).toEqual(['3-3.svg']);
   });
 
   it('skips assets above assetMaxBytes', async () => {
@@ -251,7 +251,7 @@ describe('runFigmaExtract — asset rasterisation', () => {
     const skipped = report.meta.unsupportedNodes.find((u) => u.id === '3:2' && u.type === 'asset');
     expect(skipped?.reason).toMatch(/asset-too-large/);
     const assets = await readdir(path.join(cwd, 'figma', 'assets'));
-    expect(assets).toEqual(['3:3.svg']);
+    expect(assets).toEqual(['3-3.svg']);
   });
 
   it('keeps assets/ empty when offlineAssets=true (default)', async () => {

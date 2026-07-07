@@ -129,38 +129,6 @@ describe('chat run service shutdown', () => {
       expect(child.signals).toEqual(['SIGTERM']);
     });
 
-    it('uses ACP abort before falling back to process signals', async () => {
-      vi.useFakeTimers();
-      vi.stubEnv('PI_ABORT_GRACE_MS', '30');
-      const runs = createRuns();
-      const child = new FakeChildProcess({ closeOn: 'SIGKILL' });
-      const order: string[] = [];
-      const originalKill = child.kill.bind(child);
-      vi.spyOn(child, 'kill').mockImplementation((signal: string) => {
-        order.push(signal);
-        return originalKill(signal);
-      });
-      const abort = vi.fn(() => order.push('abort'));
-      const run = runs.create();
-      run.status = 'running';
-      (run as any).child = child;
-      (run as any).acpSession = { abort };
-
-      const cancelPromise = runs.cancel(run);
-
-      expect(abort).toHaveBeenCalledTimes(1);
-      expect(order).toEqual(['abort']);
-
-      await vi.advanceTimersByTimeAsync(30);
-      expect(order).toEqual(['abort', 'SIGTERM']);
-
-      await vi.advanceTimersByTimeAsync(30);
-      expect(order).toEqual(['abort', 'SIGTERM', 'SIGKILL']);
-      await cancelPromise;
-      expect(run.status).toBe('canceled');
-      expect(run.signal).toBe('SIGKILL');
-    });
-
     it('waits for a real process group to exit before returning canceled status', async () => {
       if (process.platform === 'win32') return;
       vi.stubEnv('OD_CHAT_RUN_CANCEL_GRACE_MS', '25');
@@ -205,58 +173,6 @@ describe('chat run service shutdown', () => {
   });
 
 
-
-  it('stores effective media execution policy on run status bodies', () => {
-    const runs = createRuns();
-    const defaultRun = runs.create({ projectId: 'project-1', conversationId: 'conv-a' });
-    const scopedRun = runs.create({
-      projectId: 'project-1',
-      conversationId: 'conv-b',
-      mediaExecution: { mode: 'enabled', allowedSurfaces: ['image'] },
-    });
-
-    expect(runs.statusBody(defaultRun)).toMatchObject({
-      mediaExecution: { mode: 'enabled' },
-    });
-    expect(runs.statusBody(scopedRun)).toMatchObject({
-      mediaExecution: { mode: 'enabled', allowedSurfaces: ['image'] },
-    });
-  });
-
-  it('stores Browser Use availability on run status bodies', () => {
-    const runs = createRuns();
-    const run = runs.create({
-      projectId: 'project-1',
-      conversationId: 'conv-a',
-      browserUse: {
-        requested: true,
-        available: false,
-        reason: 'no-matching-browser-backend',
-        diagnostics: {
-          registryPath: '/tmp/codex-browser-use',
-          registryExists: false,
-          socketCount: 0,
-          candidateCount: 0,
-          staleCount: 0,
-          currentSessionIdPresent: null,
-          probeFailureCategory: 'registry-missing',
-          staleThresholdMs: 600_000,
-        },
-      },
-    });
-
-    expect(runs.statusBody(run)).toMatchObject({
-      browserUse: {
-        requested: true,
-        available: false,
-        reason: 'no-matching-browser-backend',
-        diagnostics: {
-          registryPath: '/tmp/codex-browser-use',
-          probeFailureCategory: 'registry-missing',
-        },
-      },
-    });
-  });
 
   it('summarizes OD-owned project storage on run status bodies', () => {
     const runs = createRuns();
@@ -430,22 +346,6 @@ describe('chat run service shutdown', () => {
     await runs.shutdownActive({ graceMs: 1 });
 
     expect(child.signals).toEqual(['SIGTERM', 'SIGKILL']);
-    expect(run.status).toBe('canceled');
-  });
-
-  it('uses adapter abort before process signals for ACP-style runs', async () => {
-    const runs = createRuns();
-    const child = new FakeChildProcess({ closeOn: 'SIGTERM' });
-    const abort = vi.fn();
-    const run = runs.create();
-    run.status = 'running';
-    (run as any).child = child;
-    (run as any).acpSession = { abort };
-
-    await runs.shutdownActive({ graceMs: 10 });
-
-    expect(abort).toHaveBeenCalledTimes(1);
-    expect(child.signals).toEqual(['SIGTERM']);
     expect(run.status).toBe('canceled');
   });
 

@@ -12,6 +12,7 @@ import {
   signDesktopImportToken,
   startServer,
 } from '../src/server.js';
+import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 
 describe('POST /api/import/folder', () => {
   let server: http.Server;
@@ -736,7 +737,7 @@ describe('POST /api/import/folder', () => {
   // *literal* baseDir, but the OS follows symlinks at open() time). The
   // realpath() canonicalization at import collapses the chain so the stored
   // baseDir == what the kernel will write to.
-  it('canonicalizes symlinks via realpath at import time', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('canonicalizes symlinks via realpath at import time', async () => {
     const realFolder = makeFolder();
     await writeFile(path.join(realFolder, 'index.html'), '');
     const linkParent = makeFolder();

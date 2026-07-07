@@ -21,6 +21,7 @@ import Database from 'better-sqlite3';
 import { c as tarCreate } from 'tar';
 import { migratePlugins } from '../src/plugins/persistence.js';
 import { installPlugin, type ArchiveFetcher } from '../src/plugins/installer.js';
+import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
@@ -301,7 +302,7 @@ describe('archive installer', () => {
     expect(error).toMatch(/exceeds/);
   });
 
-  it('rejects archives containing symlinks', async () => {
+  it.skipIf(!SYMLINK_SUPPORTED)('rejects archives containing symlinks', async () => {
     const tarball = await buildFixtureTarball({
       rootPrefix: 'sample-plugin-sym',
       withSymlink: true,

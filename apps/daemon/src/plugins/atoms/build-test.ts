@@ -205,10 +205,18 @@ function runShell(args: RunShellArgs): Promise<BuildTestCommandResult> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
     const launcher = args.spawnFn ?? spawn;
-    const child = launcher('sh', ['-c', args.command], {
-      cwd: args.cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    // Run through the platform shell: `sh -c` on POSIX, `cmd.exe /d /s /c` on
+    // Windows (where `sh` is not on PATH). Both take the command as a single
+    // string argument, preserving the (command, args, options) spawn shape.
+    const child = process.platform === 'win32'
+      ? launcher('cmd.exe', ['/d', '/s', '/c', args.command], {
+          cwd: args.cwd,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
+      : launcher('sh', ['-c', args.command], {
+          cwd: args.cwd,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
     let buffer = '';
     let truncated = false;
     const onChunk = (chunk: Buffer | string) => {
