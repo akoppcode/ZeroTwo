@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  push:
+    branches: [main, phase-0-fork-strip]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Zero Two is Windows-native only (spec §Platform); CI runs on Windows to
+    # match the target and catch path/shell/CRLF regressions the team can't
+    # reproduce on Linux.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+        shell: pwsh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install dependencies
+        # postinstall builds every workspace package (tsc + esbuild); a green
+        # install already proves the daemon/renderer/tooling compile.
+        run: pnpm install --frozen-lockfile
+        shell: pwsh
+
+      - name: Typecheck
+        run: pnpm typecheck
+        shell: pwsh
+
+      - name: Lint / policy guard
+        run: pnpm guard
+        shell: pwsh
+
+      - name: Unit tests
+        # e2e (Playwright) needs browsers + a running app and is not a unit
+        # suite; exclude it here (it has its own on-machine flow).
+        run: pnpm -r --filter=!@open-design/e2e --if-present run test
+        shell: pwsh
+
+      - name: Daemon boot smoke test
+        # Phase 0 acceptance: the daemon boots and serves an empty project
+        # list. Electron can't run headless in CI, so this exercises the
+        # daemon (the shell + renderer just proxy it) end to end.
+        run: pnpm exec tsx scripts/ci/daemon-boot-smoke.ts
+        shell: pwsh
