@@ -8,6 +8,7 @@ import { AttachReportWizard } from './AttachReportWizard';
 import { Icon, type IconName } from './Icon';
 import { NewReportWizard } from './NewReportWizard';
 import { PipelinePanel } from './PipelinePanel';
+import { RulesStudio } from './RulesStudio';
 import type { ReportPage } from './pipeline-types';
 
 interface Props {
@@ -46,24 +47,64 @@ export function ZeroTwoProjectsView({ onOpenDoctor, onOpenProject }: Props) {
   const [attachOpen, setAttachOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   // Phase 4: once a project is attached / scaffolded, open its pipeline preview
-  // inline. TODO(Workspace phase): route this into the Workspace shell instead.
+  // inline. Phase 6 adds a Rules surface for the same project.
+  // TODO(Workspace phase): the Workspace shell will own this Preview/Rules nav
+  // and the project/session context — this inline toggle is a stopgap.
   const [pipeline, setPipeline] = useState<{ projectId: string; pages: ReportPage[] } | null>(null);
+  const [projectTab, setProjectTab] = useState<'pipeline' | 'rules'>('pipeline');
 
   const openPipeline = (projectId: string, pages: ReportPage[]) => {
     setAttachOpen(false);
     setNewOpen(false);
+    setProjectTab('pipeline');
     setPipeline({ projectId, pages });
   };
 
   if (pipeline) {
     return (
       <section className="zt-projects" aria-labelledby="zt-projects-title" data-testid="zero-two-projects-view">
-        <PipelinePanel
-          projectId={pipeline.projectId}
-          pages={pipeline.pages}
-          onClose={() => setPipeline(null)}
-          {...(onOpenProject ? { onOpenWorkspace: onOpenProject } : {})}
-        />
+        <div className="zt-projects__subnav">
+          <button
+            type="button"
+            className="zt-btn zt-btn--ghost"
+            onClick={() => setPipeline(null)}
+            data-testid="zt-project-back"
+          >
+            <Icon name="chevron-left" size={14} />
+            <span>Back to reports</span>
+          </button>
+          <div className="zt-rules__mode" role="tablist" aria-label="Project surface">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={projectTab === 'pipeline'}
+              className={`zt-rules__mode-btn${projectTab === 'pipeline' ? ' is-active' : ''}`}
+              onClick={() => setProjectTab('pipeline')}
+              data-testid="zt-tab-pipeline"
+            >
+              Preview
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={projectTab === 'rules'}
+              className={`zt-rules__mode-btn${projectTab === 'rules' ? ' is-active' : ''}`}
+              onClick={() => setProjectTab('rules')}
+              data-testid="zt-tab-rules"
+            >
+              Rules
+            </button>
+          </div>
+        </div>
+        {projectTab === 'pipeline' ? (
+          <PipelinePanel
+            projectId={pipeline.projectId}
+            pages={pipeline.pages}
+            {...(onOpenProject ? { onOpenWorkspace: onOpenProject } : {})}
+          />
+        ) : (
+          <RulesStudio projectId={pipeline.projectId} />
+        )}
       </section>
     );
   }
