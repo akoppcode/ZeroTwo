@@ -1,10 +1,18 @@
 import type { Metadata, Viewport } from 'next';
+import { Geist, Geist_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { I18nProvider } from '../src/i18n';
 import { AnalyticsProvider } from '../src/analytics/provider';
 import '@excalidraw/excalidraw/index.css';
 import '../src/index.css';
 import '../src/styles/home/index.css';
+
+// Geist + Geist Mono, exposed as CSS variables consumed by the Zero Two theme
+// (--zt-font-sans / --zt-font-mono). Declared on <body> so the variables are
+// available globally, but only the Zero Two views actually set font-family from
+// them — the inherited Open-Design screens keep their own stacks.
+const geistSans = Geist({ subsets: ['latin'], variable: '--font-geist-sans', display: 'swap' });
+const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono', display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'Open Design',
@@ -36,7 +44,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: intentional theme-init inline script to prevent FOUC */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body suppressHydrationWarning>
+      <body className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
         <I18nProvider>
           <AnalyticsProvider>{children}</AnalyticsProvider>
         </I18nProvider>
