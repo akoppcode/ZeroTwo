@@ -223,6 +223,30 @@ function migrate(db: SqliteDb): void {
       updated_at INTEGER NOT NULL
     );
 
+    -- Zero Two comment-mode annotations pinned to report screenshots (spec §4.1/§9).
+    CREATE TABLE IF NOT EXISTS zerotwo_annotations (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      page_name TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      x REAL NOT NULL,
+      y REAL NOT NULL,
+      w REAL,
+      h REAL,
+      canvas_x REAL,
+      canvas_y REAL,
+      canvas_w REAL,
+      canvas_h REAL,
+      text TEXT NOT NULL DEFAULT '',
+      visual_id TEXT,
+      visual_type TEXT,
+      visual_title TEXT,
+      match_kind TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS routine_runs (
       id TEXT PRIMARY KEY,
       routine_id TEXT NOT NULL,
