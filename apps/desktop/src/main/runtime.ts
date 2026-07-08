@@ -812,7 +812,7 @@ function createPendingHtml(): string {
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Open Design</title>
+    <title>Zero Two</title>
     <style>
       html,
       body {
@@ -1110,7 +1110,7 @@ export function createSplashWindow(): SplashWindowHandle {
     height: 900,
     resizable: false,
     show: true,
-    title: "Open Design",
+    title: "Zero Two",
     width: 1280,
     webPreferences: {
       contextIsolation: true,
@@ -1774,7 +1774,7 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
 
   const consoleEntries: DesktopConsoleEntry[] = [];
   const petWindow = createDesktopPetWindow(preloadPath, options.osLocale);
-  const windowTitle = options.windowTitle ?? "Open Design";
+  const windowTitle = options.windowTitle ?? "Zero Two";
   const window = new BrowserWindow({
     height: 900,
     icon: resolveDesktopIconPath(),
