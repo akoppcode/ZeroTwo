@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +16,17 @@ import {
   resolveStandaloneServerEntry,
   startWebSidecar,
 } from '../sidecar/server';
+
+// Node maps `net.listen(path)` to a Unix domain socket, which fails with EACCES
+// for a filesystem `.sock` path on Windows (both this dev box and the CI
+// windows-latest runner). Production allocates a `\\.\pipe\` name there
+// (packages/sidecar allocateStamp), so mirror that per-platform in the fixture.
+function webSidecarIpcPath(runtimeRoot: string): string {
+  if (process.platform === 'win32') {
+    return `\\\\.\\pipe\\zt-web-sidecar-${process.pid}-${randomBytes(6).toString('hex')}`;
+  }
+  return join(runtimeRoot, 'web.sock');
+}
 
 describe('resolveDaemonProxyTarget', () => {
   it('proxies allowlisted relative paths to the daemon origin', () => {
@@ -173,7 +185,7 @@ process.on('SIGTERM', () => server.close(() => process.exit(0)));
       const handle = await startWebSidecar({
         app: 'web',
         base: runtimeRoot,
-        ipc: join(runtimeRoot, 'web.sock'),
+        ipc: webSidecarIpcPath(runtimeRoot),
         mode: 'runtime',
         namespace: 'slow-http',
         source: 'tools-pack',
@@ -245,7 +257,7 @@ process.on('SIGTERM', () => dummyServer.close(() => process.exit(0)));
         handle = await startWebSidecar({
           app: 'web',
           base: runtimeRoot,
-          ipc: join(runtimeRoot, 'web.sock'),
+          ipc: webSidecarIpcPath(runtimeRoot),
           mode: 'runtime',
           namespace: 'hijacked-port',
           source: 'tools-pack',
