@@ -131,6 +131,14 @@ function installFatalTelemetryHandlers({
   analyticsService: ReturnType<typeof createAnalyticsService>;
   getAppVersion: () => any;
 }): void {
+  // Under vitest, do NOT install the process-level fatal handlers: they call
+  // process.exit(1) on any uncaughtException, and an inherited suite's leaked
+  // background timer (a scheduled/retry run firing after its throwaway fake-bin
+  // is gone) would then hard-exit the whole vitest worker — every assertion
+  // passes, yet the run fails with "Worker exited unexpectedly". In tests
+  // vitest's own handler manages unhandled errors; production still installs
+  // these so real fatals flush telemetry and exit.
+  if (process.env.VITEST || process.env.NODE_ENV === 'test') return;
   const FATAL_FLUSH_TIMEOUT_MS = 1000;
   let fatalShuttingDown = false;
   const triggerFatalShutdown = (
