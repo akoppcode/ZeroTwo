@@ -9,6 +9,7 @@
 
 import { useCallback, useState } from 'react';
 import { Icon } from './Icon';
+import type { ReportPage } from './pipeline-types';
 import { ProvisioningPanel } from './ProvisioningPanel';
 import { ZeroTwoAgentPicker, type ZeroTwoAgent } from './ZeroTwoAgentPicker';
 import { ZeroTwoWizardModal } from './ZeroTwoWizardModal';
@@ -19,6 +20,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onOpened?: (projectId: string) => void;
+  /** Called with the scaffolded project id + report page inventory (spec §7 preview). */
+  onReportInventory?: (projectId: string, pages: ReportPage[]) => void;
   defaultAgent?: ZeroTwoAgent;
 }
 
@@ -28,7 +31,7 @@ const BRIEF_PLACEHOLDER = [
   'variance charts, dark theme, one page.',
 ].join(' ');
 
-export function NewReportWizard({ open, onClose, onOpened, defaultAgent = 'claude' }: Props) {
+export function NewReportWizard({ open, onClose, onOpened, onReportInventory, defaultAgent = 'claude' }: Props) {
   const [step, setStep] = useState<NewStep>('basics');
   const [name, setName] = useState('');
   const [folder, setFolder] = useState('');
@@ -37,6 +40,7 @@ export function NewReportWizard({ open, onClose, onOpened, defaultAgent = 'claud
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [reportPages, setReportPages] = useState<ReportPage[]>([]);
 
   const reset = useCallback(() => {
     setStep('basics');
@@ -47,6 +51,7 @@ export function NewReportWizard({ open, onClose, onOpened, defaultAgent = 'claud
     setBusy(false);
     setError(null);
     setProjectId(null);
+    setReportPages([]);
   }, [defaultAgent]);
 
   const close = useCallback(() => {
@@ -70,8 +75,9 @@ export function NewReportWizard({ open, onClose, onOpened, defaultAgent = 'claud
         body: JSON.stringify({ name: name.trim(), path: folder.trim(), agent }),
       });
       if (res.status === 201) {
-        const body = (await res.json()) as { project: { id: string } };
+        const body = (await res.json()) as { project: { id: string }; report?: { pages?: ReportPage[] } };
         setProjectId(body.project.id);
+        setReportPages(body.report?.pages ?? []);
         setStep('ready');
         return;
       }
@@ -85,9 +91,12 @@ export function NewReportWizard({ open, onClose, onOpened, defaultAgent = 'claud
   }, [name, folder, agent]);
 
   const openWorkspace = useCallback(() => {
-    if (projectId) onOpened?.(projectId);
+    if (projectId) {
+      onReportInventory?.(projectId, reportPages);
+      onOpened?.(projectId);
+    }
     close();
-  }, [projectId, onOpened, close]);
+  }, [projectId, reportPages, onOpened, onReportInventory, close]);
 
   return (
     <ZeroTwoWizardModal

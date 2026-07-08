@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
+import type { ReportPage } from './pipeline-types';
 import { ProvisioningPanel } from './ProvisioningPanel';
 import { ZeroTwoAgentPicker, type ZeroTwoAgent } from './ZeroTwoAgentPicker';
 import { ZeroTwoWizardModal } from './ZeroTwoWizardModal';
@@ -30,7 +31,7 @@ interface DetectedProject {
     hasSemanticModel: boolean;
     reportDirName: string;
   };
-  report: { reportDirName: string; pages: unknown[] };
+  report: { reportDirName: string; pages: ReportPage[] };
 }
 
 interface Props {
@@ -38,6 +39,8 @@ interface Props {
   onClose: () => void;
   /** Called with the attached project id once the user opens the workspace. */
   onOpened?: (projectId: string) => void;
+  /** Called with the attached project id + report page inventory (spec §7 preview). */
+  onReportInventory?: (projectId: string, pages: ReportPage[]) => void;
   defaultAgent?: ZeroTwoAgent;
 }
 
@@ -130,7 +133,7 @@ function Stepper({ current }: { current: AttachStep }) {
   );
 }
 
-export function AttachReportWizard({ open, onClose, onOpened, defaultAgent = 'claude' }: Props) {
+export function AttachReportWizard({ open, onClose, onOpened, onReportInventory, defaultAgent = 'claude' }: Props) {
   const [step, setStep] = useState<AttachStep>('source');
   const [agent, setAgent] = useState<ZeroTwoAgent>(defaultAgent);
   const [pbixName, setPbixName] = useState<string | null>(null);
@@ -238,6 +241,7 @@ export function AttachReportWizard({ open, onClose, onOpened, defaultAgent = 'cl
   const openWorkspace = useCallback(async () => {
     // pbix/watch flow already attached the project on detection.
     if (detected) {
+      onReportInventory?.(detected.project.id, detected.report.pages);
       onOpened?.(detected.project.id);
       close();
       return;
@@ -252,7 +256,8 @@ export function AttachReportWizard({ open, onClose, onOpened, defaultAgent = 'cl
         body: JSON.stringify({ path: folderPath.trim(), agent }),
       });
       if (res.status === 201) {
-        const body = (await res.json()) as { project: { id: string } };
+        const body = (await res.json()) as { project: { id: string }; report?: { pages?: ReportPage[] } };
+        onReportInventory?.(body.project.id, body.report?.pages ?? []);
         onOpened?.(body.project.id);
         close();
         return;
@@ -271,7 +276,7 @@ export function AttachReportWizard({ open, onClose, onOpened, defaultAgent = 'cl
     } finally {
       setBusy(false);
     }
-  }, [detected, folderPath, agent, onOpened, close]);
+  }, [detected, folderPath, agent, onOpened, onReportInventory, close]);
 
   const watchAgain = useCallback(() => {
     setWatchState('watching');

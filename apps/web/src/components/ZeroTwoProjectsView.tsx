@@ -7,6 +7,8 @@ import { useState } from 'react';
 import { AttachReportWizard } from './AttachReportWizard';
 import { Icon, type IconName } from './Icon';
 import { NewReportWizard } from './NewReportWizard';
+import { PipelinePanel } from './PipelinePanel';
+import type { ReportPage } from './pipeline-types';
 
 interface Props {
   /** Switch to the Doctor route (tertiary "environment check" affordance). */
@@ -43,6 +45,28 @@ const PATHS: PathCard[] = [
 export function ZeroTwoProjectsView({ onOpenDoctor, onOpenProject }: Props) {
   const [attachOpen, setAttachOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  // Phase 4: once a project is attached / scaffolded, open its pipeline preview
+  // inline. TODO(Workspace phase): route this into the Workspace shell instead.
+  const [pipeline, setPipeline] = useState<{ projectId: string; pages: ReportPage[] } | null>(null);
+
+  const openPipeline = (projectId: string, pages: ReportPage[]) => {
+    setAttachOpen(false);
+    setNewOpen(false);
+    setPipeline({ projectId, pages });
+  };
+
+  if (pipeline) {
+    return (
+      <section className="zt-projects" aria-labelledby="zt-projects-title" data-testid="zero-two-projects-view">
+        <PipelinePanel
+          projectId={pipeline.projectId}
+          pages={pipeline.pages}
+          onClose={() => setPipeline(null)}
+          {...(onOpenProject ? { onOpenWorkspace: onOpenProject } : {})}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="zt-projects" aria-labelledby="zt-projects-title" data-testid="zero-two-projects-view">
@@ -89,12 +113,12 @@ export function ZeroTwoProjectsView({ onOpenDoctor, onOpenProject }: Props) {
       <AttachReportWizard
         open={attachOpen}
         onClose={() => setAttachOpen(false)}
-        {...(onOpenProject ? { onOpened: onOpenProject } : {})}
+        onReportInventory={openPipeline}
       />
       <NewReportWizard
         open={newOpen}
         onClose={() => setNewOpen(false)}
-        {...(onOpenProject ? { onOpened: onOpenProject } : {})}
+        onReportInventory={openPipeline}
       />
     </section>
   );
