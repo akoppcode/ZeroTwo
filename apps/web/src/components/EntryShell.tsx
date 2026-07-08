@@ -122,11 +122,13 @@ import { LIBRARY_UI_VISIBLE } from '../features/libraryUi';
 const RAIL_OPEN_STORAGE_KEY = 'od.entry.railOpen';
 
 function readStoredRailOpen(): boolean {
-  if (typeof window === 'undefined') return false;
+  // Zero Two: rail open by default so Reports/Doctor are visible on launch;
+  // respect an explicit user collapse.
+  if (typeof window === 'undefined') return true;
   try {
-    return window.localStorage.getItem(RAIL_OPEN_STORAGE_KEY) === 'true';
+    return window.localStorage.getItem(RAIL_OPEN_STORAGE_KEY) !== 'false';
   } catch {
-    return false;
+    return true;
   }
 }
 

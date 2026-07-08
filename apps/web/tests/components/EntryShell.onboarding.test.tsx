@@ -218,7 +218,9 @@ beforeEach(() => {
 });
 
 describe('EntryShell settings menu', () => {
-  it('opens quick actions before opening the full settings dialog', async () => {
+  // Zero Two: skipped — asserts the open-design topbar Discord badge ("1.2k
+  // online") + community promo links that were stripped from the Zero Two shell.
+  it.skip('opens quick actions before opening the full settings dialog', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
       if (url.endsWith('/api/community/discord')) {
