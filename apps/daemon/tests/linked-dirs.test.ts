@@ -6,9 +6,11 @@ import { join } from 'node:path';
 import { validateLinkedDirs } from '../src/linked-dirs.js';
 import { SYMLINK_SUPPORTED } from './platform-capabilities.js';
 
-/** Resolve macOS /var -> /private/var etc. so assertions match realpathSync. */
+/** Canonicalize like the source under test (fs.realpathSync.native): resolves
+ *  macOS /var -> /private/var AND Windows 8.3 short names (RUNNER~1 ->
+ *  runneradmin), which the JS realpathSync does not. */
 function real(p: string): string {
-  try { return realpathSync(p); } catch { return p; }
+  try { return realpathSync.native(p); } catch { return p; }
 }
 
 function blockedSystemDir(): string {

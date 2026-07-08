@@ -199,7 +199,11 @@ describe("resolvePackagedNamespacePaths", () => {
     expect(err.message).toMatch(/absolute path/);
   });
 
-  it("rejects Windows-style OD_DATA_DIR values on non-Windows hosts so the absolute-path guard is platform-correct", () => {
+  // Node's `path` module uses the HOST OS's semantics regardless of a stubbed
+  // process.platform, so on a Windows host `C:\…` is still absolute and can't be
+  // made to look like a rejected non-Windows path. This case is only meaningful
+  // off Windows.
+  it.skipIf(process.platform === "win32")("rejects Windows-style OD_DATA_DIR values on non-Windows hosts so the absolute-path guard is platform-correct", () => {
     const config = fakeConfig();
     const restore = stubPlatform("linux");
     try {
