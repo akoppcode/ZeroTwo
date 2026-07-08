@@ -26,36 +26,6 @@ function ensureDaemonCliBuilt() {
   });
 }
 
-// On the (slow) Windows CI runner, background schedulers (routines / orbit) can
-// fire a run AFTER the owning test has already removed its throwaway fake-bin
-// temp dir, so the spawn throws "Cannot find module ...\od-*-bin-*\claude-*.js"
-// (or EBUSY/ENOENT on the same path) from a bare timer callback — an
-// uncaughtException that kills the vitest worker fork even though every
-// assertion passed. Swallow ONLY that specific post-teardown race; re-crash on
-// anything else so real defects still fail the run.
-function isPostTeardownFakeBinRace(err: unknown): boolean {
-  const message = String((err as { message?: unknown } | undefined)?.message ?? err);
-  const touchesThrowawayBin = /[\\/]od-[^\\/]*-bin-/.test(message);
-  const cleanupOrSpawnError = /(Cannot find module|EBUSY|ENOENT|EPERM)/.test(message);
-  return touchesThrowawayBin && cleanupOrSpawnError;
-}
-process.on('uncaughtException', (err) => {
-  if (isPostTeardownFakeBinRace(err)) {
-    console.warn('[test-setup] ignored post-teardown fake-bin race:', String((err as Error)?.message ?? err));
-    return;
-  }
-  // Restore the default fatal behaviour for genuine uncaught errors.
-  console.error(err);
-  process.exit(1);
-});
-process.on('unhandledRejection', (reason) => {
-  if (isPostTeardownFakeBinRace(reason)) {
-    console.warn('[test-setup] ignored post-teardown fake-bin rejection:', String((reason as Error)?.message ?? reason));
-    return;
-  }
-  throw reason;
-});
-
 const TEST_DATA_DIR_SYMBOL = Symbol.for('open-design.daemon.vitestDataDir');
 
 const globalState = globalThis as typeof globalThis & {
