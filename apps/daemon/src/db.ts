@@ -259,6 +259,20 @@ function migrate(db: SqliteDb): void {
   if (!cols.some((c: DbRow) => c.name === 'custom_instructions')) {
     db.exec(`ALTER TABLE projects ADD COLUMN custom_instructions TEXT`);
   }
+  // Zero Two PBIP project columns (spec §4.1): the on-disk report folder, how it
+  // was created, the bound agent, and the last-matched Power BI Desktop PID.
+  if (!cols.some((c: DbRow) => c.name === 'pbip_path')) {
+    db.exec(`ALTER TABLE projects ADD COLUMN pbip_path TEXT`);
+  }
+  if (!cols.some((c: DbRow) => c.name === 'kind')) {
+    db.exec(`ALTER TABLE projects ADD COLUMN kind TEXT`);
+  }
+  if (!cols.some((c: DbRow) => c.name === 'agent')) {
+    db.exec(`ALTER TABLE projects ADD COLUMN agent TEXT`);
+  }
+  if (!cols.some((c: DbRow) => c.name === 'desktop_pid_hint')) {
+    db.exec(`ALTER TABLE projects ADD COLUMN desktop_pid_hint INTEGER`);
+  }
   const conversationCols = db.prepare(`PRAGMA table_info(conversations)`).all() as DbRow[];
   if (!conversationCols.some((c: DbRow) => c.name === 'session_mode')) {
     db.exec(`ALTER TABLE conversations ADD COLUMN session_mode TEXT NOT NULL DEFAULT 'design'`);

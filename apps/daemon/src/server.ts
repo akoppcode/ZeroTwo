@@ -478,6 +478,7 @@ import { registerDesignSystemToolRoutes } from './routes/design-system-tool.js';
 import { registerDeployRoutes, registerDeploymentCheckRoutes } from './routes/deploy.js';
 import { registerAppShellRoutes } from './routes/app-shell.js';
 import { registerDoctorRoutes } from './routes/doctor.js';
+import { registerPbipProjectRoutes } from './routes/pbip-projects.js';
 import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './routes/project/index.js';
 import { registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
 import { registerChatRoutes } from './routes/chat.js';
@@ -2723,6 +2724,8 @@ export async function startServer({
   });
   // Environment health checks (spec §3.3) for the Doctor screen.
   registerDoctorRoutes(app, { http: httpDeps });
+  // Zero Two PBIP attach / scaffold (spec §4.4/§4.5).
+  registerPbipProjectRoutes(app, { db, http: httpDeps, ids: idDeps });
   app.use('/frames', express.static(FRAMES_DIR));
   registerProjectExportRoutes(app, {
     db,
