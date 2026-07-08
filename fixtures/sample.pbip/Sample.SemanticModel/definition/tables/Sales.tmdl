@@ -1,0 +1,19 @@
+table Sales
+
+	column Amount
+		dataType: double
+		summarizeBy: sum
+		sourceColumn: Amount
+
+	column Region
+		dataType: string
+		summarizeBy: none
+		sourceColumn: Region
+
+	measure 'Revenue Won' = SUM(Sales[Amount])
+		formatString: \$#,0
+
+	partition Sales = m
+		mode: import
+		source =
+				let Source = Table.FromRows({}) in Source

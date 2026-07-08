@@ -1,0 +1,11 @@
+table Date
+
+	column Date
+		dataType: dateTime
+		summarizeBy: none
+		sourceColumn: Date
+
+	partition Date = m
+		mode: import
+		source =
+				let Source = Table.FromRows({}) in Source

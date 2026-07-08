@@ -1,0 +1,11 @@
+{
+  "config": "{}",
+  "layoutOptimization": 0,
+  "sections": [
+    {
+      "name": "page1",
+      "displayName": "Page 1",
+      "visualContainers": []
+    }
+  ]
+}
