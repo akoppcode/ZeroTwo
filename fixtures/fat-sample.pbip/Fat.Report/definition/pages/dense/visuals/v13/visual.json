@@ -1,0 +1,13 @@
+{
+  "name": "v13",
+  "position": {
+    "x": 390,
+    "y": 180,
+    "z": 0,
+    "width": 120,
+    "height": 80
+  },
+  "visual": {
+    "visualType": "kpi"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "v6",
+  "position": {
+    "x": 130,
+    "y": 90,
+    "z": 0,
+    "width": 120,
+    "height": 80
+  },
+  "visual": {
+    "visualType": "card"
+  }
+}

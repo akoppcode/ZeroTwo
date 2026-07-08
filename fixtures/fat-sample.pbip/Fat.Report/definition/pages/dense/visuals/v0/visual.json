@@ -1,0 +1,13 @@
+{
+  "name": "v0",
+  "position": {
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "width": 120,
+    "height": 80
+  },
+  "visual": {
+    "visualType": "card"
+  }
+}

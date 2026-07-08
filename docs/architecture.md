@@ -446,3 +446,29 @@ We inherit the agent's permission model on purpose — we don't invent our own s
 - Collaborative editing
 - Mobile web support (desktop only in MVP)
 - Offline mode (beyond "the agent is local" — we don't cache model responses)
+
+## Fab Inspector (PBI Inspector V2) — resolved from upstream (Phase 6)
+
+Repo: `NatVanG/PBI-InspectorV2` (V2 supports PBIR; V1 does not). Rules are
+JSON-Logic (json-everything .NET). Read at build time (network).
+
+### CLI
+`PBIXInspectorCLI -pbipreport <*.Report folder> -rules <rules.json> -output <dir> -formats JSON`
+- `-pbipreport`: the report folder (PBIR). `-rules`: rules file. `-output`: dir for JSON/HTML/PNG. `-formats`: CONSOLE (default) | JSON | HTML | PNG | ADO. Zero Two uses **JSON** (machine-readable) written to `-output`.
+
+### Rule file format
+```
+{ "rules": [ { "id", "name", "description", "disabled": bool,
+              "part": "Report"|"Page"|"Visuals"|...,
+              "test": <json-logic array>, "logType": "warning"|"error" } ] }
+```
+Base rules: `NatVanG/PBI-InspectorV2/main/Rules/Base-rules.json`.
+
+### Zero Two integration
+InspectionService runs the CLI with the merged active ruleset and parses the
+JSON output into per-rule {pass, logType, failing pages/visuals}. For CI the
+fab-inspector **mock** replays deterministic results by counting the report's
+visuals per page (so "max visuals per page" genuinely fails on the fat fixture
+and passes on the slim one). TODO(integration): verify the real V2 JSON output
+shape against a live CLI run behind the integration flag; the mock+parser share
+Zero Two's own result contract meanwhile.

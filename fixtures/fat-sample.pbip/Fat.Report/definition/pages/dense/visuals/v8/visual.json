@@ -1,0 +1,13 @@
+{
+  "name": "v8",
+  "position": {
+    "x": 390,
+    "y": 90,
+    "z": 0,
+    "width": 120,
+    "height": 80
+  },
+  "visual": {
+    "visualType": "tableEx"
+  }
+}

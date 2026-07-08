@@ -1,0 +1,13 @@
+{
+  "name": "v3",
+  "position": {
+    "x": 390,
+    "y": 0,
+    "z": 0,
+    "width": 120,
+    "height": 80
+  },
+  "visual": {
+    "visualType": "tableEx"
+  }
+}

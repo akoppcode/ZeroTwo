@@ -1,0 +1,13 @@
+{
+  "name": "v7",
+  "position": {
+    "x": 260,
+    "y": 90,
+    "z": 0,
+    "width": 120,
+    "height": 80
+  },
+  "visual": {
+    "visualType": "slicer"
+  }
+}

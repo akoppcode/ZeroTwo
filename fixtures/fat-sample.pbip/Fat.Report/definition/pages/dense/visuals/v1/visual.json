@@ -1,0 +1,13 @@
+{
+  "name": "v1",
+  "position": {
+    "x": 130,
+    "y": 0,
+    "z": 0,
+    "width": 120,
+    "height": 80
+  },
+  "visual": {
+    "visualType": "clusteredColumnChart"
+  }
+}

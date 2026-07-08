@@ -1,0 +1,13 @@
+{
+  "name": "v5",
+  "position": {
+    "x": 0,
+    "y": 90,
+    "z": 0,
+    "width": 120,
+    "height": 80
+  },
+  "visual": {
+    "visualType": "scatterChart"
+  }
+}

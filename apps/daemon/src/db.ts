@@ -247,6 +247,26 @@ function migrate(db: SqliteDb): void {
       updated_at INTEGER NOT NULL
     );
 
+    -- Zero Two Rules Studio inspection runs (spec §4.1/§10).
+    CREATE TABLE IF NOT EXISTS zerotwo_rule_runs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      session_id TEXT,
+      created_at INTEGER NOT NULL,
+      ruleset_hash TEXT,
+      results_json TEXT NOT NULL
+    );
+
+    -- Zero Two pipeline screenshot runs (spec §4.1/§6.2).
+    CREATE TABLE IF NOT EXISTS zerotwo_screenshot_runs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      session_id TEXT,
+      created_at INTEGER NOT NULL,
+      pbir_hash TEXT,
+      pages_json TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS routine_runs (
       id TEXT PRIMARY KEY,
       routine_id TEXT NOT NULL,
