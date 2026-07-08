@@ -5163,6 +5163,24 @@ export async function startServer({
       return;
     }
 
+    // A missing agent binary (a CLI uninstalled mid-run, or a fake bin removed
+    // during test teardown before a delayed retry re-spawns) makes spawn emit an
+    // async 'error' (ENOENT) rather than throwing synchronously in the try above.
+    // Without a listener that becomes an uncaughtException and takes the whole
+    // process (or a vitest worker) down; route it through the same failure path
+    // as a synchronous spawn failure. Guarded so a following 'close' can't
+    // double-finalize.
+    let spawnErrorHandled = false;
+    child.on('error', (err) => {
+      if (spawnErrorHandled || design.runs.isTerminal(run.status)) return;
+      spawnErrorHandled = true;
+      cleanupPromptFile();
+      revokeToolToken('child_exit');
+      unregisterChatAgentEventSink();
+      send('error', createSseErrorPayload('AGENT_EXECUTION_FAILED', `spawn error: ${err.message}`));
+      design.runs.finish(run, 'failed', 1, null);
+    });
+
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
 
