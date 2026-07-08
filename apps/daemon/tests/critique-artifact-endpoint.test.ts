@@ -274,7 +274,7 @@ describe('GET /api/projects/:projectId/critique/:runId/artifact', () => {
     expect(status).toBe(404);
   });
 
-  it('returns 404 when artifactPath resolves to a symlink (refuses non-regular files)', async function symlinkCase() {
+  it.skipIf(process.platform === 'win32')('returns 404 when artifactPath resolves to a symlink (refuses non-regular files)', async function symlinkCase() {
     // Symlinks fail with EPERM on Windows runners that lack the privilege.
     // Skip the assertion there rather than mark the suite flaky.
     const target = join(artifactsRoot, 'target.html');

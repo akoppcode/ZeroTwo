@@ -1,4 +1,7 @@
-import { lstat, mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+// Native realpath so Windows 8.3 short names canonicalize and containment
+// checks (project-location overlap with the daemon dirs) stay correct.
+import { realpathNative as realpath } from './canonical-path.js';
 import path from 'node:path';
 import type { ProjectLocationPrefs } from './app-config.js';
 import { expandHomePrefix } from './home-expansion.js';

@@ -878,7 +878,7 @@ describe('POST /api/import/folder', () => {
     });
   });
 
-  it('refuses raw reads through a descendant symlink that escapes the folder', async () => {
+  it.skipIf(process.platform === 'win32')('refuses raw reads through a descendant symlink that escapes the folder', async () => {
     const real = makeFolder();
     await mkdir(path.join(real, 'assets'));
     // Point a symlink at /etc/hosts (always exists, harmless to read,

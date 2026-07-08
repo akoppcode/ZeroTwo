@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main, phase-0-fork-strip]
+    branches: [main, 'phase-**']
   pull_request:
     branches: [main]
 

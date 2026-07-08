@@ -1,6 +1,9 @@
 import type { Express } from 'express';
 import { PROJECT_EXPORT_MANIFEST_SCHEMA } from '@open-design/contracts';
 import nodePath from 'node:path';
+// Native realpath so a symlink whose target only differs by a Windows 8.3
+// short name can't slip past the folder-escape / data-dir-reentry checks.
+import { realpathNative } from './canonical-path.js';
 import type { RouteDeps } from './server-context.js';
 import {
   InlineAssetsLimitError,
@@ -167,7 +170,7 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
       }
       let normalizedPath: string;
       try {
-        normalizedPath = await fs.promises.realpath(trimmedInput);
+        normalizedPath = await realpathNative(trimmedInput);
       } catch {
         return sendApiError(res, 400, 'BAD_REQUEST', 'folder not found');
       }
@@ -294,7 +297,7 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
       // the chain so the stored baseDir == what the kernel will write to.
       let normalizedPath: string;
       try {
-        normalizedPath = await fs.promises.realpath(trimmedInput);
+        normalizedPath = await realpathNative(trimmedInput);
       } catch {
         return sendApiError(res, 400, 'BAD_REQUEST', 'folder not found');
       }
