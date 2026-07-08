@@ -10,6 +10,7 @@ export * from './api/community.js';
 export * from './api/context.js';
 export * from './api/connectors.js';
 export * from './api/comments.js';
+export * from './api/doctor.js';
 export * from './api/export.js';
 export * from './api/files.js';
 export * from './api/figma.js';
