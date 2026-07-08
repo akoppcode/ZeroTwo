@@ -482,6 +482,7 @@ import { registerPbipProjectRoutes } from './routes/pbip-projects.js';
 import { registerAgentProvisionRoutes } from './routes/agents-provision.js';
 import { registerPipelineRoutes } from './routes/pipeline.js';
 import { registerAnnotationRoutes } from './routes/annotations.js';
+import { registerRuleRoutes } from './routes/rules.js';
 import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './routes/project/index.js';
 import { registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
 import { registerChatRoutes } from './routes/chat.js';
@@ -2735,6 +2736,8 @@ export async function startServer({
   registerPipelineRoutes(app, { db, http: httpDeps, ids: idDeps });
   // Comment-mode annotations (spec §9).
   registerAnnotationRoutes(app, { db, http: httpDeps, ids: idDeps });
+  // Rules Studio — Fab Inspector rulesets + inspection (spec §10).
+  registerRuleRoutes(app, { db, http: httpDeps, ids: idDeps });
   app.use('/frames', express.static(FRAMES_DIR));
   registerProjectExportRoutes(app, {
     db,
