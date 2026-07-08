@@ -91,8 +91,14 @@ async function startFixture(
         "content-type": "application/octet-stream",
         etag: '"fixture-etag"',
       });
-      response.write(payload.subarray(0, options.failFirstBytes));
-      setTimeout(() => response.destroy(), 5);
+      // Destroy the connection only after the partial bytes have actually been
+      // flushed to the socket (write callback = handed to the kernel). A fixed
+      // timeout races the write on a slow/busy CI runner, delivering 0 bytes so
+      // the client never has a partial file to resume — the source of a
+      // cross-environment flake in the Range/resume tests.
+      response.write(payload.subarray(0, options.failFirstBytes), () => {
+        setTimeout(() => response.destroy(), 5);
+      });
       return;
     }
 
