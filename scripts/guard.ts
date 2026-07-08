@@ -76,6 +76,14 @@ const residualAllowedExactPaths = new Set([
   // executed directly by Node and are not loaded by the app runtime.
   "scripts/import-prompt-templates.mjs",
   "scripts/postinstall.mjs",
+  // Env-var-driven fake CLIs the environment/Doctor + pipeline tests spawn via
+  // `node <name>.mjs`; they emulate external tools and are executed directly by
+  // Node, not compiled as project-owned TypeScript.
+  "fixtures/mock-bin/claude.mjs",
+  "fixtures/mock-bin/copilot.mjs",
+  "fixtures/mock-bin/fab-inspector.mjs",
+  "fixtures/mock-bin/powerbi-desktop.mjs",
+  "fixtures/mock-bin/powerbi-report-author.mjs",
   // Checked-in bin shim so pnpm can link `od` before daemon dist output exists.
   "apps/daemon/bin/od.mjs",
   "apps/packaged/esbuild.config.mjs",
