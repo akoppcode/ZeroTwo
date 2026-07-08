@@ -24,7 +24,8 @@ export type EntryView =
   | 'library'
   | 'brands'
   | 'integrations'
-  | 'doctor';
+  | 'doctor'
+  | 'reports';
 
 interface Props {
   view: EntryView;
@@ -161,6 +162,15 @@ export function EntryNavRail({
           testId="entry-nav-projects"
         >
           <Icon name="folder" size={18} />
+        </NavButton>
+        <NavButton
+          active={view === 'reports'}
+          ariaLabel="Reports"
+          tooltip="Reports"
+          onClick={() => selectView('reports')}
+          testId="entry-nav-reports"
+        >
+          <Icon name="file-text" size={18} />
         </NavButton>
         <NavButton
           active={view === 'design-systems'}

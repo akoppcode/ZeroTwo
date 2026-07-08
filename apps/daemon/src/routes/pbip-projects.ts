@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import type { RouteDeps } from "../server-context.js";
 import { ProjectService, type ProjectAgent, type AttachOutcome } from "../pbip/project-service.js";
+import { watchForPbip } from "../pbip/attach-watcher.js";
 
 /**
  * Zero Two PBIP project routes (spec §4.4/§4.5/§12): attach an existing PBIP
@@ -16,7 +17,7 @@ function isAgent(value: unknown): value is ProjectAgent {
 
 export function registerPbipProjectRoutes(app: Express, ctx: RegisterPbipProjectRoutesDeps) {
   const { db } = ctx;
-  const { isLocalSameOrigin, resolvedPortRef } = ctx.http;
+  const { isLocalSameOrigin, resolvedPortRef, createSseResponse } = ctx.http;
   const { randomUUID } = ctx.ids;
   const service = new ProjectService();
   const getPort = () => resolvedPortRef.current;
@@ -95,5 +96,57 @@ export function registerPbipProjectRoutes(app: Express, ctx: RegisterPbipProject
     } catch (err: any) {
       res.status(500).json({ error: { code: "SCAFFOLD_FAILED", message: String(err?.message ?? err) } });
     }
+  });
+
+  // Attach-wizard watch stream (spec §4.4, design §3.2 step 2). The renderer
+  // opens this while the user does File → Save As → .pbip in Power BI Desktop.
+  // We watch `destFolder`; when a valid PBIR project settles we attach + persist
+  // and push it back over SSE so the wizard auto-advances. A legacy save surfaces
+  // the enhanced-format guidance so the wizard can loop back. Closing the request
+  // (cancelled wizard) aborts the watcher via the AbortController.
+  app.post("/api/projects/attach/watch", (req, res) => {
+    if (!isLocalSameOrigin(req, getPort())) {
+      return res.status(403).json({ error: "cross-origin request rejected" });
+    }
+    const destFolder = typeof req.body?.destFolder === "string" ? req.body.destFolder.trim() : "";
+    const agent = req.body?.agent;
+    if (!destFolder) {
+      return res.status(400).json({ error: { code: "BAD_REQUEST", message: "destFolder is required" } });
+    }
+    if (!isAgent(agent)) {
+      return res.status(400).json({ error: { code: "BAD_REQUEST", message: "agent must be claude or copilot" } });
+    }
+
+    const sse = createSseResponse(res);
+    const controller = new AbortController();
+    let seq = 0;
+    const emit = (event: string, data: unknown) => sse.send(event, data, ++seq);
+    res.on("close", () => controller.abort());
+
+    emit("watching", { destFolder });
+    void (async () => {
+      try {
+        const result = await watchForPbip(destFolder, { signal: controller.signal });
+        if (result.status === "found") {
+          const outcome = await service.attach(result.root, agent, "attached");
+          if (outcome.ok) {
+            const { id } = persist(outcome);
+            emit("detected", { project: { id, ...outcome.project }, report: outcome.inspect.report });
+            emit("done", {});
+          } else {
+            emit("error", { code: outcome.code, message: outcome.message });
+          }
+        } else if (result.status === "legacy") {
+          emit("legacy", { message: result.message });
+        } else {
+          // "timeout" | "aborted"
+          emit(result.status, {});
+        }
+      } catch (err: any) {
+        emit("error", { message: String(err?.message ?? err) });
+      } finally {
+        sse.end();
+      }
+    })();
   });
 }

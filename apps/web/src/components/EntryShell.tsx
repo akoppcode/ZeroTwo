@@ -93,6 +93,7 @@ import { AgentIcon } from './AgentIcon';
 import type { ModelCapabilityTag } from './modelCapabilityTags';
 import { IntegrationsView, type IntegrationTab } from './IntegrationsView';
 import { DoctorView } from './DoctorView';
+import { ZeroTwoProjectsView } from './ZeroTwoProjectsView';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
 import { enterpriseUrl } from './enterpriseUrl';
 import {
@@ -935,6 +936,9 @@ export function EntryShell({
               />
             ) : null}
             {view === 'doctor' ? <DoctorView /> : null}
+            {view === 'reports' ? (
+              <ZeroTwoProjectsView onOpenDoctor={() => changeView('doctor')} onOpenProject={onOpenProject} />
+            ) : null}
           </div>
         </main>
       </div>
