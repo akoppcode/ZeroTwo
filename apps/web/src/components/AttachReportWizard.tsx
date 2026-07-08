@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
+import { ProvisioningPanel } from './ProvisioningPanel';
 import { ZeroTwoAgentPicker, type ZeroTwoAgent } from './ZeroTwoAgentPicker';
 import { ZeroTwoWizardModal } from './ZeroTwoWizardModal';
 
@@ -515,12 +516,7 @@ export function AttachReportWizard({ open, onClose, onOpened, defaultAgent = 'cl
             ) : null}
           </div>
 
-          {/* TODO(Phase 3): provisioning progress (spec §3.6) renders here —
-              installing skills / plugins before the workspace opens. */}
-          <div className="zt-placeholder" aria-hidden="true">
-            <Icon name="sparkles" size={15} />
-            <span>Provisioning runs here in a later phase.</span>
-          </div>
+          <ProvisioningPanel agent={agent} projectPath={detected ? destFolder : folderPath} />
 
           {actionError ? (
             <div className="zt-notice zt-notice--error" role="alert" data-testid="attach-ready-error">

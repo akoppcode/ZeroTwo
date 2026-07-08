@@ -1,16 +1,19 @@
 // New report wizard (design spec §3.3).
 //
-// Two steps: Basics (name, folder, agent) → Brief (a large free-text field with
-// ghost examples). Submitting scaffolds a fresh PBIR project via
-// POST /api/projects/scaffold and opens the workspace. The Brief text is
-// captured but the planning conversation that consumes it is a later phase.
+// Three steps: Basics (name, folder, agent) → Brief (a large free-text field
+// with ghost examples) → Ready (provisioning, spec §3.6). "Create" scaffolds a
+// fresh PBIR project via POST /api/projects/scaffold and advances to Ready,
+// where the shared ProvisioningPanel installs the Power BI skills before
+// "Open workspace" hands off to the project. The Brief text is captured but the
+// planning conversation that consumes it is a later phase.
 
 import { useCallback, useState } from 'react';
 import { Icon } from './Icon';
+import { ProvisioningPanel } from './ProvisioningPanel';
 import { ZeroTwoAgentPicker, type ZeroTwoAgent } from './ZeroTwoAgentPicker';
 import { ZeroTwoWizardModal } from './ZeroTwoWizardModal';
 
-type NewStep = 'basics' | 'brief';
+type NewStep = 'basics' | 'brief' | 'ready';
 
 interface Props {
   open: boolean;
@@ -33,6 +36,7 @@ export function NewReportWizard({ open, onClose, onOpened, defaultAgent = 'claud
   const [brief, setBrief] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
 
   const reset = useCallback(() => {
     setStep('basics');
@@ -42,6 +46,7 @@ export function NewReportWizard({ open, onClose, onOpened, defaultAgent = 'claud
     setBrief('');
     setBusy(false);
     setError(null);
+    setProjectId(null);
   }, [defaultAgent]);
 
   const close = useCallback(() => {
@@ -51,7 +56,9 @@ export function NewReportWizard({ open, onClose, onOpened, defaultAgent = 'claud
 
   const canContinue = name.trim().length > 0 && folder.trim().length > 0;
 
-  const submit = useCallback(async () => {
+  // Scaffold the project, then advance to Ready so provisioning runs against the
+  // just-created folder before the workspace opens (spec §3.3 step 3).
+  const create = useCallback(async () => {
     setBusy(true);
     setError(null);
     try {
@@ -64,8 +71,8 @@ export function NewReportWizard({ open, onClose, onOpened, defaultAgent = 'claud
       });
       if (res.status === 201) {
         const body = (await res.json()) as { project: { id: string } };
-        onOpened?.(body.project.id);
-        close();
+        setProjectId(body.project.id);
+        setStep('ready');
         return;
       }
       const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
@@ -75,7 +82,12 @@ export function NewReportWizard({ open, onClose, onOpened, defaultAgent = 'claud
     } finally {
       setBusy(false);
     }
-  }, [name, folder, agent, onOpened, close]);
+  }, [name, folder, agent]);
+
+  const openWorkspace = useCallback(() => {
+    if (projectId) onOpened?.(projectId);
+    close();
+  }, [projectId, onOpened, close]);
 
   return (
     <ZeroTwoWizardModal
@@ -157,14 +169,44 @@ export function NewReportWizard({ open, onClose, onOpened, defaultAgent = 'claud
             <button
               type="button"
               className="zt-btn zt-btn--primary"
-              onClick={() => void submit()}
+              onClick={() => void create()}
               disabled={busy}
               data-testid="new-create"
             >
               {busy ? <Icon name="spinner" size={14} /> : null}
-              <span>Create &amp; open</span>
+              <span>Create</span>
             </button>
           </div>
+        </div>
+      ) : null}
+
+      {step === 'ready' ? (
+        <div className="zt-step" data-testid="new-step-ready">
+          <div className="zt-summary">
+            <div className="zt-summary__row">
+              <span className="zt-summary__label">Report</span>
+              <span className="zt-summary__value">{name}</span>
+            </div>
+            <div className="zt-summary__row">
+              <span className="zt-summary__label">Folder</span>
+              <code className="zt-summary__value">{folder}</code>
+            </div>
+            <div className="zt-summary__row">
+              <span className="zt-summary__label">Agent</span>
+              <span className="zt-summary__value">{agent === 'claude' ? 'Claude Code' : 'Copilot'}</span>
+            </div>
+          </div>
+
+          <ProvisioningPanel agent={agent} projectPath={folder.trim()} />
+
+          <button
+            type="button"
+            className="zt-btn zt-btn--primary"
+            onClick={openWorkspace}
+            data-testid="new-open-workspace"
+          >
+            <span>Open workspace</span>
+          </button>
         </div>
       ) : null}
     </ZeroTwoWizardModal>

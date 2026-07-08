@@ -30,10 +30,19 @@ describe('ZeroTwoProjectsView', () => {
 });
 
 describe('NewReportWizard', () => {
-  it('scaffolds via POST /api/projects/scaffold and reports the new project id', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      status: 201,
-      json: async () => ({ project: { id: 'proj-123' } }),
+  it('scaffolds via POST, provisions on the Ready step, then opens the new project', async () => {
+    // Scaffold POST → 201; the Ready step then mounts ProvisioningPanel, which
+    // checks agent auth (GET .../auth). Route by URL so both fetches resolve.
+    const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/projects/scaffold') {
+        return Promise.resolve({ status: 201, json: async () => ({ project: { id: 'proj-123' } }) });
+      }
+      // /api/agents/claude/auth — signed in so provisioning is unblocked.
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ agent: 'claude', loggedIn: true, user: 'ada@example.com', loginCommand: null }),
+      });
     });
     vi.stubGlobal('fetch', fetchMock);
     const onOpened = vi.fn();
@@ -45,13 +54,17 @@ describe('NewReportWizard', () => {
     fireEvent.click(screen.getByTestId('new-continue'));
     fireEvent.click(screen.getByTestId('new-create'));
 
-    await waitFor(() => expect(onOpened).toHaveBeenCalledWith('proj-123'));
-    const call = fetchMock.mock.calls[0]!;
-    expect(call[0]).toBe('/api/projects/scaffold');
-    expect(JSON.parse((call[1] as RequestInit).body as string)).toMatchObject({
+    // Create advances to the Ready step and scaffolds with name/path/agent.
+    await waitFor(() => expect(screen.getByTestId('new-step-ready')).toBeInTheDocument());
+    const scaffoldCall = fetchMock.mock.calls.find((c) => c[0] === '/api/projects/scaffold')!;
+    expect(JSON.parse((scaffoldCall[1] as RequestInit).body as string)).toMatchObject({
       name: 'Q3 Review',
       path: 'C:\\proj\\q3',
       agent: 'claude',
     });
+
+    // Open workspace hands off the scaffolded project id.
+    fireEvent.click(screen.getByTestId('new-open-workspace'));
+    expect(onOpened).toHaveBeenCalledWith('proj-123');
   });
 });
