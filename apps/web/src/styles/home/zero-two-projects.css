@@ -1287,3 +1287,344 @@ code.zt-summary__value {
   font-size: 13px;
   line-height: 1.5;
 }
+
+/* --- Comment-mode annotation canvas (spec §9.1) ------------------- */
+.zt-annot {
+  display: flex;
+  align-items: stretch;
+  min-height: 320px;
+  height: 52vh;
+}
+
+.zt-annot__stage-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background:
+    repeating-conic-gradient(var(--bg-subtle) 0% 25%, var(--bg-panel) 0% 50%) 50% / 20px 20px;
+}
+
+/* Sized to the image so the overlay tracks it exactly; the transform mirrors
+   the preview's zoom / pan so markers stay pinned at any scale. */
+.zt-annot__stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.zt-annot__img {
+  display: block;
+  max-width: 100%;
+  max-height: 52vh;
+  object-fit: contain;
+  box-shadow: var(--shadow-sm);
+  user-select: none;
+}
+
+.zt-annot__overlay {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.zt-annot__overlay:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.zt-annot__markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.zt-annot__marker {
+  position: absolute;
+}
+
+.zt-annot__marker--rect {
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.zt-annot__marker--draft-preview {
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.zt-annot__pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 2px solid var(--bg-panel);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.zt-annot__marker-tag {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  transform: translateY(-100%);
+  max-width: 180px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* Match-confidence accents. */
+.zt-annot__marker--match-high .zt-annot__pin { background: var(--green); }
+.zt-annot__marker--match-mid .zt-annot__pin { background: var(--amber); }
+.zt-annot__marker--match-low .zt-annot__pin { background: var(--red); }
+.zt-annot__marker--match-manual .zt-annot__pin { background: var(--blue); }
+.zt-annot__marker--match-none .zt-annot__pin { background: var(--text-faint); }
+
+.zt-annot__marker.is-selected .zt-annot__pin {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.zt-annot__marker--submitted { opacity: 0.55; }
+.zt-annot__marker--resolved { opacity: 0.32; }
+
+/* --- Side list ---------------------------------------------------- */
+.zt-annot__side {
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.zt-annot__side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.zt-annot__side-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.zt-annot__count {
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.zt-annot__list {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.zt-annot__empty {
+  padding: 16px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.zt-annot__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  cursor: pointer;
+}
+
+.zt-annot__item.is-selected {
+  border-color: var(--accent);
+}
+
+.zt-annot__item--submitted { opacity: 0.7; }
+.zt-annot__item--resolved { opacity: 0.5; }
+
+.zt-annot__item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.zt-annot__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zt-annot__chip--match-high { border-color: var(--green-border); color: var(--green); }
+.zt-annot__chip--match-mid { border-color: color-mix(in srgb, var(--amber) 30%, var(--border)); color: var(--amber); }
+.zt-annot__chip--match-low { border-color: var(--red-border); color: var(--red); }
+.zt-annot__chip--match-manual { border-color: var(--blue-border); color: var(--blue); }
+
+.zt-annot__match {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+}
+
+.zt-annot__del {
+  flex: 0 0 auto;
+}
+
+.zt-annot__text,
+.zt-annot__text-input {
+  width: 100%;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.zt-annot__text {
+  padding: 4px 2px;
+  border: none;
+  background: none;
+  cursor: text;
+  line-height: 1.4;
+}
+
+.zt-annot__text-placeholder {
+  color: var(--text-faint);
+}
+
+.zt-annot__text-input {
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-strong);
+}
+
+.zt-annot__text-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.zt-annot__visual-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zt-annot__visual-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+}
+
+.zt-annot__select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-strong);
+  font-size: 11.5px;
+}
+
+.zt-annot__submit-row {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.zt-annot__submit-row .zt-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.zt-annot__prompt {
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+  max-height: 40%;
+  overflow: auto;
+}
+
+.zt-annot__prompt:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.zt-annot__prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.zt-annot__prompt-body {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-strong);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

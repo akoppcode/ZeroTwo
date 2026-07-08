@@ -44,6 +44,14 @@ export interface PipelineDone {
   remediation?: StageRemediation;
 }
 
+/** A visual container from the report inventory (daemon `PbipVisual`). */
+export interface ReportVisual {
+  /** Visual container name (the `visuals/<id>/` folder + visual.json `name`). */
+  id: string;
+  visualType: string | null;
+  title: string | null;
+}
+
 /** A report page from the attach / scaffold inventory (`report.pages`). */
 export interface ReportPage {
   /** Page folder name (`definition/pages/<name>/`) — the stable id and PNG basename. */
@@ -52,7 +60,7 @@ export interface ReportPage {
   hidden: boolean;
   width: number | null;
   height: number | null;
-  visuals: unknown[];
+  visuals: ReportVisual[];
 }
 
 /** The five stages in canonical order. */

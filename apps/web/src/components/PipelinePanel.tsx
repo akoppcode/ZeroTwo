@@ -9,6 +9,7 @@
 // drop this standalone panel + its projects-view entry affordance.
 
 import { useCallback, useMemo, useState } from 'react';
+import { randomUUID } from '../utils/uuid';
 import { Icon } from './Icon';
 import { PipelineStepper } from './PipelineStepper';
 import { PreviewPane } from './PreviewPane';
@@ -88,6 +89,10 @@ export function PipelinePanel({ projectId, pages, onClose, onOpenWorkspace }: Pr
   const [displayedRunId, setDisplayedRunId] = useState<string | null>(null);
   const [capturedPages, setCapturedPages] = useState<string[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+
+  // Stable comment-mode session id for this project view (spec §9).
+  // TODO(chat phase): tie this to the real agent session id instead of minting one.
+  const sessionId = useMemo(() => randomUUID(), []);
 
   const stale = displayedRunId != null && activeRunId !== displayedRunId;
 
@@ -205,6 +210,7 @@ export function PipelinePanel({ projectId, pages, onClose, onOpenWorkspace }: Pr
         stale={stale}
         refreshing={phase === 'running'}
         onRefresh={() => void run()}
+        sessionId={sessionId}
       />
     </section>
   );

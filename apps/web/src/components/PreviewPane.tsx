@@ -5,6 +5,7 @@
 // re-captured, and a "Refresh preview" button re-runs the pipeline.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnnotationCanvas } from './AnnotationCanvas';
 import { Icon } from './Icon';
 import type { ReportPage } from './pipeline-types';
 
@@ -22,6 +23,10 @@ interface Props {
   refreshing: boolean;
   /** Re-run the pipeline (full run; the daemon exposes no reload-only path). */
   onRefresh: () => void;
+  /** Stable session id for comment-mode annotations (spec §9). */
+  sessionId: string;
+  /** Optional sink for a submitted annotation prompt (future Workspace → chat). */
+  onSubmitPrompt?: (prompt: string) => void;
 }
 
 const MIN_ZOOM = 0.25;
@@ -32,10 +37,21 @@ function clampZoom(value: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100));
 }
 
-export function PreviewPane({ projectId, pages, runId, capturedPages, stale, refreshing, onRefresh }: Props) {
+export function PreviewPane({
+  projectId,
+  pages,
+  runId,
+  capturedPages,
+  stale,
+  refreshing,
+  onRefresh,
+  sessionId,
+  onSubmitPrompt,
+}: Props) {
   const [activePage, setActivePage] = useState<string | null>(pages[0]?.name ?? null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [commentMode, setCommentMode] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
 
   // Keep the active tab valid as the inventory changes.
@@ -89,6 +105,7 @@ export function PreviewPane({ projectId, pages, runId, capturedPages, stale, ref
     hasShot && activePage
       ? `/api/projects/${projectId}/screenshots/${runId}/${encodeURIComponent(activePage)}.png`
       : null;
+  const activePageObj = activePage != null ? pages.find((p) => p.name === activePage) ?? null : null;
 
   return (
     <section className="zt-preview" aria-label="Report preview" data-testid="preview-pane">
@@ -120,6 +137,18 @@ export function PreviewPane({ projectId, pages, runId, capturedPages, stale, ref
               Preview may be stale — refresh
             </span>
           ) : null}
+          <button
+            type="button"
+            className={`zt-btn${commentMode ? ' zt-btn--primary' : ''}`}
+            onClick={() => setCommentMode((v) => !v)}
+            disabled={!hasShot}
+            aria-pressed={commentMode}
+            aria-label="Toggle comment mode"
+            data-testid="preview-comment-toggle"
+          >
+            <Icon name="comment" size={13} />
+            <span>{commentMode ? 'Commenting' : 'Comment'}</span>
+          </button>
           <div className="zt-preview__zoom" role="group" aria-label="Zoom">
             <button
               type="button"
@@ -165,34 +194,47 @@ export function PreviewPane({ projectId, pages, runId, capturedPages, stale, ref
         </div>
       </header>
 
-      <div
-        className={`zt-preview__canvas${zoom > 1 ? ' zt-preview__canvas--pannable' : ''}`}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        data-testid="preview-canvas"
-      >
-        {imgSrc && activePage ? (
-          <img
-            src={imgSrc}
-            alt={`Screenshot of ${pages.find((p) => p.name === activePage)?.displayName ?? activePage}`}
-            className="zt-preview__img"
-            style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
-            draggable={false}
-            data-testid="preview-img"
-          />
-        ) : (
-          <div className="zt-preview__empty" data-testid="preview-empty">
-            <Icon name="image" size={22} />
-            <p>
-              {runId == null
-                ? 'Run the pipeline to capture a preview of every page.'
-                : 'This page was not captured in the latest run.'}
-            </p>
-          </div>
-        )}
-      </div>
+      {commentMode && imgSrc && activePageObj ? (
+        <AnnotationCanvas
+          projectId={projectId}
+          sessionId={sessionId}
+          page={activePageObj}
+          runId={runId}
+          screenshotUrl={imgSrc}
+          zoom={zoom}
+          pan={pan}
+          {...(onSubmitPrompt ? { onSubmitPrompt } : {})}
+        />
+      ) : (
+        <div
+          className={`zt-preview__canvas${zoom > 1 ? ' zt-preview__canvas--pannable' : ''}`}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          data-testid="preview-canvas"
+        >
+          {imgSrc && activePage ? (
+            <img
+              src={imgSrc}
+              alt={`Screenshot of ${activePageObj?.displayName ?? activePage}`}
+              className="zt-preview__img"
+              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+              draggable={false}
+              data-testid="preview-img"
+            />
+          ) : (
+            <div className="zt-preview__empty" data-testid="preview-empty">
+              <Icon name="image" size={22} />
+              <p>
+                {runId == null
+                  ? 'Run the pipeline to capture a preview of every page.'
+                  : 'This page was not captured in the latest run.'}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
