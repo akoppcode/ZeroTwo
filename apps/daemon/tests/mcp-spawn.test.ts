@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, promises as fsp, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
+import { removeTempDirBestEffort } from './helpers/remove-temp-dir.js';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { startServer } from '../src/server.js';
 
@@ -61,7 +62,9 @@ process.exit(0);
     else process.env.CLAUDE_BIN = oldClaudeBin;
     if (oldAgentHome === undefined) delete process.env.OD_AGENT_HOME;
     else process.env.OD_AGENT_HOME = oldAgentHome;
-    await fsp.rm(dir, { recursive: true, force: true });
+    // The spawned fake agent may still hold claude.cmd on Windows (EBUSY on
+    // unlink); best-effort cleanup retries instead of failing the test.
+    await removeTempDirBestEffort(dir);
   }
 }
 
@@ -112,7 +115,11 @@ describe('spawn writes external MCP config for Claude Code', () => {
       body: JSON.stringify({ servers: [] }),
     }).catch(() => {});
     for (const dir of tempDirs.splice(0)) {
-      rmSync(dir, { recursive: true, force: true });
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // Windows may still hold a spawned fake bin (EBUSY) — leave the temp dir.
+      }
     }
   });
 
