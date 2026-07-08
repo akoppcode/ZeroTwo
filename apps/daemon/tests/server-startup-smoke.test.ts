@@ -104,6 +104,14 @@ describe('daemon startup route smoke', () => {
         assert: (body) => expect(body).toHaveProperty('config'),
       },
       {
+        path: '/api/doctor',
+        assert: (body) => {
+          expect(body).toHaveProperty('checks');
+          expect(Array.isArray((body as { checks: unknown[] }).checks)).toBe(true);
+          expect(body).toHaveProperty('overall');
+        },
+      },
+      {
         path: '/api/projects',
         assert: (body) => expect(body).toHaveProperty('projects'),
       },

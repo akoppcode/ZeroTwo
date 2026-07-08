@@ -477,6 +477,7 @@ import { registerLiveArtifactRoutes } from './routes/live-artifact.js';
 import { registerDesignSystemToolRoutes } from './routes/design-system-tool.js';
 import { registerDeployRoutes, registerDeploymentCheckRoutes } from './routes/deploy.js';
 import { registerAppShellRoutes } from './routes/app-shell.js';
+import { registerDoctorRoutes } from './routes/doctor.js';
 import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './routes/project/index.js';
 import { registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
 import { registerChatRoutes } from './routes/chat.js';
@@ -2720,6 +2721,8 @@ export async function startServer({
     nativeDialogs: nativeDialogDeps,
     research: researchDeps,
   });
+  // Environment health checks (spec §3.3) for the Doctor screen.
+  registerDoctorRoutes(app, { http: httpDeps });
   app.use('/frames', express.static(FRAMES_DIR));
   registerProjectExportRoutes(app, {
     db,
