@@ -44,9 +44,10 @@ describe("GitService (real git, local repo)", () => {
     await git.commitAll(dir, "second");
     const log = await git.log(dir);
     expect(log.map((c) => c.subject)).toEqual(["second", "first"]);
-    expect(log[0].sha).toMatch(/^[0-9a-f]{40}$/);
-    expect(log[0].shortSha.length).toBeGreaterThan(0);
-    expect(log[0].authoredAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const head = log[0]!;
+    expect(head.sha).toMatch(/^[0-9a-f]{40}$/);
+    expect(head.shortSha.length).toBeGreaterThan(0);
+    expect(head.authoredAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   it("restores to an earlier commit (hard reset) after stashing dirty changes", async () => {

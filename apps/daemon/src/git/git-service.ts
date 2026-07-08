@@ -107,8 +107,8 @@ export class GitService {
       .map((line) => line.trim())
       .filter(Boolean)
       .map((line) => {
-        const [sha, shortSha, subject, authoredAt] = line.split(sep);
-        return { sha, shortSha, subject: subject ?? "", authoredAt: authoredAt ?? "" };
+        const [sha = "", shortSha = "", subject = "", authoredAt = ""] = line.split(sep);
+        return { sha, shortSha, subject, authoredAt };
       });
   }
 
