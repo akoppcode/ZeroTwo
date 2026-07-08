@@ -48,19 +48,18 @@ export interface PbipSemanticModel {
 export type PbipInspectResult =
   | {
       ok: true;
-      /** The `.pbip` pointer file name. */
-      pbipFile: string;
+      /** The `.pbip` pointer file name, or null — real PBIP folders (e.g. a
+       *  PBIX converted to source, or a git-committed report) frequently omit
+       *  the Desktop convenience pointer; the `*.Report/definition/` folder is
+       *  the authoritative PBIR marker. */
+      pbipFile: string | null;
       report: PbipReport;
       semanticModel: PbipSemanticModel | null;
     }
   | {
       ok: false;
       /** Machine-readable reason so the wizard can branch. */
-      code:
-        | "no-pbip"
-        | "no-report"
-        | "pbir-legacy"
-        | "unreadable";
+      code: "no-report" | "pbir-legacy" | "unreadable";
       message: string;
     };
 
@@ -215,14 +214,16 @@ async function findPbipPointer(root: string): Promise<string | null> {
 }
 
 export async function inspectPbip(root: string): Promise<PbipInspectResult> {
+  // The `*.Report` folder is the authoritative marker; the `.pbip` pointer is
+  // optional (real exports / git-committed reports often omit it).
   const pbipFile = await findPbipPointer(root);
-  if (!pbipFile) {
-    return { ok: false, code: "no-pbip", message: "No .pbip pointer file found in this folder." };
-  }
-
   const reportDirName = await firstEntry(root, (n) => n.endsWith(".Report"));
   if (!reportDirName) {
-    return { ok: false, code: "no-report", message: "No *.Report folder found next to the .pbip file." };
+    return {
+      ok: false,
+      code: "no-report",
+      message: "No *.Report folder found in this folder — not a Power BI project.",
+    };
   }
   const reportDir = join(root, reportDirName);
 

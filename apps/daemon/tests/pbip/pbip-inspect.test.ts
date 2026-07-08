@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 
@@ -67,16 +67,24 @@ describe("inspectPbip — rejection paths", () => {
     expect(result.message).toMatch(/enhanced report format/i);
   });
 
-  it("rejects a folder with no .pbip pointer", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "zt-nopbip-"));
-    const result = await inspectPbip(dir);
-    expect(result).toMatchObject({ ok: false, code: "no-pbip" });
-  });
-
-  it("rejects a .pbip whose .Report folder is missing", async () => {
+  it("rejects a folder with no *.Report (not a Power BI project)", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zt-noreport-"));
     await writeFile(join(dir, "Orphan.pbip"), "{}", "utf8");
     const result = await inspectPbip(dir);
     expect(result).toMatchObject({ ok: false, code: "no-report" });
+  });
+});
+
+describe("inspectPbip — optional .pbip pointer", () => {
+  it("accepts a PBIR project that has no .pbip pointer (real exports omit it)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zt-nopointer-"));
+    const dest = join(dir, "copy");
+    await cp(SAMPLE, dest, { recursive: true });
+    await rm(join(dest, "Sample.pbip"));
+    const result = await inspectPbip(dest);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.pbipFile).toBeNull();
+    expect(result.report.pages).toHaveLength(2);
   });
 });

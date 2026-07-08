@@ -18,7 +18,7 @@ export interface ZeroTwoProject {
   path: string;
   kind: ProjectKind;
   agent: ProjectAgent;
-  pbipFile: string;
+  pbipFile: string | null;
   reportDirName: string;
   hasSemanticModel: boolean;
   semanticModelTmdl: boolean;
@@ -52,16 +52,17 @@ export class ProjectService {
     }
 
     await this.git.ensureRepo(root);
+    const importedName = inspect.pbipFile?.replace(/\.pbip$/i, "") ?? inspect.report.reportDirName.replace(/\.Report$/i, "");
     const message =
       kind === "scaffolded"
         ? `chore: scaffold ${basename(root)}`
-        : `chore: initial import of ${inspect.pbipFile}`;
+        : `chore: initial import of ${inspect.pbipFile ?? importedName}`;
     const baselineSha = await this.git.commitAll(root, message);
 
     const pageCount = inspect.report.pages.length;
     const visualCount = inspect.report.pages.reduce((n, p) => n + p.visuals.length, 0);
     const project: ZeroTwoProject = {
-      name: inspect.pbipFile.replace(/\.pbip$/i, ""),
+      name: importedName,
       path: root,
       kind,
       agent,
