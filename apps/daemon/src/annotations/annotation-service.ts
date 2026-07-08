@@ -46,13 +46,13 @@ export interface CreateAnnotationInput {
   kind: AnnotationKind;
   x: number;
   y: number;
-  w?: number;
-  h?: number;
+  w?: number | undefined;
+  h?: number | undefined;
   canvasX: number;
   canvasY: number;
-  canvasW?: number;
-  canvasH?: number;
-  text?: string;
+  canvasW?: number | undefined;
+  canvasH?: number | undefined;
+  text?: string | undefined;
 }
 
 type Row = Record<string, any>;
