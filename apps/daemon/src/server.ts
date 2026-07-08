@@ -479,6 +479,7 @@ import { registerDeployRoutes, registerDeploymentCheckRoutes } from './routes/de
 import { registerAppShellRoutes } from './routes/app-shell.js';
 import { registerDoctorRoutes } from './routes/doctor.js';
 import { registerPbipProjectRoutes } from './routes/pbip-projects.js';
+import { registerAgentProvisionRoutes } from './routes/agents-provision.js';
 import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './routes/project/index.js';
 import { registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
 import { registerChatRoutes } from './routes/chat.js';
@@ -2726,6 +2727,8 @@ export async function startServer({
   registerDoctorRoutes(app, { http: httpDeps });
   // Zero Two PBIP attach / scaffold (spec §4.4/§4.5).
   registerPbipProjectRoutes(app, { db, http: httpDeps, ids: idDeps });
+  // Agent subscription auth + skill provisioning (spec §5.2/§5.3).
+  registerAgentProvisionRoutes(app, { http: httpDeps });
   app.use('/frames', express.static(FRAMES_DIR));
   registerProjectExportRoutes(app, {
     db,
