@@ -281,7 +281,9 @@ describe('EntryShell design systems view', () => {
 });
 
 describe('EntryShell new project rail', () => {
-  it('creates a blank project directly from the rail plus', async () => {
+  // Zero Two: the rail "+" opens the Zero Two New report wizard on the Reports
+  // home, not the open-design new-project modal.
+  it('opens the Zero Two New report wizard from the rail plus', async () => {
     window.localStorage.setItem('od.entry.railOpen', 'false');
     const fetchMock = vi.fn(
       async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
@@ -324,9 +326,9 @@ describe('EntryShell new project rail', () => {
     fireEvent.click(screen.getByTestId('entry-nav-new-project'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('new-project-modal')).toBeTruthy();
+      expect(screen.getByTestId('new-step-basics')).toBeTruthy();
     });
-    expect(screen.getByTestId('new-project-panel')).toBeTruthy();
+    expect(screen.getByTestId('new-name-input')).toBeTruthy();
     expect(props.onOpenProject).not.toHaveBeenCalled();
     expect(props.onCreateProject).not.toHaveBeenCalled();
     const createCall = fetchMock.mock.calls.find(
@@ -344,7 +346,9 @@ describe('EntryShell new project rail', () => {
     );
   });
 
-  it('opens the new project modal from the Projects tab button', async () => {
+  // Zero Two: nav reduced to Reports+Doctor — the open-design Projects nav
+  // button was removed, so this open-design surface is no longer reachable.
+  it.skip('opens the new project modal from the Projects tab button', async () => {
     window.localStorage.setItem('od.entry.railOpen', 'false');
     const fetchMock = vi.fn(
       async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
@@ -428,7 +432,10 @@ describe('EntryShell new project rail', () => {
 });
 
 describe('EntryShell Home submit handoff', () => {
-  it('keeps the Home run button in sending state until project creation resolves', async () => {
+  // Zero Two: nav reduced to Reports+Doctor and the default view is now the
+  // Zero Two Reports home, so the open-design Home hero is no longer the
+  // launch surface. This exercises that removed open-design default.
+  it.skip('keeps the Home run button in sending state until project creation resolves', async () => {
     globalThis.fetch = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
       const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
       if (url.endsWith('/api/plugins')) return jsonResponse({ plugins: [] });

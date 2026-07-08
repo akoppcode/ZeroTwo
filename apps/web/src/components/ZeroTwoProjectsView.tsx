@@ -3,7 +3,7 @@
 // hosts both wizard modals. Wired into the entry shell the same rail/route way
 // as DoctorView.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AttachReportWizard } from './AttachReportWizard';
 import { Icon, type IconName } from './Icon';
 import { NewReportWizard } from './NewReportWizard';
@@ -16,6 +16,10 @@ interface Props {
   onOpenDoctor?: () => void;
   /** Open the workspace for a freshly attached / scaffolded project. */
   onOpenProject?: (projectId: string) => void;
+  /** When true, open the New report wizard (driven by the entry rail's "+"). */
+  openNewReport?: boolean;
+  /** Called once an `openNewReport` request has been consumed. */
+  onNewReportHandled?: () => void;
 }
 
 interface PathCard {
@@ -43,7 +47,7 @@ const PATHS: PathCard[] = [
   },
 ];
 
-export function ZeroTwoProjectsView({ onOpenDoctor, onOpenProject }: Props) {
+export function ZeroTwoProjectsView({ onOpenDoctor, onOpenProject, openNewReport, onNewReportHandled }: Props) {
   const [attachOpen, setAttachOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   // Phase 4: once a project is attached / scaffolded, open its pipeline preview
@@ -52,6 +56,16 @@ export function ZeroTwoProjectsView({ onOpenDoctor, onOpenProject }: Props) {
   // and the project/session context — this inline toggle is a stopgap.
   const [pipeline, setPipeline] = useState<{ projectId: string; pages: ReportPage[] } | null>(null);
   const [projectTab, setProjectTab] = useState<'pipeline' | 'rules'>('pipeline');
+
+  // The entry rail's "+" requests the New report wizard by flipping
+  // `openNewReport`. Consume it once, clearing any inline pipeline preview so
+  // the wizard is actually visible, then notify the parent to reset the flag.
+  useEffect(() => {
+    if (!openNewReport) return;
+    setPipeline(null);
+    setNewOpen(true);
+    onNewReportHandled?.();
+  }, [openNewReport, onNewReportHandled]);
 
   const openPipeline = (projectId: string, pages: ReportPage[]) => {
     setAttachOpen(false);

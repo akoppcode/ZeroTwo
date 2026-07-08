@@ -435,8 +435,19 @@ export function EntryShell({
   // to /design-systems lands on that section. We derive the active
   // view from the route rather than keeping it in component state.
   const route = useRoute();
-  const view: EntryViewKind = route.kind === 'home' ? route.view : 'home';
+  // Zero Two is the whole app: a fresh launch (bare `/`, route view 'home') and
+  // any non-home route resolve to the Zero Two Reports home. The open-design
+  // 'home' surface is left mounted-but-unreachable.
+  // Cast keeps `view` typed as the full EntryViewKind (including 'home') so the
+  // open-design branches below still type-check even though they are now dead.
+  const view: EntryViewKind =
+    route.kind === 'home' && route.view !== 'home'
+      ? route.view
+      : ('reports' as EntryViewKind);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  // Set by the rail's "New" (+) button so the Reports view opens Zero Two's
+  // New report wizard on arrival. ZeroTwoProjectsView clears it once consumed.
+  const [ztNewReportRequested, setZtNewReportRequested] = useState(false);
   useEffect(() => {
     if (view !== 'design-systems') return;
     void onDesignSystemsRefresh?.();
@@ -632,7 +643,7 @@ export function EntryShell({
 
   function finishOnboarding() {
     onCompleteOnboarding();
-    changeView('home');
+    changeView('reports');
   }
 
   const avatarMenu = (
@@ -707,7 +718,10 @@ export function EntryShell({
               area: 'nav',
               element: 'new_project_plus',
             });
-            openNewProject();
+            // Zero Two: the rail "+" opens the New report wizard on the Reports
+            // home instead of the open-design new-project modal.
+            setZtNewReportRequested(true);
+            changeView('reports');
           }}
           open={railOpen}
           onClose={() => setRailOpen(false)}
@@ -937,7 +951,12 @@ export function EntryShell({
             ) : null}
             {view === 'doctor' ? <DoctorView /> : null}
             {view === 'reports' ? (
-              <ZeroTwoProjectsView onOpenDoctor={() => changeView('doctor')} onOpenProject={onOpenProject} />
+              <ZeroTwoProjectsView
+                onOpenDoctor={() => changeView('doctor')}
+                onOpenProject={onOpenProject}
+                openNewReport={ztNewReportRequested}
+                onNewReportHandled={() => setZtNewReportRequested(false)}
+              />
             ) : null}
           </div>
         </main>

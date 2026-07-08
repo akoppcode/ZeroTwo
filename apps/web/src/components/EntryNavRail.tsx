@@ -12,7 +12,6 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { EntryHelpMenu } from './EntryHelpMenu';
 import { Icon } from './Icon';
 import { useT } from '../i18n';
-import { LIBRARY_UI_VISIBLE } from '../features/libraryUi';
 
 export type EntryView =
   | 'home'
@@ -75,8 +74,6 @@ export function EntryNavRail({
 }: Props) {
   const t = useT();
   const brandLabel = t('app.brand');
-  const homeLabel = t('entry.navHome');
-  const isHome = view === 'home';
 
   // Once opened the rail stays docked (Manus-style); navigating between
   // destinations no longer collapses it.
@@ -113,7 +110,7 @@ export function EntryNavRail({
           <button
             type="button"
             className="entry-nav-rail__logo"
-            onClick={() => selectView('home')}
+            onClick={() => selectView('reports')}
             aria-label={brandLabel}
             data-testid="entry-nav-logo"
           >
@@ -146,24 +143,6 @@ export function EntryNavRail({
           <Icon name="plus" size={18} />
         </NavButton>
         <NavButton
-          active={isHome}
-          ariaLabel={homeLabel}
-          tooltip={homeLabel}
-          onClick={() => selectView('home')}
-          testId="entry-nav-home"
-        >
-          <Icon name="home" size={18} />
-        </NavButton>
-        <NavButton
-          active={view === 'projects'}
-          ariaLabel={t('entry.navProjects')}
-          tooltip={t('entry.navProjects')}
-          onClick={() => selectView('projects')}
-          testId="entry-nav-projects"
-        >
-          <Icon name="folder" size={18} />
-        </NavButton>
-        <NavButton
           active={view === 'reports'}
           ariaLabel="Reports"
           tooltip="Reports"
@@ -171,53 +150,6 @@ export function EntryNavRail({
           testId="entry-nav-reports"
         >
           <Icon name="file-text" size={18} />
-        </NavButton>
-        <NavButton
-          active={view === 'design-systems'}
-          ariaLabel={t('entry.navDesignSystems')}
-          tooltip={t('entry.navDesignSystems')}
-          onClick={() => selectView('design-systems')}
-          testId="entry-nav-design-systems"
-        >
-          <Icon name="palette" size={18} />
-        </NavButton>
-        {LIBRARY_UI_VISIBLE ? (
-          <NavButton
-            active={view === 'library'}
-            ariaLabel="Library"
-            tooltip="Library"
-            onClick={() => selectView('library')}
-            testId="entry-nav-library"
-          >
-            <Icon name="layers-filled" size={18} />
-          </NavButton>
-        ) : null}
-        <NavButton
-          active={view === 'tasks'}
-          ariaLabel={t('entry.navTasks')}
-          tooltip={t('entry.navTasks')}
-          onClick={() => selectView('tasks')}
-          testId="entry-nav-tasks"
-        >
-          <Icon name="kanban" size={18} />
-        </NavButton>
-        <NavButton
-          active={view === 'plugins'}
-          ariaLabel={t('entry.navPlugins')}
-          tooltip={t('entry.navPlugins')}
-          onClick={() => selectView('plugins')}
-          testId="entry-nav-plugins"
-        >
-          <Icon name="grid" size={18} />
-        </NavButton>
-        <NavButton
-          active={view === 'integrations'}
-          ariaLabel={t('entry.navIntegrations')}
-          tooltip={t('entry.navIntegrations')}
-          onClick={() => selectView('integrations')}
-          testId="entry-nav-integrations"
-        >
-          <Icon name="link" size={18} />
         </NavButton>
         <NavButton
           active={view === 'doctor'}
