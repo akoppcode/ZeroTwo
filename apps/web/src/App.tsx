@@ -494,7 +494,10 @@ function AppInner() {
   // the old theme. Safe here because the component tree is ssr:false.
   useLayoutEffect(() => {
     applyAppearanceToDocument({
-      theme: config.theme ?? 'system',
+      // Zero Two is dark-only in v1 (the design mockup is dark). Force dark
+      // regardless of any inherited 'system'/'light' config so the app matches
+      // the design; the theme picker is a later concern.
+      theme: 'dark',
       accentColor: config.accentColor,
     });
   }, [config.theme, config.accentColor]);
@@ -823,7 +826,7 @@ function AppInner() {
       // React re-render of the whole tree before the layout effect re-applies
       // it — which reads as a perceptible lag after the click.
       applyAppearanceToDocument({
-        theme: theme ?? 'system',
+        theme: theme ?? 'dark',
         accentColor: config.accentColor,
       });
       saveConfig(next);
