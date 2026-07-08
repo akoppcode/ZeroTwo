@@ -58,10 +58,17 @@ describe('runBuildTest — explicit overrides', () => {
   });
 
   it('truncates the log when output exceeds the budget', async () => {
-    // Produce ~64 KiB of output; cap is 1 KiB.
+    // Produce ~64 KiB of output; cap is 1 KiB. Emit it from a script file run as
+    // `node <path>` rather than `node -e "…"`: the inline form's nested quotes
+    // are mangled by the Windows `cmd.exe /d /s /c` launcher (they survive on
+    // `sh -c` but collapse to empty output under cmd), whereas a quote-free
+    // `node <path>` invocation runs identically on both shells. The temp path
+    // has no spaces, so no quoting is needed.
+    const bigOutScript = path.join(tmp, 'bigout.js');
+    await writeFile(bigOutScript, "process.stdout.write('X'.repeat(65536));\n");
     const report = await runBuildTest({
       cwd: tmp,
-      buildCommand: 'node -e "process.stdout.write(String.fromCharCode(88).repeat(65536))"',
+      buildCommand: `node ${bigOutScript}`,
       testCommand:  null,
       logBudgetBytes: 1024,
     });

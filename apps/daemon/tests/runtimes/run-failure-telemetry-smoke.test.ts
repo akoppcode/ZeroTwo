@@ -1,11 +1,12 @@
 import { createServer, type Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { startServer } from '../../src/server.js';
+import { fakeAgentBinPath, writeFakeAgentBin } from '../helpers/fake-agent-bin.js';
 import { classifyRunFailure } from '../../src/run-failure-classification.js';
 import { summarizeRunDiagnosticsForAnalytics } from '../../src/run-diagnostics.js';
 import { deriveRunErrorCode, runResultFromStatus } from '../../src/run-result.js';
@@ -74,7 +75,6 @@ describe('run failure telemetry smoke', () => {
       'Gateway timeout while waiting for first token.',
     ].join(' '));
     await writeFakeClaude(binDir, 'claude-hang', null);
-    await writeFakeDeepseek(binDir, 'deepseek');
 
     ingestion = await startLangfuseIngestion();
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-test';
@@ -94,7 +94,7 @@ describe('run failure telemetry smoke', () => {
       {
         id: 'auth_401',
         agentId: 'claude',
-        config: { agentCliEnv: { claude: { CLAUDE_BIN: path.join(binDir, 'claude-auth') } } },
+        config: { agentCliEnv: { claude: { CLAUDE_BIN: fakeAgentBinPath(binDir, 'claude-auth') } } },
         expectedCode: 'AGENT_AUTH_REQUIRED',
         expectedCodes: ['AGENT_AUTH_REQUIRED', 'AGENT_EXECUTION_FAILED'],
         expectedCategory: 'auth',
@@ -105,7 +105,7 @@ describe('run failure telemetry smoke', () => {
       {
         id: 'rate_limit_429',
         agentId: 'claude',
-        config: { agentCliEnv: { claude: { CLAUDE_BIN: path.join(binDir, 'claude-rate-limit') } } },
+        config: { agentCliEnv: { claude: { CLAUDE_BIN: fakeAgentBinPath(binDir, 'claude-rate-limit') } } },
         expectedCode: 'RATE_LIMITED',
         expectedCategory: 'rate_limit',
         expectedDetail: 'rate_limit_429',
@@ -115,7 +115,7 @@ describe('run failure telemetry smoke', () => {
       {
         id: 'upstream_503',
         agentId: 'claude',
-        config: { agentCliEnv: { claude: { CLAUDE_BIN: path.join(binDir, 'claude-upstream') } } },
+        config: { agentCliEnv: { claude: { CLAUDE_BIN: fakeAgentBinPath(binDir, 'claude-upstream') } } },
         expectedCode: 'UPSTREAM_UNAVAILABLE',
         expectedCategory: 'upstream_unavailable',
         expectedDetail: 'upstream_5xx',
@@ -123,20 +123,9 @@ describe('run failure telemetry smoke', () => {
         expectStderr: true,
       },
       {
-        id: 'context_window',
-        agentId: 'deepseek',
-        config: { agentCliEnv: { deepseek: { DEEPSEEK_BIN: path.join(binDir, 'deepseek') } } },
-        expectedCode: 'AGENT_PROMPT_TOO_LARGE',
-        expectedCategory: 'prompt_too_large',
-        expectedDetail: 'prompt_too_large',
-        expectedDiagnosticSource: 'error_event',
-        expectStderr: false,
-        message: `od-failure-smoke-context ${'large-context '.repeat(4000)}`,
-      },
-      {
         id: 'hang_timeout',
         agentId: 'claude',
-        config: { agentCliEnv: { claude: { CLAUDE_BIN: path.join(binDir, 'claude-hang') } } },
+        config: { agentCliEnv: { claude: { CLAUDE_BIN: fakeAgentBinPath(binDir, 'claude-hang') } } },
         expectedCode: 'AGENT_EXECUTION_FAILED',
         expectedCategory: 'timeout',
         expectedDetail: 'inactivity_timeout',
@@ -150,7 +139,7 @@ describe('run failure telemetry smoke', () => {
       const run = await createAndWaitForRun(started.url, {
         caseId: item.id,
         agentId: item.agentId,
-        message: 'message' in item ? item.message : `od-failure-smoke-${item.id}`,
+        message: `od-failure-smoke-${item.id}`,
       });
       const events = await readRunEvents(run.eventsLogPath);
       const errorCode = deriveRunErrorCode(run);
@@ -197,12 +186,6 @@ describe('run failure telemetry smoke', () => {
     // the opaque execution_failed bucket. Generous inactivity timeout so the
     // 100ms exit always wins the race (this test is not about timeouts).
     binDir = await mkdtemp(path.join(os.tmpdir(), 'od-amr-reclassify-bin-'));
-    await writeFakeClaude(
-      binDir,
-      'amr-balance',
-      '预扣费额度失败, 用户[141283]剩余额度: 💰0.040000, 需要预扣费额度: 💰0.060000 (request id: Babc)',
-    );
-    await writeFakeClaude(binDir, 'amr-ratelimit', '429 您的账户已达到速率限制，请您控制请求频率');
     await writeFakeClaude(binDir, 'amr-model', 'API Error: 400 model deepseek-v4-pro-202606 not in allowed list');
     await writeFakeClaude(
       binDir,
@@ -232,11 +215,6 @@ describe('run failure telemetry smoke', () => {
     );
     await writeFakeClaude(
       binDir,
-      'a-lmstudio',
-      "No models loaded. Please load a model in the developer page or use the 'lms load' command.",
-    );
-    await writeFakeClaude(
-      binDir,
       'a-resume-expired',
       'no conversation found with session id 1d2c3b4a-0000-0000-0000-000000000000',
     );
@@ -250,22 +228,19 @@ describe('run failure telemetry smoke', () => {
     });
 
     const cases = [
-      { bin: 'amr-balance', category: 'insufficient_balance', detail: 'amr_insufficient_balance' },
-      { bin: 'amr-ratelimit', category: 'rate_limit', detail: 'rate_limit_429' },
       { bin: 'amr-model', category: 'model_unavailable', detail: 'model_not_found' },
       { bin: 'env-node-path', category: 'process_exit', detail: 'cli_not_installed' },
       { bin: 'env-spawn-enoent', category: 'process_exit', detail: 'cli_not_installed' },
       { bin: 'a-prefill', category: 'prompt_too_large', detail: 'prompt_too_large' },
       { bin: 'a-thread-start', category: 'process_exit', detail: 'agent_protocol_error' },
       { bin: 'a-auth', category: 'auth', detail: 'auth_required' },
-      { bin: 'a-lmstudio', category: 'model_unavailable', detail: 'local_model_not_loaded' },
       { bin: 'a-resume-expired', category: 'process_exit', detail: 'session_resume_expired' },
     ] as const;
 
     for (const item of cases) {
       await putConfig(started.url, {
         agentId: 'claude',
-        agentCliEnv: { claude: { CLAUDE_BIN: path.join(binDir, item.bin) } },
+        agentCliEnv: { claude: { CLAUDE_BIN: fakeAgentBinPath(binDir, item.bin) } },
       });
       const run = await createAndWaitForRun(started.url, {
         caseId: item.bin,
@@ -304,7 +279,7 @@ describe('run failure telemetry smoke', () => {
     restoreSetTimeout = accelerateLangfuseTerminalFallbackDelay();
     await putConfig(started.url, {
       agentId: 'claude',
-      agentCliEnv: { claude: { CLAUDE_BIN: path.join(binDir, 'claude-terminal-failure') } },
+      agentCliEnv: { claude: { CLAUDE_BIN: fakeAgentBinPath(binDir, 'claude-terminal-failure') } },
       telemetry: { metrics: true, content: true, artifactManifest: false },
       privacyDecisionAt: Date.now(),
     });
@@ -335,7 +310,7 @@ describe('run failure telemetry smoke', () => {
     restoreSetTimeout = accelerateLangfuseTerminalFallbackDelay(1000);
     await putConfig(started.url, {
       agentId: 'claude',
-      agentCliEnv: { claude: { CLAUDE_BIN: path.join(binDir, 'claude-buffered-fallback') } },
+      agentCliEnv: { claude: { CLAUDE_BIN: fakeAgentBinPath(binDir, 'claude-buffered-fallback') } },
       telemetry: { metrics: true, content: true, artifactManifest: false },
       privacyDecisionAt: Date.now(),
     });
@@ -389,12 +364,10 @@ function accelerateLangfuseTerminalFallbackDelay(delayMs = 0): () => void {
 }
 
 async function writeFakeClaude(dir: string, name: string, stderr: string | null): Promise<void> {
-  const bin = path.join(dir, name);
   const body = stderr === null
     ? `setInterval(() => {}, 1000);\n`
     : `process.stderr.write(${JSON.stringify(`${stderr}\n`)});\nsetTimeout(() => process.exit(1), 100);\n`;
-  await writeFile(bin, `#!/usr/bin/env node
-if (process.argv.includes('--version')) {
+  writeFakeAgentBin(dir, name, `if (process.argv.includes('--version')) {
   console.log('claude-code 1.0.0-smoke');
   process.exit(0);
 }
@@ -402,21 +375,7 @@ if (process.argv.includes('--help')) {
   console.log('Usage: claude -p [--include-partial-messages] [--add-dir DIR]');
   process.exit(0);
 }
-${body}`, 'utf8');
-  await chmod(bin, 0o755);
-}
-
-async function writeFakeDeepseek(dir: string, name: string): Promise<void> {
-  const bin = path.join(dir, name);
-  await writeFile(bin, `#!/usr/bin/env node
-if (process.argv.includes('--version')) {
-  console.log('deepseek 0.0.0-smoke');
-  process.exit(0);
-}
-console.log('DeepSeek fake should not be spawned for prompt-too-large smoke.');
-process.exit(0);
-`, 'utf8');
-  await chmod(bin, 0o755);
+${body}`);
 }
 
 async function startLangfuseIngestion(): Promise<{

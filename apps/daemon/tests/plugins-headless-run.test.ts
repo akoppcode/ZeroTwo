@@ -32,6 +32,7 @@ import path from 'node:path';
 import url from 'node:url';
 import { promisify } from 'node:util';
 import { startServer } from '../src/server.js';
+import { POSIX_SHELL_SCRIPT_SUPPORTED } from './platform-capabilities.js';
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -368,7 +369,14 @@ describe('Plan §8 e2e-3 (entry slice) — headless install → project → run'
     await fetch(`${baseUrl}/api/runs/${encodeURIComponent(runBody.runId)}/cancel`, { method: 'POST' });
   });
 
-  it('creates share projects for publishing and contributing a user plugin', async () => {
+  // The publish/contribute flow shells out to `gh` and `git` through the CLI's
+  // shell-less `execFile('gh'|'git', …)` — the same shape production uses for
+  // real `.exe` binaries. The fake `gh`/`git` this test injects on PATH are
+  // Node scripts, which only a shebang-honouring OS can spawn shell-lessly;
+  // Windows execFile rejects a `.cmd`/`.bat` shim (EINVAL) and there is no way
+  // to hand it a Node-backed fake, so this runs on POSIX and is skipped where
+  // that OS capability is absent.
+  it.skipIf(!POSIX_SHELL_SCRIPT_SUPPORTED)('creates share projects for publishing and contributing a user plugin', async () => {
     const installResp = await fetch(`${baseUrl}/api/plugins/install`, {
       method:  'POST',
       headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
@@ -680,16 +688,41 @@ process.exit(result.status ?? 0);
           'claude',
           `
 const fs = require('node:fs');
-let input = '';
+// Answer the daemon's version/help probes immediately and exit — they spawn
+// the CLI without ever closing its stdin, so any path that waited on stdin
+// would hang detection.
+if (process.argv.includes('--version')) { console.log('claude 1.0.0-headless'); process.exit(0); }
+if (process.argv.includes('--help')) { console.log('Usage: claude -p'); process.exit(0); }
+// claude runs with --input-format stream-json: the daemon writes the composed
+// prompt as ONE framed { type: 'user', message: { content: [{ text }] } } JSONL
+// line and deliberately keeps stdin open (it closes it only on a clean terminal
+// turn). So read the framed line — never wait for stdin 'end', which never
+// arrives — extract the prompt text, then answer with claude-stream-json frames
+// and exit so the daemon records a succeeded turn.
+let buf = '';
+let handled = false;
 process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => { input += chunk; });
-process.stdin.on('end', () => {
-  const capturePath = process.env.OD_PROMPT_CAPTURE;
-  fs.appendFileSync(capturePath + '.all', '--- prompt ---\\n' + input + '\\n');
-  if (input.includes('# Headless Local Skill') || input.includes('## Active plugin')) {
-    fs.writeFileSync(capturePath, input);
+process.stdin.on('data', (chunk) => {
+  buf += chunk;
+  let idx;
+  while (!handled && (idx = buf.indexOf('\\n')) >= 0) {
+    const line = buf.slice(0, idx);
+    buf = buf.slice(idx + 1);
+    if (!line.trim()) continue;
+    let msg;
+    try { msg = JSON.parse(line); } catch { continue; }
+    const content = msg && msg.message && Array.isArray(msg.message.content) ? msg.message.content : [];
+    const prompt = content.map((part) => part.text || '').join('');
+    handled = true;
+    const capturePath = process.env.OD_PROMPT_CAPTURE;
+    fs.appendFileSync(capturePath + '.all', '--- prompt ---\\n' + prompt + '\\n');
+    if (prompt.includes('# Headless Local Skill') || prompt.includes('## Active plugin')) {
+      fs.writeFileSync(capturePath, prompt);
+    }
+    console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-headless' }));
+    console.log(JSON.stringify({ type: 'assistant', message: { id: 'm-headless', content: [{ type: 'text', text: 'headless-ok' }], stop_reason: 'end_turn' } }));
+    process.exit(0);
   }
-  console.log(JSON.stringify({ type: 'text', part: { text: 'headless-ok' } }));
 });
 `,
           async () => {

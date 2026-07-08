@@ -1,8 +1,10 @@
 import type { Server } from 'node:http';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
+
+import { removeTempDirBestEffort } from './helpers/remove-temp-dir.js';
 
 type StartedServer = {
   url: string;
@@ -23,7 +25,7 @@ const originalDataDir = process.env.OD_DATA_DIR;
 
 afterEach(async () => {
   await stopServer();
-  if (dataDir) await rm(dataDir, { recursive: true, force: true });
+  if (dataDir) await removeTempDirBestEffort(dataDir);
   dataDir = null;
   if (originalDataDir === undefined) delete process.env.OD_DATA_DIR;
   else process.env.OD_DATA_DIR = originalDataDir;

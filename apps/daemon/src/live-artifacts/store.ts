@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import type { Dirent } from 'node:fs';
-import { appendFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { ensureProject, projectDir } from '../projects.js';
+import { renameWithRetry } from '../windows-rename-retry.js';
 import { DEFAULT_LIVE_ARTIFACT_TOTAL_TIMEOUT_MS } from './refresh.js';
 import { renderHtmlTemplateV1 } from './render.js';
 import type { BoundedJsonObject, LiveArtifact, LiveArtifactCreateInput, LiveArtifactProvenance, LiveArtifactRefreshErrorRecord, LiveArtifactRefreshLogEntry, LiveArtifactRefreshSourceMetadata, LiveArtifactRefreshStepStatus, LiveArtifactUpdateInput, LiveArtifactValidationIssue } from './schema.js';
@@ -347,7 +348,7 @@ function stableJson(value: unknown): string {
 async function writeFileAtomic(filePath: string, contents: string): Promise<void> {
   const tempPath = `${filePath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
   await writeFile(tempPath, contents, 'utf8');
-  await rename(tempPath, filePath);
+  await renameWithRetry(tempPath, filePath);
 }
 
 function defaultTemplateHtml(title: string): string {
@@ -713,7 +714,7 @@ export async function createLiveArtifact(options: CreateLiveArtifactOptions): Pr
 
   try {
     const writtenArtifact = await writeLiveArtifactFiles(tempPaths, persisted.value, templateHtml, provenanceJson);
-    await rename(tempPaths.artifactDir, finalPaths.artifactDir);
+    await renameWithRetry(tempPaths.artifactDir, finalPaths.artifactDir);
     return { artifact: writtenArtifact, paths: finalPaths };
   } catch (error) {
     await rm(tempPaths.artifactDir, { recursive: true, force: true });
@@ -915,7 +916,7 @@ async function writeLiveArtifactSuccessfulSnapshot(
       writeFile(resolveInside(tempSnapshotDir, LIVE_ARTIFACT_PREVIEW_FILE, 'live artifact snapshot path escapes snapshot dir'), options.previewHtml, 'utf8'),
       writeFile(resolveInside(tempSnapshotDir, LIVE_ARTIFACT_PROVENANCE_FILE, 'live artifact snapshot path escapes snapshot dir'), stableJson(options.provenanceJson), 'utf8'),
     ]);
-    await rename(tempSnapshotDir, finalSnapshotDir);
+    await renameWithRetry(tempSnapshotDir, finalSnapshotDir);
   } catch (error) {
     await rm(tempSnapshotDir, { recursive: true, force: true });
     throw error;

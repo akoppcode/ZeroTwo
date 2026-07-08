@@ -6,6 +6,9 @@ export const IGNORED_PROJECT_DIR_NAMES = new Set([
   'node_modules',
   'vendor',
   '.od',
+  // Internal live-artifact storage: watching it holds directory handles that
+  // race the atomic rename in live-artifacts/store.ts on Windows (EPERM).
+  '.live-artifacts',
   'debug',
   'dist',
   'build',

@@ -1,9 +1,12 @@
 import type http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { writeFakeAgentBin } from './helpers/fake-agent-bin.js';
+import { removeTempDirBestEffort } from './helpers/remove-temp-dir.js';
 
 type StartedServer = {
   url: string;
@@ -71,7 +74,7 @@ describe('daemon startup route smoke', () => {
   afterAll(async () => {
     await Promise.resolve(started.shutdown?.());
     await new Promise<void>((resolve) => started.server.close(() => resolve()));
-    await rmRecursiveWithRetry(dataDir);
+    await removeTempDirBestEffort(dataDir);
     if (originalDataDir === undefined) delete process.env.OD_DATA_DIR;
     else process.env.OD_DATA_DIR = originalDataDir;
     vi.resetModules();
@@ -318,7 +321,7 @@ describe('daemon startup route smoke', () => {
       await expect(health.json()).resolves.toMatchObject({ ok: true });
     } finally {
       await clearAgentCliEnv(started.url);
-      await rm(binDir, { recursive: true, force: true });
+      await removeTempDirBestEffort(binDir);
     }
   });
 
@@ -367,7 +370,7 @@ describe('daemon startup route smoke', () => {
       await expect(health.json()).resolves.toMatchObject({ ok: true });
     } finally {
       await clearAgentCliEnv(started.url);
-      await rm(binDir, { recursive: true, force: true });
+      await removeTempDirBestEffort(binDir);
     }
   });
 
@@ -437,7 +440,7 @@ describe('daemon startup route smoke', () => {
       expect(canceledPackage.artifacts).toEqual([]);
     } finally {
       await clearAgentCliEnv(started.url);
-      await rm(binDir, { recursive: true, force: true });
+      await removeTempDirBestEffort(binDir);
     }
   });
 
@@ -548,7 +551,7 @@ describe('daemon startup route smoke', () => {
     } finally {
       await Promise.all(activeRunIds.map((runId) => cancelRun(started.url, runId).catch(() => null)));
       await clearAgentCliEnv(started.url);
-      await rm(binDir, { recursive: true, force: true });
+      await removeTempDirBestEffort(binDir);
     }
   });
 
@@ -593,7 +596,7 @@ describe('daemon startup route smoke', () => {
       }, { timeout: 10_000 }).not.toEqual(expect.arrayContaining([firstRunId, secondRunId]));
     } finally {
       await clearAgentCliEnv(started.url);
-      await rm(binDir, { recursive: true, force: true });
+      await removeTempDirBestEffort(binDir);
     }
   });
 
@@ -629,7 +632,7 @@ describe('daemon startup route smoke', () => {
       expect(replayAtTerminalCursor).toContain('event: end');
     } finally {
       await clearAgentCliEnv(started.url);
-      await rm(binDir, { recursive: true, force: true });
+      await removeTempDirBestEffort(binDir);
     }
   });
 });
@@ -805,9 +808,7 @@ async function cancelRun(url: string, runId: string): Promise<RunStatus> {
 }
 
 async function writeFailingClaudeBin(dir: string, name: string, stderr: string): Promise<string> {
-  const bin = join(dir, name);
-  await writeFile(bin, `#!/usr/bin/env node
-if (process.argv.includes('--version')) {
+  return writeFakeAgentBin(dir, name, `if (process.argv.includes('--version')) {
   console.log('claude 0.0.0-smoke');
   process.exit(0);
 }
@@ -817,15 +818,11 @@ if (process.argv.includes('--help')) {
 }
 process.stderr.write(${JSON.stringify(stderr)});
 process.exit(1);
-`, 'utf8');
-  await chmod(bin, 0o755);
-  return bin;
+`);
 }
 
 async function writeHangingClaudeBin(dir: string, name: string): Promise<string> {
-  const bin = join(dir, name);
-  await writeFile(bin, `#!/usr/bin/env node
-if (process.argv.includes('--version')) {
+  return writeFakeAgentBin(dir, name, `if (process.argv.includes('--version')) {
   console.log('claude 0.0.0-smoke');
   process.exit(0);
 }
@@ -834,15 +831,11 @@ if (process.argv.includes('--help')) {
   process.exit(0);
 }
 setInterval(() => {}, 1000);
-`, 'utf8');
-  await chmod(bin, 0o755);
-  return bin;
+`);
 }
 
 async function writeSuccessfulClaudeBin(dir: string, name: string): Promise<string> {
-  const bin = join(dir, name);
-  await writeFile(bin, `#!/usr/bin/env node
-if (process.argv.includes('--version')) {
+  return writeFakeAgentBin(dir, name, `if (process.argv.includes('--version')) {
   console.log('claude 0.0.0-smoke');
   process.exit(0);
 }
@@ -860,9 +853,7 @@ console.log(JSON.stringify({
   }
 }));
 setTimeout(() => process.exit(0), 20);
-`, 'utf8');
-  await chmod(bin, 0o755);
-  return bin;
+`);
 }
 
 async function readRunSse(url: string, runId: string, lastEventId?: number): Promise<string> {
@@ -893,18 +884,4 @@ function sseEventId(body: string, eventName: string): number {
 
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function rmRecursiveWithRetry(target: string): Promise<void> {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    try {
-      await rm(target, { recursive: true, force: true });
-      return;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOTEMPTY' || attempt === 4) {
-        throw error;
-      }
-      await delay(100 * (attempt + 1));
-    }
-  }
 }

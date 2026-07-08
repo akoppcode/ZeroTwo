@@ -1,11 +1,12 @@
 import type { Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { startServer } from '../src/server.js';
+import { writeFakeAgentBin } from './helpers/fake-agent-bin.js';
 
 type StartedServer = {
   url: string;
@@ -193,10 +194,8 @@ function restoreEnv(env: Record<string, string | undefined>): void {
 }
 
 async function writeFlakyClaude(dir: string, name: string): Promise<string> {
-  const bin = path.join(dir, name);
   const counterPath = path.join(dir, `${name}-attempts`);
-  await writeFile(bin, `#!/usr/bin/env node
-const fs = require('node:fs');
+  const bin = writeFakeAgentBin(dir, name, `const fs = require('node:fs');
 const counterPath = ${JSON.stringify(counterPath)};
 if (process.argv.includes('--version')) {
   console.log('claude-code 1.0.0-retry-runtime');
@@ -224,8 +223,7 @@ if (attempts === 0) {
   }));
   setTimeout(() => process.exit(0), 20);
 }
-`, 'utf8');
-  await chmod(bin, 0o755);
+`);
   return bin;
 }
 
@@ -233,11 +231,9 @@ async function writeStallingClaude(
   dir: string,
   name: string,
 ): Promise<{ bin: string; argsLogPath: string }> {
-  const bin = path.join(dir, name);
   const counterPath = path.join(dir, `${name}-attempts`);
   const argsLogPath = path.join(dir, `${name}-args.jsonl`);
-  await writeFile(bin, `#!/usr/bin/env node
-const fs = require('node:fs');
+  const bin = writeFakeAgentBin(dir, name, `const fs = require('node:fs');
 const counterPath = ${JSON.stringify(counterPath)};
 const argsLogPath = ${JSON.stringify(argsLogPath)};
 if (process.argv.includes('--version')) {
@@ -270,8 +266,7 @@ if (attempts === 0) {
   }));
   setTimeout(() => process.exit(0), 20);
 }
-`, 'utf8');
-  await chmod(bin, 0o755);
+`);
   return { bin, argsLogPath };
 }
 

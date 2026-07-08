@@ -1,3 +1,8 @@
+// Must precede the '../../src/…' imports: selects handle-free polling so the
+// project-events watcher does not race the atomic `.live-artifacts` rename with
+// EPERM on Windows (see helper for detail).
+import '../helpers/use-polling-watcher.js';
+
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';

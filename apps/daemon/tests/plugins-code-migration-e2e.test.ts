@@ -126,10 +126,13 @@ describe('code-migration pipeline — full atom chain', () => {
 
     // 6. build-test (we override commands to no-ops so we don't shell
     //    out to a real toolchain in CI).
+    // `node --version` is a quote-free no-op that exits 0 through BOTH the POSIX
+    // `sh -c` and the Windows `cmd.exe /d /s /c` launchers build-test uses (the
+    // Unix `true` builtin does not exist on cmd.exe).
     const buildReport = await runBuildTest({
       cwd,
-      buildCommand: 'true',
-      testCommand:  'true',
+      buildCommand: 'node --version',
+      testCommand:  'node --version',
     });
     expect(buildReport.signals['build.passing']).toBe(true);
     expect(buildReport.signals['tests.passing']).toBe(true);

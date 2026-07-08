@@ -1,11 +1,12 @@
 import type http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { startServer } from '../src/server.js';
+import { writeFakeAgentBin } from './helpers/fake-agent-bin.js';
 
 type StartedServer = {
   url: string;
@@ -68,7 +69,7 @@ describe('POST /api/runs headless fallbacks', () => {
     const emptyAgentHome = await mkdtemp(path.join(os.tmpdir(), 'od-headless-run-home-'));
     const priorConfig = await readAppConfigFromServer(started.url);
     try {
-      const opencodeBin = await writeFakeOpencode(binDir);
+      const copilotBin = await writeFakeCopilot(binDir);
       process.env.PATH = '';
       process.env.OD_AGENT_HOME = emptyAgentHome;
 
@@ -79,7 +80,7 @@ describe('POST /api/runs headless fallbacks', () => {
           agentId: 'claude',
           agentCliEnv: {
             claude: { CLAUDE_BIN: path.join(binDir, 'missing-claude') },
-            opencode: { OPENCODE_BIN: opencodeBin },
+            copilot: { COPILOT_BIN: copilotBin },
           },
         }),
       });
@@ -101,7 +102,7 @@ describe('POST /api/runs headless fallbacks', () => {
       );
       expect(statusResponse.status).toBe(200);
       const statusBody = await statusResponse.json() as { agentId: string | null };
-      expect(statusBody.agentId).toBe('opencode');
+      expect(statusBody.agentId).toBe('copilot');
     } finally {
       await restoreAppConfig(started.url, priorConfig);
       await rm(binDir, { recursive: true, force: true });
@@ -166,27 +167,16 @@ async function restoreAppConfig(url: string, config: Record<string, unknown>): P
   });
 }
 
-async function writeFakeOpencode(dir: string): Promise<string> {
-  const bin = path.join(dir, 'opencode');
-  await writeFile(bin, `#!/usr/bin/env node
-if (process.argv.includes('--version')) {
-  console.log('opencode 0.0.0');
+async function writeFakeCopilot(dir: string): Promise<string> {
+  return writeFakeAgentBin(dir, 'copilot', `if (process.argv.includes('--version')) {
+  console.log('copilot 0.0.0');
   process.exit(0);
 }
-if (process.argv[2] === 'models') {
-  console.log('test/model');
-  process.exit(0);
-}
-if (process.argv[2] === 'run') {
-  process.stdin.resume();
-  process.stdin.on('end', () => process.exit(0));
-  setTimeout(() => process.exit(0), 50);
-} else {
-  process.exit(0);
-}
-`, 'utf8');
-  await chmod(bin, 0o755);
-  return bin;
+// Non-interactive run: consume the piped prompt on stdin and exit cleanly.
+process.stdin.resume();
+process.stdin.on('end', () => process.exit(0));
+setTimeout(() => process.exit(0), 50);
+`);
 }
 
 function delay(ms: number): Promise<void> {

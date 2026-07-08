@@ -1,11 +1,12 @@
 import type { Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { startServer } from '../src/server.js';
+import { writeFakeAgentBin } from './helpers/fake-agent-bin.js';
 
 // Phase B red spec for resume-on-failure (continue an interrupted run instead
 // of discarding it). A run that produced output AND then hit a *resumable*
@@ -199,11 +200,9 @@ async function writeResumableClaude(
   dir: string,
   name: string,
 ): Promise<{ bin: string; argsLogPath: string }> {
-  const bin = path.join(dir, name);
   const counterPath = path.join(dir, `${name}-attempts`);
   const argsLogPath = path.join(dir, `${name}-args.jsonl`);
-  await writeFile(bin, `#!/usr/bin/env node
-const fs = require('node:fs');
+  const bin = writeFakeAgentBin(dir, name, `const fs = require('node:fs');
 const counterPath = ${JSON.stringify(counterPath)};
 const argsLogPath = ${JSON.stringify(argsLogPath)};
 if (process.argv.includes('--version')) {
@@ -242,8 +241,7 @@ if (attempts === 0) {
   }));
   setTimeout(() => process.exit(0), 20);
 }
-`, 'utf8');
-  await chmod(bin, 0o755);
+`);
   return { bin, argsLogPath };
 }
 
@@ -254,10 +252,8 @@ async function writeNoOutputUpstreamClaude(
   dir: string,
   name: string,
 ): Promise<{ bin: string; argsLogPath: string }> {
-  const bin = path.join(dir, name);
   const argsLogPath = path.join(dir, `${name}-args.jsonl`);
-  await writeFile(bin, `#!/usr/bin/env node
-const fs = require('node:fs');
+  const bin = writeFakeAgentBin(dir, name, `const fs = require('node:fs');
 const argsLogPath = ${JSON.stringify(argsLogPath)};
 if (process.argv.includes('--version')) {
   console.log('claude-code 1.0.0-resume-noout');
@@ -271,8 +267,7 @@ fs.appendFileSync(argsLogPath, JSON.stringify(process.argv.slice(2)) + '\\n');
 console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-resume-test' }));
 process.stderr.write('Upstream request failed: HTTP 503 before first token.\\n');
 setTimeout(() => process.exit(1), 20);
-`, 'utf8');
-  await chmod(bin, 0o755);
+`);
   return { bin, argsLogPath };
 }
 
@@ -282,9 +277,7 @@ async function writeTextOnlyUpstreamClaude(
   dir: string,
   name: string,
 ): Promise<{ bin: string }> {
-  const bin = path.join(dir, name);
-  await writeFile(bin, `#!/usr/bin/env node
-if (process.argv.includes('--version')) { console.log('claude-code 1.0.0-resume-textonly'); process.exit(0); }
+  const bin = writeFakeAgentBin(dir, name, `if (process.argv.includes('--version')) { console.log('claude-code 1.0.0-resume-textonly'); process.exit(0); }
 if (process.argv.includes('--help')) { console.log('Usage: claude -p [--include-partial-messages]'); process.exit(0); }
 console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-resume-test' }));
 console.log(JSON.stringify({
@@ -293,8 +286,7 @@ console.log(JSON.stringify({
 }));
 process.stderr.write('Upstream request failed: HTTP 503 stream disconnected before completion.\\n');
 setTimeout(() => process.exit(1), 20);
-`, 'utf8');
-  await chmod(bin, 0o755);
+`);
   return { bin };
 }
 
