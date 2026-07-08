@@ -92,6 +92,7 @@ import { Icon } from './Icon';
 import { AgentIcon } from './AgentIcon';
 import type { ModelCapabilityTag } from './modelCapabilityTags';
 import { IntegrationsView, type IntegrationTab } from './IntegrationsView';
+import { DoctorView } from './DoctorView';
 import { InlineModelSwitcher } from './InlineModelSwitcher';
 import { enterpriseUrl } from './enterpriseUrl';
 import {
@@ -933,6 +934,7 @@ export function EntryShell({
                 onSkillsChanged={onSkillsChanged}
               />
             ) : null}
+            {view === 'doctor' ? <DoctorView /> : null}
           </div>
         </main>
       </div>
