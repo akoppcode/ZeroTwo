@@ -12,7 +12,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { Readable, Transform } from "node:stream";
+import { once } from "node:events";
+import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 import { atomicCopyFile, isProcessAlive, pathContains, removePathBestEffort } from "@open-design/platform";
@@ -554,8 +555,22 @@ async function writeResponseBodyToPartial(
   if (response.body == null) throw new Error("download response did not include a body");
   let receivedBytes = options.startBytes;
   let sessionReceivedBytes = 0;
-  const meter = new Transform({
-    transform(chunk: Buffer, _encoding, callback) {
+  const writeStream = createWriteStream(target.partialPath, {
+    flags: options.startBytes > 0 ? "a" : "w",
+  });
+  // Consume the body manually rather than via `pipeline`: on a mid-stream
+  // connection drop, `pipeline` DESTROYS the write stream, discarding buffered
+  // bytes and leaving an empty `.partial` so the retry can't resume via Range
+  // (a flake that only reproduced on slower hosts). Here we instead gracefully
+  // `end()` the stream on error, flushing the bytes received so far to disk
+  // before rethrowing.
+  const source = Readable.fromWeb(response.body as never);
+  const endWriteStream = () =>
+    new Promise<void>((resolveEnd, rejectEnd) => {
+      writeStream.end((error?: Error | null) => (error ? rejectEnd(error) : resolveEnd()));
+    });
+  try {
+    for await (const chunk of source as AsyncIterable<Buffer>) {
       receivedBytes += chunk.byteLength;
       sessionReceivedBytes += chunk.byteLength;
       options.emit({
@@ -563,14 +578,15 @@ async function writeResponseBodyToPartial(
         sessionReceivedBytes,
         ...(options.totalBytes == null ? {} : { totalBytes: options.totalBytes }),
       });
-      callback(null, chunk);
-    },
-  });
-  await pipeline(
-    Readable.fromWeb(response.body as never),
-    meter,
-    createWriteStream(target.partialPath, { flags: options.startBytes > 0 ? "a" : "w" }),
-  );
+      if (!writeStream.write(chunk)) {
+        await once(writeStream, "drain");
+      }
+    }
+    await endWriteStream();
+  } catch (error) {
+    await endWriteStream().catch(() => undefined);
+    throw error;
+  }
 }
 
 async function tryResumeDownload(
