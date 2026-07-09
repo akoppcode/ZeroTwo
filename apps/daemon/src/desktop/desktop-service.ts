@@ -70,15 +70,17 @@ export class DesktopService {
     if (res.code !== 0) throw new DesktopBridgeError(res.stderr.trim() || "open failed", "open");
   }
 
-  async reload(options: { reportOnly?: boolean } = {}): Promise<void> {
-    const reportOnly = options.reportOnly ?? true;
-    const res = await this.run(reportOnly ? ["reload", "--report-only"] : ["reload"]);
+  // The real bridge `reload` reloads the current file — there is no report-only
+  // vs with-model flag (the option is kept for call-site compatibility but not
+  // forwarded). Real options are --pid / --wait-seconds.
+  async reload(_options: { reportOnly?: boolean } = {}): Promise<void> {
+    const res = await this.run(["reload"]);
     if (res.code !== 0) throw new DesktopBridgeError(res.stderr.trim() || "reload failed", "reload");
   }
 
   /** Capture every page to `outDir`; returns the captured page names. */
   async screenshotAll(outDir: string): Promise<string[]> {
-    const res = await this.run(["screenshot-all", "--out", outDir]);
+    const res = await this.run(["screenshot-all", "--output-dir", outDir]);
     if (res.code !== 0) throw new DesktopBridgeError(res.stderr.trim() || "screenshot failed", "screenshot");
     try {
       const parsed = JSON.parse(res.stdout.trim());

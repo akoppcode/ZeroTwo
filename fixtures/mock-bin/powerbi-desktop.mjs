@@ -52,13 +52,12 @@ if (cmd === "reload") {
     process.stderr.write("reload failed: bridge not connected\n");
     process.exit(1);
   }
-  const mode = args.includes("--report-only") ? "report-only" : "with-model";
-  process.stdout.write(`reloaded (${mode})\n`);
+  process.stdout.write("reloaded\n");
   process.exit(0);
 }
 
 if (cmd === "screenshot-all") {
-  const outDir = argValue("--out");
+  const outDir = argValue("--output-dir");
   if (!outDir) {
     process.stderr.write("screenshot-all: --out <dir> is required\n");
     process.exit(1);
