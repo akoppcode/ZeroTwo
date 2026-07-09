@@ -53,21 +53,32 @@ export class DesktopService {
     const text = res.stdout.trim();
     if (res.code !== 0) throw new DesktopBridgeError(res.stderr.trim() || "bridge status failed", "status");
     try {
-      // Real bridge output is JSON with an explicit `status` field, e.g.
-      // {"status":"not_connected","instances":[]} or
-      // {"status":"connected","instances":[{pid,title},…]}. Trust that field —
-      // an empty `instances` array is NOT a signal of connectivity.
+      // Real bridge output is JSON with a top-level `status`:
+      //   {"status":"not_connected","instances":[]}                         (idle)
+      //   {"status":"ready","instances":[{pid,bridgeStatus:"connected",…}]}  (up)
+      // "ready" (a Desktop up with the local API), "connected", or any instance
+      // advertising a connected bridge all mean connected; only "not_connected"
+      // (or no signal at all) means disconnected. An empty `instances` array is
+      // NOT itself a connectivity signal.
       const parsed = JSON.parse(text);
-      const instances: DesktopInstance[] = Array.isArray(parsed.instances)
-        ? parsed.instances.map((i: any) => ({ pid: Number(i.pid), title: String(i.title ?? "") }))
-        : [];
+      const rawInstances: any[] = Array.isArray(parsed.instances) ? parsed.instances : [];
+      const instances: DesktopInstance[] = rawInstances.map((i: any) => ({
+        pid: Number(i.pid),
+        title: String(i.title ?? i.displayName ?? i.currentFilePath ?? ""),
+      }));
+      const status = typeof parsed.status === "string" ? parsed.status.toLowerCase() : "";
+      const anyBridgeConnected = rawInstances.some(
+        (i) => String(i.bridgeStatus ?? "").toLowerCase() === "connected",
+      );
       const connected =
-        typeof parsed.status === "string" ? parsed.status === "connected" : instances.length > 0;
+        status === "not_connected"
+          ? false
+          : anyBridgeConnected || status === "ready" || status === "connected" || instances.length > 0;
       return { connected, instances };
     } catch {
-      // Legacy human-readable forms ("not_connected" / "connected: …").
+      // Legacy human-readable forms ("not_connected" / "connected: …" / "ready").
       if (/^not_connected/i.test(text)) return { connected: false, instances: [] };
-      return { connected: /^connected/i.test(text), instances: [] };
+      return { connected: /^(connected|ready)/i.test(text), instances: [] };
     }
   }
 

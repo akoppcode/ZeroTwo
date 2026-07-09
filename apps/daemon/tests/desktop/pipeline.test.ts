@@ -43,6 +43,26 @@ describe("DesktopService (mock bridge)", () => {
     expect(status.instances).toEqual([]);
   });
 
+  it('treats the real "ready" status (Desktop up, bridge connected) as connected', async () => {
+    const readyJson = JSON.stringify({
+      status: "ready",
+      instances: [
+        {
+          pid: 23232,
+          bridgeStatus: "connected",
+          currentFilePath: "C:\\reports\\Sales\\Sales.pbip",
+        },
+      ],
+    });
+    const runner: CliRunner = async (_bin, argv) =>
+      argv[0] === "status"
+        ? { code: 0, stdout: readyJson, stderr: "" }
+        : { code: 1, stdout: "", stderr: "unexpected" };
+    const status = await new DesktopService(runner).status();
+    expect(status.connected).toBe(true);
+    expect(status.instances[0]).toEqual({ pid: 23232, title: "C:\\reports\\Sales\\Sales.pbip" });
+  });
+
   it("reports the cached manifest capability list", async () => {
     const desktop = new DesktopService(mockRunner());
     expect(await desktop.manifest()).toContain("screenshot-all");
