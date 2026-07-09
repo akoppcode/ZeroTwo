@@ -19,6 +19,26 @@ interface ProjectRow {
   metadata_json: string | null;
 }
 
+/**
+ * Latest pipeline run per project, kept in memory so a run survives the UI
+ * unmounting (view switch / navigation). The SSE handler still streams a fresh
+ * run live; this snapshot lets the UI restore (and poll while `running`) after
+ * it re-mounts. Only the newest run per project is retained (overwritten on a
+ * new run).
+ */
+type PipelineRunState =
+  | { status: "none" }
+  | {
+      runId: string;
+      status: "running" | "done";
+      ok?: boolean;
+      stages: StageEvent[];
+      screenshots?: { runId: string; pages: string[] };
+      remediation?: { stage: string; message: string };
+      startedAt: number;
+      finishedAt?: number;
+    };
+
 function screenshotsRoot(projectPath: string): string {
   return join(projectPath, ".zerotwo", "screenshots");
 }
@@ -28,6 +48,9 @@ export function registerPipelineRoutes(app: Express, ctx: RegisterPipelineRoutes
   const { isLocalSameOrigin, resolvedPortRef, createSseResponse } = ctx.http;
   const { randomUUID } = ctx.ids;
   const getPort = () => resolvedPortRef.current;
+
+  // Latest run per project (see PipelineRunState). Lives for the daemon session.
+  const latestRuns = new Map<string, Exclude<PipelineRunState, { status: "none" }>>();
 
   const loadProject = (id: string): { path: string; reportDir: string; openPath: string } | null => {
     const row = db.prepare(`SELECT pbip_path, metadata_json FROM projects WHERE id = ?`).get(id) as
@@ -73,6 +96,18 @@ export function registerPipelineRoutes(app: Express, ctx: RegisterPipelineRoutes
     let seq = 0;
     const emit = (event: string, data: unknown) => sse.send(event, data, ++seq);
 
+    // Track this as the project's latest run so the UI can restore/poll it after
+    // the SSE client goes away (navigation / view switch). Writes to `state`
+    // continue even after the client disconnects — the run is not tied to the SSE.
+    const projectId = req.params.id;
+    const state: Exclude<PipelineRunState, { status: "none" }> = {
+      runId,
+      status: "running",
+      stages: [],
+      startedAt: Date.now(),
+    };
+    latestRuns.set(projectId, state);
+
     emit("pipeline:start", { runId });
     void (async () => {
       try {
@@ -87,16 +122,40 @@ export function registerPipelineRoutes(app: Express, ctx: RegisterPipelineRoutes
           // User-triggered preview: don't hard-stop on a report's pre-existing
           // validation issues; surface them but still reload + screenshot.
           blockOnValidate: false,
-          onEvent: (event: StageEvent) => emit("pipeline:stage", event),
-          onScreenshots: (payload) => emit("screenshots:updated", payload),
+          onEvent: (event: StageEvent) => {
+            state.stages.push(event);
+            emit("pipeline:stage", event);
+          },
+          onScreenshots: (payload) => {
+            state.screenshots = payload;
+            emit("screenshots:updated", payload);
+          },
         });
+        state.status = "done";
+        state.ok = result.ok;
+        if (result.screenshots) state.screenshots = result.screenshots;
+        if (result.remediation) state.remediation = result.remediation;
+        state.finishedAt = Date.now();
         emit("pipeline:done", result);
       } catch (err: any) {
+        state.status = "done";
+        state.ok = false;
+        state.finishedAt = Date.now();
         emit("pipeline:error", { message: String(err?.message ?? err) });
       } finally {
         sse.end();
       }
     })();
+  });
+
+  // Latest (in-progress or last-completed) run for a project, so the UI can
+  // restore after unmounting and poll while `running`. Local-only.
+  app.get("/api/projects/:id/pipeline/latest", (req, res) => {
+    if (!isLocalSameOrigin(req, getPort())) {
+      return res.status(403).json({ error: "cross-origin request rejected" });
+    }
+    const state = latestRuns.get(req.params.id);
+    res.json(state ?? ({ status: "none" } satisfies PipelineRunState));
   });
 
   // Serve a captured screenshot (spec §7). Page name is sanitized and the

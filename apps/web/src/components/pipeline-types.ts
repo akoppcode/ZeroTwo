@@ -63,6 +63,23 @@ export interface ReportPage {
   visuals: ReportVisual[];
 }
 
+/** A stored pipeline run (daemon `GET /api/projects/:id/pipeline/latest`), used to
+ *  restore the stepper + preview after the panel unmounts (navigation / view
+ *  switch) and to poll while a run is still in progress. */
+export interface PipelineRunSnapshot {
+  runId: string;
+  status: 'running' | 'done';
+  ok?: boolean;
+  stages: StageEvent[];
+  screenshots?: ScreenshotsPayload;
+  remediation?: StageRemediation;
+  startedAt: number;
+  finishedAt?: number;
+}
+
+/** `GET …/pipeline/latest` response: a stored run, or `none` if never run. */
+export type PipelineLatest = { status: 'none' } | PipelineRunSnapshot;
+
 /** The five stages in canonical order. */
 export const STAGE_ORDER: StageName[] = ['validate', 'inspect', 'reload', 'screenshot', 'commit'];
 

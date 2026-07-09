@@ -8,7 +8,7 @@
 // TODO(Workspace phase): lift Run/preview state into the Workspace shell and
 // drop this standalone panel + its projects-view entry affordance.
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { randomUUID } from '../utils/uuid';
 import { Icon } from './Icon';
 import { PipelineStepper } from './PipelineStepper';
@@ -16,6 +16,7 @@ import { PreviewPane } from './PreviewPane';
 import {
   STAGE_ORDER,
   type PipelineDone,
+  type PipelineLatest,
   type ReportPage,
   type ScreenshotsPayload,
   type StageEvent,
@@ -41,6 +42,19 @@ const PENDING_STAGES: Record<StageName, StageView> = STAGE_ORDER.reduce(
   (acc, name) => ({ ...acc, [name]: { status: 'pending' } }),
   {} as Record<StageName, StageView>,
 );
+
+/** Poll interval (ms) for restoring an in-progress run that started before this
+ *  panel mounted (or while it was unmounted during navigation). */
+const LATEST_POLL_MS = 1500;
+
+/** Replay a run's ordered stage events into the stepper's per-stage view. */
+function stagesToView(events: StageEvent[]): Record<StageName, StageView> {
+  const view: Record<StageName, StageView> = { ...PENDING_STAGES };
+  for (const ev of events) {
+    view[ev.stage] = { status: ev.status, detail: ev.detail, attempt: ev.attempt };
+  }
+  return view;
+}
 
 /**
  * Read the daemon SSE stream, invoking `onEvent` per `event:`/`data:` frame.
@@ -98,7 +112,80 @@ export function PipelinePanel({ projectId, pages, onClose, onOpenWorkspace, onSu
 
   const stale = displayedRunId != null && activeRunId !== displayedRunId;
 
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopPolling = useCallback(() => {
+    if (pollRef.current !== null) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  // Hydrate the stepper + preview from a stored run (restore after unmount) and
+  // report whether the run is still in progress (so the caller keeps polling).
+  const applyLatest = useCallback((latest: PipelineLatest): boolean => {
+    if (latest.status !== 'running' && latest.status !== 'done') return false;
+    setStarted(true);
+    setStages(stagesToView(latest.stages ?? []));
+    setActiveRunId(latest.runId);
+    if (latest.screenshots) {
+      setDisplayedRunId(latest.screenshots.runId);
+      setCapturedPages(latest.screenshots.pages ?? []);
+    }
+    if (latest.status === 'running') {
+      setRemediation(null);
+      setPhase('running');
+      return true;
+    }
+    setRemediation(latest.remediation ?? null);
+    setPhase('done');
+    return false;
+  }, []);
+
+  // On mount / project change: restore the latest run, and if it is still
+  // running, poll until it completes. A fresh "Run pipeline" click supersedes
+  // this via the live SSE stream (which stops the poll).
+  useEffect(() => {
+    let cancelled = false;
+    stopPolling();
+    setPhase('idle');
+    setStarted(false);
+    setStages(PENDING_STAGES);
+    setRemediation(null);
+    setError(null);
+    setDisplayedRunId(null);
+    setCapturedPages([]);
+    setActiveRunId(null);
+
+    const fetchLatest = async (): Promise<PipelineLatest | null> => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/pipeline/latest`);
+        if (!res.ok) return null;
+        return (await res.json()) as PipelineLatest;
+      } catch {
+        return null;
+      }
+    };
+
+    void (async () => {
+      const latest = await fetchLatest();
+      if (cancelled || !latest) return;
+      const running = applyLatest(latest);
+      if (!running) return;
+      pollRef.current = setInterval(async () => {
+        const next = await fetchLatest();
+        if (cancelled || !next) return;
+        if (!applyLatest(next)) stopPolling();
+      }, LATEST_POLL_MS);
+    })();
+
+    return () => {
+      cancelled = true;
+      stopPolling();
+    };
+  }, [projectId, applyLatest, stopPolling]);
+
   const run = useCallback(async () => {
+    stopPolling();
     setPhase('running');
     setStarted(true);
     setStages(PENDING_STAGES);
@@ -146,7 +233,7 @@ export function PipelinePanel({ projectId, pages, onClose, onOpenWorkspace, onSu
       setError(err instanceof Error ? err.message : 'Pipeline failed.');
       setPhase('error');
     }
-  }, [projectId]);
+  }, [projectId, stopPolling]);
 
   const runLabel = useMemo(() => {
     if (phase === 'running') return 'Running…';

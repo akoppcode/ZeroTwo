@@ -28,8 +28,11 @@ const PBIP_PAYLOAD = {
 function stubFetch() {
   const fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
-    if (url === '/api/projects/proj-1/pbip') {
+    if (url === '/api/pbip-projects/proj-1') {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(PBIP_PAYLOAD) } as Response);
+    }
+    if (url === '/api/projects/proj-1/pipeline/latest') {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ status: 'none' }) } as Response);
     }
     // Any other call (e.g. RulesStudio's inspect) returns an empty ruleset.
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ results: [] }) } as Response);

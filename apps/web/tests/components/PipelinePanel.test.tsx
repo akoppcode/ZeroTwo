@@ -24,6 +24,26 @@ function sseResponse(frames: string[]) {
   return { ok: true, status: 200, body };
 }
 
+function jsonResponse(data: unknown) {
+  return { ok: true, status: 200, json: () => Promise.resolve(data) };
+}
+
+/**
+ * URL-aware fetch mock: the panel restores from `…/pipeline/latest` on mount and
+ * streams a fresh run from `…/pipeline/run`. `latest` defaults to "no prior run".
+ */
+function routeFetch(runFrames: string[], latest: unknown = { status: 'none' }) {
+  return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/pipeline/latest')) return Promise.resolve(jsonResponse(latest));
+    if (url.endsWith('/pipeline/run')) {
+      expect(init?.method).toBe('POST');
+      return Promise.resolve(sseResponse(runFrames));
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  });
+}
+
 function page(name: string, displayName: string, hidden = false): ReportPage {
   return { name, displayName, hidden, width: 1280, height: 720, visuals: [] };
 }
@@ -71,12 +91,7 @@ describe('PipelinePanel', () => {
       'event:pipeline:stage\ndata:{"stage":"commit","status":"passed"}\n\n',
       'event:pipeline:done\ndata:{"ok":true,"stages":[],"screenshots":{"runId":"run-1","pages":["Page1"]}}\n\n',
     ];
-    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe('/api/projects/proj-1/pipeline/run');
-      expect(init?.method).toBe('POST');
-      return Promise.resolve(sseResponse(frames));
-    });
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', routeFetch(frames));
 
     render(<PipelinePanel projectId="proj-1" pages={PAGES} />);
 
@@ -108,8 +123,7 @@ describe('PipelinePanel', () => {
       'event:pipeline:stage\ndata:{"stage":"reload","status":"failed","detail":"bridge timeout after 30s"}\n\n',
       'event:pipeline:done\ndata:{"ok":false,"stages":[],"remediation":{"stage":"reload","message":"Open the report in Power BI Desktop, then retry."}}\n\n',
     ];
-    const fetchMock = vi.fn(() => Promise.resolve(sseResponse(frames)));
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', routeFetch(frames));
 
     render(<PipelinePanel projectId="proj-1" pages={PAGES} />);
     fireEvent.click(screen.getByTestId('pipeline-run'));
@@ -119,5 +133,86 @@ describe('PipelinePanel', () => {
     expect(banner).toHaveTextContent('Open the report in Power BI Desktop');
     expect(screen.getByTestId('stepper-remediation-detail')).toHaveTextContent('bridge timeout after 30s');
     expect(screen.getByTestId('stepper-stage-reload')).toHaveAttribute('data-status', 'failed');
+  });
+
+  it('restores a completed run from …/pipeline/latest on mount (survives navigation)', async () => {
+    const latest = {
+      runId: 'run-9',
+      status: 'done',
+      ok: true,
+      stages: [
+        { stage: 'validate', status: 'passed', attempt: 1 },
+        { stage: 'inspect', status: 'passed' },
+        { stage: 'reload', status: 'passed' },
+        { stage: 'screenshot', status: 'passed', detail: '1 page(s)' },
+        { stage: 'commit', status: 'passed' },
+      ],
+      screenshots: { runId: 'run-9', pages: ['Page1'] },
+      startedAt: 1,
+      finishedAt: 2,
+    };
+    // No run is triggered — the panel hydrates purely from the stored run.
+    vi.stubGlobal('fetch', routeFetch([], latest));
+
+    render(<PipelinePanel projectId="proj-1" pages={PAGES} />);
+
+    // The stepper appears (started) and reflects the stored stages…
+    await waitFor(() =>
+      expect(screen.getByTestId('stepper-stage-commit')).toHaveAttribute('data-status', 'passed'),
+    );
+    expect(screen.getByTestId('stepper-stage-validate')).toHaveAttribute('data-status', 'passed');
+    // …and the captured preview is restored without re-running.
+    const img = await screen.findByTestId('preview-img');
+    expect(img).toHaveAttribute('src', '/api/projects/proj-1/screenshots/run-9/Page1.png');
+  });
+
+  it('reconnects to a running restored run by polling …/pipeline/latest until done', async () => {
+    const running = {
+      runId: 'run-7',
+      status: 'running',
+      stages: [{ stage: 'validate', status: 'running', attempt: 1 }],
+      startedAt: 1,
+    };
+    const done = {
+      runId: 'run-7',
+      status: 'done',
+      ok: true,
+      stages: [
+        { stage: 'validate', status: 'passed', attempt: 1 },
+        { stage: 'inspect', status: 'passed' },
+        { stage: 'reload', status: 'passed' },
+        { stage: 'screenshot', status: 'passed', detail: '1 page(s)' },
+        { stage: 'commit', status: 'passed' },
+      ],
+      screenshots: { runId: 'run-7', pages: ['Page1'] },
+      startedAt: 1,
+      finishedAt: 2,
+    };
+    let calls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/pipeline/latest')) {
+        calls += 1;
+        return Promise.resolve(jsonResponse(calls === 1 ? running : done));
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<PipelinePanel projectId="proj-1" pages={PAGES} />);
+
+    // Restored as in-progress: validate is running.
+    await waitFor(() =>
+      expect(screen.getByTestId('stepper-stage-validate')).toHaveAttribute('data-status', 'running'),
+    );
+
+    // A subsequent poll observes completion and settles the stepper + preview.
+    await waitFor(
+      () => expect(screen.getByTestId('stepper-stage-commit')).toHaveAttribute('data-status', 'passed'),
+      { timeout: 4000 },
+    );
+    const img = await screen.findByTestId('preview-img');
+    expect(img).toHaveAttribute('src', '/api/projects/proj-1/screenshots/run-7/Page1.png');
+    expect(calls).toBeGreaterThanOrEqual(2);
   });
 });
