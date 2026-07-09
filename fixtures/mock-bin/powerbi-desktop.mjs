@@ -72,10 +72,17 @@ if (cmd === "screenshot-all") {
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
     "base64",
   );
-  const pages = (process.env.ZT_MOCK_PBID_PAGES ?? "overview,details").split(",").filter(Boolean);
+  const pageIds = (process.env.ZT_MOCK_PBID_PAGES ?? "overview,details").split(",").filter(Boolean);
   mkdirSync(outDir, { recursive: true });
-  for (const page of pages) writeFileSync(join(outDir, `${page}.png`), png);
-  process.stdout.write(JSON.stringify({ pages }) + "\n");
+  // Match the real bridge: files are named by DISPLAY NAME (distinct from the
+  // page id), returned under `screenshots` with pageId/pageDisplayName/outputPath.
+  const screenshots = pageIds.map((pageId) => {
+    const pageDisplayName = pageId.charAt(0).toUpperCase() + pageId.slice(1);
+    const outputPath = join(outDir, `${pageDisplayName}.png`);
+    writeFileSync(outputPath, png);
+    return { pageId, pageDisplayName, outputPath };
+  });
+  process.stdout.write(JSON.stringify({ status: "ok", screenshots, failures: [] }) + "\n");
   process.exit(0);
 }
 

@@ -68,6 +68,30 @@ describe("DesktopService (mock bridge)", () => {
     expect(await desktop.manifest()).toContain("screenshot-all");
   });
 
+  it("normalizes real bridge screenshots (named by display name) to <pageId>.png", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zt-shot-real-"));
+    const displayName = "1 Category Performance";
+    const outputPath = join(dir, `${displayName}.png`);
+    const runner: CliRunner = async (_bin, argv) => {
+      expect(argv[0]).toBe("screenshot-all");
+      writeFileSync(outputPath, Buffer.from(""));
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          status: "ok",
+          screenshots: [{ pageId: "page1_catperf", pageDisplayName: displayName, outputPath }],
+          failures: [],
+        }),
+        stderr: "",
+      };
+    };
+    const pages = await new DesktopService(runner).screenshotAll(dir);
+    expect(pages).toEqual(["page1_catperf"]);
+    expect(existsSync(join(dir, "page1_catperf.png"))).toBe(true);
+    expect(existsSync(outputPath)).toBe(false);
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("captures screenshots to the out dir", async () => {
     const desktop = new DesktopService(mockRunner({ ZT_MOCK_PBID_PAGES: "overview,details" }));
     const dir = await mkdtemp(join(tmpdir(), "zt-shot-"));

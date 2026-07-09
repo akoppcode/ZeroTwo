@@ -1,3 +1,5 @@
+import { existsSync, renameSync } from "node:fs";
+import { join } from "node:path";
 import { runCli } from "../cli-runner.js";
 
 /**
@@ -83,7 +85,9 @@ export class DesktopService {
   }
 
   async open(pbipPath: string): Promise<void> {
-    const res = await this.run(["open", pbipPath]);
+    // Give a cold Desktop start + large model load room to connect the bridge —
+    // the CLI default (60s) can be too tight for big reports.
+    const res = await this.run(["open", pbipPath, "--timeout", "180"]);
     if (res.code !== 0) throw new DesktopBridgeError(res.stderr.trim() || "open failed", "open");
   }
 
@@ -95,16 +99,51 @@ export class DesktopService {
     if (res.code !== 0) throw new DesktopBridgeError(res.stderr.trim() || "reload failed", "reload");
   }
 
-  /** Capture every page to `outDir`; returns the captured page names. */
+  /**
+   * Capture every page to `outDir`; returns the captured page ids.
+   *
+   * The real bridge returns `{ screenshots: [{ pageId, pageDisplayName,
+   * outputPath }], failures: [] }` and names each PNG by DISPLAY NAME (e.g.
+   * "1 Category Performance.png"). The preview UI + screenshot-serving route key
+   * on the PBIR page id (the page folder name, e.g. "page1_catperf"), so we
+   * normalize each file to `<pageId>.png` and return the page ids.
+   */
   async screenshotAll(outDir: string): Promise<string[]> {
     const res = await this.run(["screenshot-all", "--output-dir", outDir]);
     if (res.code !== 0) throw new DesktopBridgeError(res.stderr.trim() || "screenshot failed", "screenshot");
+    let parsed: any;
     try {
-      const parsed = JSON.parse(res.stdout.trim());
-      return Array.isArray(parsed.pages) ? parsed.pages.map(String) : [];
+      parsed = JSON.parse(res.stdout.trim());
     } catch {
       return [];
     }
+    const shots: any[] = Array.isArray(parsed.screenshots)
+      ? parsed.screenshots
+      : Array.isArray(parsed.pages)
+        ? parsed.pages // legacy/mock shape: array of page-id strings
+        : [];
+    const pageIds: string[] = [];
+    for (const shot of shots) {
+      // Legacy shape: a bare page-id string (no file to normalize).
+      if (typeof shot === "string") {
+        if (shot) pageIds.push(shot);
+        continue;
+      }
+      const pageId = String(shot?.pageId ?? "");
+      const outputPath = String(shot?.outputPath ?? "");
+      if (!pageId) continue;
+      const target = join(outDir, `${pageId}.png`);
+      try {
+        if (outputPath && outputPath !== target && existsSync(outputPath)) {
+          renameSync(outputPath, target);
+        }
+      } catch {
+        // If the rename fails, still report the page — the file may already be
+        // at <pageId>.png or the serving route will surface the miss.
+      }
+      pageIds.push(pageId);
+    }
+    return pageIds;
   }
 
   /** Cached-on-daemon-start capability list; features degrade if a method is gone. */

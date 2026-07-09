@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import type { RouteDeps } from "../server-context.js";
 import { DesktopService } from "../desktop/desktop-service.js";
@@ -43,6 +43,19 @@ function screenshotsRoot(projectPath: string): string {
   return join(projectPath, ".zerotwo", "screenshots");
 }
 
+/** Resolve the .pbip file to hand the Desktop bridge's `open`. Uses the recorded
+ *  pointer, else scans the project folder for a *.pbip, else returns the folder. */
+function resolvePbipOpenPath(root: string, pbipFile: unknown): string {
+  if (typeof pbipFile === "string" && pbipFile) return join(root, pbipFile);
+  try {
+    const hit = readdirSync(root).find((f) => f.toLowerCase().endsWith(".pbip"));
+    if (hit) return join(root, hit);
+  } catch {
+    // Unreadable folder — fall through to the bare path.
+  }
+  return root;
+}
+
 export function registerPipelineRoutes(app: Express, ctx: RegisterPipelineRoutesDeps) {
   const { db } = ctx;
   const { isLocalSameOrigin, resolvedPortRef, createSseResponse } = ctx.http;
@@ -64,9 +77,11 @@ export function registerPipelineRoutes(app: Express, ctx: RegisterPipelineRoutes
       meta = {};
     }
     const reportDirName = typeof meta.reportDirName === "string" ? meta.reportDirName : "";
-    // What to open in Power BI Desktop: the .pbip pointer when present, else the
-    // project folder (the bridge CLI resolves the report there).
-    const openPath = typeof meta.pbipFile === "string" && meta.pbipFile ? join(row.pbip_path, meta.pbipFile) : row.pbip_path;
+    // What to open in Power BI Desktop: the bridge's `open` needs a .pbip FILE
+    // (a bare folder is rejected). Prefer the recorded pointer; if attach never
+    // captured one, scan the folder for a *.pbip; fall back to the folder only as
+    // a last resort (auto-open will then fail with a clear bridge error).
+    const openPath = resolvePbipOpenPath(row.pbip_path, meta.pbipFile);
     return {
       path: row.pbip_path,
       reportDir: reportDirName ? join(row.pbip_path, reportDirName) : row.pbip_path,
