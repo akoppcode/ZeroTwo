@@ -21,8 +21,8 @@ interface SavedProject {
   visualCount: number;
   hasSemanticModel: boolean;
   reportDirName: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 const AGENT_LABELS: Record<string, string> = { claude: 'Claude Code', copilot: 'Copilot' };
@@ -32,9 +32,10 @@ function agentLabel(agent: string): string {
 }
 
 /** Compact "updated N ago" string; falls back to the raw value if unparseable. */
-function relativeTime(iso: string): string {
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return iso;
+function relativeTime(value: number | string): string {
+  // The daemon sends epoch-ms numbers; tolerate ISO strings too.
+  const then = typeof value === 'number' ? value : Date.parse(value);
+  if (Number.isNaN(then)) return String(value);
   const seconds = Math.round((Date.now() - then) / 1000);
   if (seconds < 60) return 'just now';
   const units: Array<[label: string, secs: number]> = [
