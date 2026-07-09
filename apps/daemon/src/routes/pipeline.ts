@@ -29,18 +29,26 @@ export function registerPipelineRoutes(app: Express, ctx: RegisterPipelineRoutes
   const { randomUUID } = ctx.ids;
   const getPort = () => resolvedPortRef.current;
 
-  const loadProject = (id: string): { path: string; reportDir: string } | null => {
+  const loadProject = (id: string): { path: string; reportDir: string; openPath: string } | null => {
     const row = db.prepare(`SELECT pbip_path, metadata_json FROM projects WHERE id = ?`).get(id) as
       | ProjectRow
       | undefined;
     if (!row?.pbip_path) return null;
-    let reportDirName = "";
+    let meta: Record<string, any> = {};
     try {
-      reportDirName = JSON.parse(row.metadata_json ?? "{}").reportDirName ?? "";
+      meta = JSON.parse(row.metadata_json ?? "{}");
     } catch {
-      reportDirName = "";
+      meta = {};
     }
-    return { path: row.pbip_path, reportDir: reportDirName ? join(row.pbip_path, reportDirName) : row.pbip_path };
+    const reportDirName = typeof meta.reportDirName === "string" ? meta.reportDirName : "";
+    // What to open in Power BI Desktop: the .pbip pointer when present, else the
+    // project folder (the bridge CLI resolves the report there).
+    const openPath = typeof meta.pbipFile === "string" && meta.pbipFile ? join(row.pbip_path, meta.pbipFile) : row.pbip_path;
+    return {
+      path: row.pbip_path,
+      reportDir: reportDirName ? join(row.pbip_path, reportDirName) : row.pbip_path,
+      openPath,
+    };
   };
 
   app.post("/api/projects/:id/pipeline/run", (req, res) => {
@@ -75,6 +83,7 @@ export function registerPipelineRoutes(app: Express, ctx: RegisterPipelineRoutes
           runDir,
           agentSummary: typeof req.body?.summary === "string" ? req.body.summary : "chore: pipeline run",
           reloadWithModel,
+          openPath: project.openPath,
           // User-triggered preview: don't hard-stop on a report's pre-existing
           // validation issues; surface them but still reload + screenshot.
           blockOnValidate: false,

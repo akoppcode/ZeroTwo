@@ -51,6 +51,10 @@ export interface PipelineOptions {
   /** When false, a validation failure does not stop the run (user-triggered
    *  "Run pipeline" still renders a preview). Defaults to true (agent loop). */
   blockOnValidate?: boolean;
+  /** The .pbip (or project folder) to open in Power BI Desktop when the Desktop
+   *  Bridge isn't connected yet — opening via the bridge CLI is what establishes
+   *  the connection needed for reload/screenshot. */
+  openPath?: string;
   onEvent?: (event: StageEvent) => void;
   onScreenshots?: (payload: { runId: string; pages: string[] }) => void;
 }
@@ -122,9 +126,23 @@ export class PipelineService {
     }
 
     // --- reload ---
+    // Opening a report manually in Power BI Desktop does NOT connect the Desktop
+    // Bridge; the bridge is established by `powerbi-desktop open`. So if nothing
+    // is connected yet, open the report (launches Desktop + connects + loads);
+    // once connected, a plain reload re-applies the agent's edits.
     emit({ stage: "reload", status: "running" });
     try {
-      await this.deps.desktop.reload({ reportOnly: !options.reloadWithModel });
+      let connected = false;
+      try {
+        connected = (await this.deps.desktop.status()).connected;
+      } catch {
+        connected = false;
+      }
+      if (!connected && options.openPath) {
+        await this.deps.desktop.open(options.openPath);
+      } else {
+        await this.deps.desktop.reload({ reportOnly: !options.reloadWithModel });
+      }
       emit({ stage: "reload", status: "passed" });
     } catch (err) {
       const message = err instanceof DesktopBridgeError ? err.message : String((err as Error)?.message ?? err);
