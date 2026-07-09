@@ -22,6 +22,42 @@ export function registerPbipProjectRoutes(app: Express, ctx: RegisterPbipProject
   const service = new ProjectService();
   const getPort = () => resolvedPortRef.current;
 
+  // List persisted Zero Two projects (attached/scaffolded PBIPs) for the Reports
+  // home, newest first, so the user can return to earlier work.
+  app.get("/api/projects/pbip", (req, res) => {
+    if (!isLocalSameOrigin(req, getPort())) {
+      return res.status(403).json({ error: "cross-origin request rejected" });
+    }
+    const rows = db
+      .prepare(
+        `SELECT id, name, kind, agent, pbip_path, metadata_json, created_at, updated_at
+         FROM projects WHERE pbip_path IS NOT NULL ORDER BY updated_at DESC`,
+      )
+      .all() as Array<Record<string, any>>;
+    const projects = rows.map((r) => {
+      let meta: Record<string, any> = {};
+      try {
+        meta = JSON.parse(r.metadata_json ?? "{}");
+      } catch {
+        meta = {};
+      }
+      return {
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
+        agent: r.agent,
+        path: r.pbip_path,
+        pageCount: meta.pageCount ?? null,
+        visualCount: meta.visualCount ?? null,
+        hasSemanticModel: meta.hasSemanticModel ?? false,
+        reportDirName: meta.reportDirName ?? null,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      };
+    });
+    res.json({ projects });
+  });
+
   const persist = (outcome: Extract<AttachOutcome, { ok: true }>): { id: string } => {
     const id = randomUUID();
     const now = Date.now();
