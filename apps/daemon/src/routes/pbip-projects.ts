@@ -71,6 +71,11 @@ export function registerPbipProjectRoutes(app: Express, ctx: RegisterPbipProject
       agent: outcome.project.agent,
       path: outcome.project.path,
       metadata: JSON.stringify({
+        // baseDir is the user's own report folder — resolveProjectDir returns it
+        // as the agent's working directory, so the chat agent edits the REAL PBIP
+        // (not a daemon-managed copy). Without this the agent can't touch the
+        // report the user attached.
+        baseDir: outcome.project.path,
         pbipFile: outcome.project.pbipFile,
         reportDirName: outcome.project.reportDirName,
         hasSemanticModel: outcome.project.hasSemanticModel,
