@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import type { RouteDeps } from "../server-context.js";
-import { detectPowerBiDesktopVersion } from "../environment/powerbi-desktop-detect.js";
+import { detectPowerBiDesktopVersion, detectPowerBiDesktopStoreVersion } from "../environment/powerbi-desktop-detect.js";
 import { runDoctorChecks } from "../environment/environment-service.js";
 
 /**
@@ -22,6 +22,7 @@ export function registerDoctorRoutes(app: Express, ctx: RegisterDoctorRoutesDeps
       const report = await runDoctorChecks({
         now: new Date().toISOString(),
         detectPowerBiDesktopVersion: () => detectPowerBiDesktopVersion(),
+        detectPowerBiDesktopStoreVersion: () => detectPowerBiDesktopStoreVersion(),
       });
       res.json(report);
     } catch (err: any) {

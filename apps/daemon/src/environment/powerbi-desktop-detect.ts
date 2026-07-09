@@ -67,3 +67,34 @@ export async function detectPowerBiDesktopVersion(
     return null;
   }
 }
+
+/**
+ * Detect a Microsoft Store (MSIX) install of Power BI Desktop. The Store build
+ * lives under ACL-protected `C:\Program Files\WindowsApps\...` at a versioned
+ * path, which the Desktop Bridge CLI cannot launch — it looks for the Download
+ * Center (MSI) `PBIDesktop.exe`. So a Store-only install must be flagged
+ * distinctly from "not installed". Uses `Get-AppxPackage` (no native module);
+ * returns the Store package version, or null.
+ */
+export function detectPowerBiDesktopStoreVersion(
+  platform: NodeJS.Platform = process.platform,
+): Promise<string | null> {
+  if (platform !== "win32") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let stdout = "";
+    const child = spawn(
+      "powershell",
+      [
+        "-NoProfile",
+        "-Command",
+        "(Get-AppxPackage -Name Microsoft.MicrosoftPowerBIDesktop).Version",
+      ],
+      { windowsHide: true },
+    );
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.on("error", () => resolve(null));
+    child.on("close", () => resolve(firstVersionFrom(stdout)));
+  });
+}

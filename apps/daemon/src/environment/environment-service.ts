@@ -41,6 +41,9 @@ export interface EnvironmentProbe {
    *  if not installed. In production this reads the registry / PBIDesktop.exe
    *  file version; tests inject a fixed value. */
   detectPowerBiDesktopVersion: () => Promise<string | null>;
+  /** Microsoft Store (MSIX) Power BI Desktop version, or null — used to flag the
+   *  Store build (which the Desktop Bridge cannot drive) distinctly. */
+  detectPowerBiDesktopStoreVersion: () => Promise<string | null>;
 }
 
 const AGENT_HARD = false;
@@ -135,13 +138,27 @@ async function checkGit(probe: EnvironmentProbe): Promise<DoctorCheck> {
 async function checkPowerBiDesktop(probe: EnvironmentProbe): Promise<DoctorCheck> {
   const version = await probe.detectPowerBiDesktopVersion();
   if (version == null) {
+    // The Desktop Bridge can only drive the Download Center (MSI) build. If the
+    // user has the Microsoft Store build, say so explicitly — otherwise Doctor
+    // reads "not installed" for a machine that clearly has Power BI Desktop.
+    const storeVersion = await probe.detectPowerBiDesktopStoreVersion();
+    if (storeVersion != null) {
+      return check(
+        "powerbi-desktop",
+        "Power BI Desktop",
+        true,
+        "error",
+        `${storeVersion} (Microsoft Store)`,
+        "You have the Microsoft Store version of Power BI Desktop, which the Desktop Bridge cannot launch. Install the Download Center (MSI) build instead: https://www.microsoft.com/download/details.aspx?id=58494 (or `winget install Microsoft.PowerBI`).",
+      );
+    }
     return check(
       "powerbi-desktop",
       "Power BI Desktop",
       true,
       "error",
       null,
-      "Power BI Desktop is not installed. Install it from the Microsoft Store or Download Center.",
+      "Power BI Desktop is not installed. Install the Download Center (MSI) build: https://www.microsoft.com/download/details.aspx?id=58494 (the Microsoft Store build does not work with the Desktop Bridge).",
     );
   }
   if (compareVersions(version, DOCTOR_MINIMUM_POWERBI_DESKTOP_VERSION) < 0) {
@@ -271,6 +288,7 @@ function overallStatus(checks: DoctorCheck[]): DoctorOverallStatus {
 export interface RunDoctorOptions {
   runCommand?: CommandRunner;
   detectPowerBiDesktopVersion?: () => Promise<string | null>;
+  detectPowerBiDesktopStoreVersion?: () => Promise<string | null>;
   platform?: NodeJS.Platform;
   osRelease?: string;
   arch?: string;
@@ -288,6 +306,8 @@ export async function runDoctorChecks(options: RunDoctorOptions): Promise<Doctor
     runCommand: options.runCommand ?? defaultCommandRunner,
     detectPowerBiDesktopVersion:
       options.detectPowerBiDesktopVersion ?? (async () => null),
+    detectPowerBiDesktopStoreVersion:
+      options.detectPowerBiDesktopStoreVersion ?? (async () => null),
   };
 
   const [windows, node, git, desktop, bridgeCli, reportCli, fabInspector, bridge, claude, copilot] =
