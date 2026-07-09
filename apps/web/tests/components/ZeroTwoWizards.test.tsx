@@ -28,10 +28,10 @@ describe('ZeroTwoProjectsView', () => {
     expect(onOpenDoctor).toHaveBeenCalledOnce();
   });
 
-  it('lists saved projects from GET /api/projects/pbip and opens one on click', async () => {
+  it('lists saved projects from GET /api/pbip-projects and opens one on click', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url === '/api/projects/pbip') {
+      if (url === '/api/pbip-projects') {
         return Promise.resolve({
           ok: true,
           json: async () => ({

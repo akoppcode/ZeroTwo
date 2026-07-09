@@ -25,7 +25,7 @@ export function registerPbipProjectRoutes(app: Express, ctx: RegisterPbipProject
 
   // List persisted Zero Two projects (attached/scaffolded PBIPs) for the Reports
   // home, newest first, so the user can return to earlier work.
-  app.get("/api/projects/pbip", (req, res) => {
+  app.get("/api/pbip-projects", (req, res) => {
     if (!isLocalSameOrigin(req, getPort())) {
       return res.status(403).json({ error: "cross-origin request rejected" });
     }
@@ -64,7 +64,7 @@ export function registerPbipProjectRoutes(app: Express, ctx: RegisterPbipProject
   // counts). Doubles as the PBIP-vs-inherited detection the renderer uses to
   // decide between the Zero Two report workspace and the open-design ProjectView:
   // a non-PBIP (inherited) project id 404s here. Local-only.
-  app.get("/api/projects/:id/pbip", async (req, res) => {
+  app.get("/api/pbip-projects/:id", async (req, res) => {
     if (!isLocalSameOrigin(req, getPort())) {
       return res.status(403).json({ error: "cross-origin request rejected" });
     }

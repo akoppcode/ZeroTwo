@@ -104,7 +104,7 @@ export function ZeroTwoProjectsView({ onOpenDoctor, onOpenProject, openNewReport
   // reports success so a freshly attached / scaffolded project shows up.
   const loadProjects = useCallback(async () => {
     try {
-      const res = await fetch('/api/projects/pbip');
+      const res = await fetch('/api/pbip-projects');
       if (!res.ok) {
         setProjects((prev) => prev ?? []);
         return;

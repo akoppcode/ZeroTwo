@@ -47,7 +47,7 @@ export function ZeroTwoWorkspace({ projectId, onBack }: Props) {
     setState({ status: 'loading' });
     (async () => {
       try {
-        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/pbip`);
+        const res = await fetch(`/api/pbip-projects/${encodeURIComponent(projectId)}`);
         if (!res.ok) {
           if (!cancelled) setState({ status: 'error', message: 'This report could not be opened.' });
           return;

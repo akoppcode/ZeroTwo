@@ -1575,7 +1575,7 @@ function AppInner() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/projects/pbip');
+        const res = await fetch('/api/pbip-projects');
         if (!res.ok) return;
         const body = (await res.json()) as { projects?: Array<{ id?: string }> };
         if (cancelled || !Array.isArray(body.projects)) return;
@@ -1600,7 +1600,7 @@ function AppInner() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/projects/${encodeURIComponent(id)}/pbip`);
+        const res = await fetch(`/api/pbip-projects/${encodeURIComponent(id)}`);
         if (cancelled || !res.ok) return;
         setPbipProjectIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
       } catch {
