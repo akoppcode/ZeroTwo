@@ -34,6 +34,122 @@
   gap: 16px;
 }
 
+/* --- Saved projects list (§3.1) ----------------------------- */
+.zt-projects__saved {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.zt-projects__saved-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.zt-projects__empty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.zt-projects__grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.zt-project-card {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+  transition: border-color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out);
+}
+
+.zt-project-card:hover {
+  border-color: var(--accent);
+  background: var(--bg-subtle);
+  transform: translateY(-1px);
+}
+
+.zt-project-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.zt-project-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.zt-project-card__name {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zt-project-card__badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-size: 10.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-soft);
+}
+
+.zt-project-card__badge--scaffolded {
+  border-color: var(--accent-soft);
+  background: var(--accent-tint);
+  color: var(--accent-strong, var(--accent));
+}
+
+.zt-project-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.zt-project-card__agent {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.zt-project-card__updated {
+  font-size: 11.5px;
+  color: var(--text-soft);
+}
+
 .zt-path-card-btn {
   appearance: none;
   display: flex;
@@ -489,6 +605,59 @@
   flex: 1;
   height: 1px;
   background: var(--border);
+}
+
+/* --- Demoted advanced path (.pbix → convert → watch) -------- */
+.zt-advanced {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+
+.zt-advanced__summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.zt-advanced__summary::-webkit-details-marker {
+  display: none;
+}
+
+.zt-advanced__summary::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 4px 0 4px 6px;
+  border-color: transparent transparent transparent currentColor;
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+
+.zt-advanced[open] .zt-advanced__summary::before {
+  transform: rotate(90deg);
+}
+
+.zt-advanced__summary:hover {
+  color: var(--text-strong);
+}
+
+.zt-advanced__summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.zt-advanced__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 14px 14px;
 }
 
 /* --- Convert step: checklist + path card + activity --------- */

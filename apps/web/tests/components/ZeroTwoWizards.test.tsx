@@ -27,6 +27,59 @@ describe('ZeroTwoProjectsView', () => {
     fireEvent.click(screen.getByTestId('zt-open-doctor'));
     expect(onOpenDoctor).toHaveBeenCalledOnce();
   });
+
+  it('lists saved projects from GET /api/projects/pbip and opens one on click', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/projects/pbip') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            projects: [
+              {
+                id: 'proj-a',
+                name: 'Sales Review',
+                kind: 'attached',
+                agent: 'claude',
+                pageCount: 3,
+                visualCount: 12,
+                hasSemanticModel: true,
+                reportDirName: 'Sales.Report',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+            ],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const onOpenProject = vi.fn();
+
+    render(<ZeroTwoProjectsView onOpenProject={onOpenProject} />);
+
+    const card = await screen.findByTestId('zt-project-proj-a');
+    expect(screen.getByTestId('zt-projects-list')).toBeInTheDocument();
+    expect(card).toHaveTextContent('Sales Review');
+    expect(card).toHaveTextContent('Attached');
+    expect(card).toHaveTextContent('Claude Code');
+
+    fireEvent.click(card);
+    expect(onOpenProject).toHaveBeenCalledWith('proj-a');
+  });
+
+  it('shows the empty state when no projects are saved', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true, json: async () => ({ projects: [] }) }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<ZeroTwoProjectsView />);
+
+    expect(await screen.findByTestId('zt-projects-empty')).toBeInTheDocument();
+    // Attach / New path cards remain available.
+    expect(screen.getByTestId('zt-path-attach')).toBeInTheDocument();
+    expect(screen.getByTestId('zt-path-new')).toBeInTheDocument();
+  });
 });
 
 describe('NewReportWizard', () => {

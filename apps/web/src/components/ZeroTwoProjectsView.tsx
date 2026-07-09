@@ -3,13 +3,54 @@
 // hosts both wizard modals. Wired into the entry shell the same rail/route way
 // as DoctorView.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AttachReportWizard } from './AttachReportWizard';
 import { Icon, type IconName } from './Icon';
 import { NewReportWizard } from './NewReportWizard';
 import { PipelinePanel } from './PipelinePanel';
 import { RulesStudio } from './RulesStudio';
 import type { ReportPage } from './pipeline-types';
+
+/** A saved PBIP project as returned by `GET /api/projects/pbip` (newest first). */
+interface SavedProject {
+  id: string;
+  name: string;
+  kind: string;
+  agent: string;
+  pageCount: number;
+  visualCount: number;
+  hasSemanticModel: boolean;
+  reportDirName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const AGENT_LABELS: Record<string, string> = { claude: 'Claude Code', copilot: 'Copilot' };
+
+function agentLabel(agent: string): string {
+  return AGENT_LABELS[agent] ?? agent;
+}
+
+/** Compact "updated N ago" string; falls back to the raw value if unparseable. */
+function relativeTime(iso: string): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return iso;
+  const seconds = Math.round((Date.now() - then) / 1000);
+  if (seconds < 60) return 'just now';
+  const units: Array<[label: string, secs: number]> = [
+    ['year', 31536000],
+    ['month', 2592000],
+    ['week', 604800],
+    ['day', 86400],
+    ['hour', 3600],
+    ['minute', 60],
+  ];
+  for (const [label, secs] of units) {
+    const value = Math.floor(seconds / secs);
+    if (value >= 1) return `${value} ${label}${value === 1 ? '' : 's'} ago`;
+  }
+  return 'just now';
+}
 
 interface Props {
   /** Switch to the Doctor route (tertiary "environment check" affordance). */
@@ -56,6 +97,28 @@ export function ZeroTwoProjectsView({ onOpenDoctor, onOpenProject, openNewReport
   // and the project/session context — this inline toggle is a stopgap.
   const [pipeline, setPipeline] = useState<{ projectId: string; pages: ReportPage[] } | null>(null);
   const [projectTab, setProjectTab] = useState<'pipeline' | 'rules'>('pipeline');
+  // Saved projects (null = not yet loaded, so we don't flash the empty state).
+  const [projects, setProjects] = useState<SavedProject[] | null>(null);
+
+  // Load the saved-project list. Called on mount and again whenever a wizard
+  // reports success so a freshly attached / scaffolded project shows up.
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await fetch('/api/projects/pbip');
+      if (!res.ok) {
+        setProjects((prev) => prev ?? []);
+        return;
+      }
+      const body = (await res.json()) as { projects?: SavedProject[] };
+      setProjects(body.projects ?? []);
+    } catch {
+      setProjects((prev) => prev ?? []);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
 
   // The entry rail's "+" requests the New report wizard by flipping
   // `openNewReport`. Consume it once, clearing any inline pipeline preview so
@@ -72,6 +135,8 @@ export function ZeroTwoProjectsView({ onOpenDoctor, onOpenProject, openNewReport
     setNewOpen(false);
     setProjectTab('pipeline');
     setPipeline({ projectId, pages });
+    // A wizard just succeeded — refresh so the new project is listed on return.
+    void loadProjects();
   };
 
   if (pipeline) {
@@ -135,6 +200,47 @@ export function ZeroTwoProjectsView({ onOpenDoctor, onOpenProject, openNewReport
           git so you can let the agent iterate safely.
         </p>
       </header>
+
+      {projects !== null ? (
+        <section className="zt-projects__saved" aria-labelledby="zt-projects-saved-title" data-testid="zt-projects-list">
+          <h2 id="zt-projects-saved-title" className="zt-projects__saved-title">
+            Your projects
+          </h2>
+          {projects.length === 0 ? (
+            <p className="zt-projects__empty" data-testid="zt-projects-empty">
+              No projects yet — attach or create one below.
+            </p>
+          ) : (
+            <ul className="zt-projects__grid">
+              {projects.map((project) => (
+                <li key={project.id}>
+                  <button
+                    type="button"
+                    className="zt-project-card"
+                    onClick={() => onOpenProject?.(project.id)}
+                    data-testid={`zt-project-${project.id}`}
+                  >
+                    <span className="zt-project-card__head">
+                      <span className="zt-project-card__name">{project.name}</span>
+                      <span className={`zt-project-card__badge zt-project-card__badge--${project.kind}`}>
+                        {project.kind === 'scaffolded' ? 'Scaffolded' : 'Attached'}
+                      </span>
+                    </span>
+                    <span className="zt-project-card__meta">
+                      <span className="zt-project-card__agent">{agentLabel(project.agent)}</span>
+                      <span>
+                        {project.pageCount} page{project.pageCount === 1 ? '' : 's'} · {project.visualCount} visual
+                        {project.visualCount === 1 ? '' : 's'}
+                      </span>
+                    </span>
+                    <span className="zt-project-card__updated">Updated {relativeTime(project.updatedAt)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       <div className="zt-projects__paths">
         {PATHS.map((path) => (

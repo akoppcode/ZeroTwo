@@ -297,83 +297,14 @@ export function AttachReportWizard({ open, onClose, onOpened, onReportInventory,
     >
       {step === 'source' ? (
         <div className="zt-step" data-testid="attach-step-source">
-          <div
-            className={`zt-dropzone${dragOver ? ' is-drag' : ''}${pbixName ? ' is-filled' : ''}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOver(false);
-              onPickPbix(e.dataTransfer.files?.[0]);
-            }}
-            onClick={() => fileInputRef.current?.click()}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                fileInputRef.current?.click();
-              }
-            }}
-            aria-label="Drop a .pbix file or click to browse"
-            data-testid="attach-dropzone"
-          >
-            <Icon name={pbixName ? 'file-code' : 'upload'} size={22} />
-            {pbixName ? (
-              <p className="zt-dropzone__file">{pbixName}</p>
-            ) : (
-              <>
-                <p className="zt-dropzone__title">Drop a .pbix file</p>
-                <p className="zt-dropzone__hint">or click to browse</p>
-              </>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pbix"
-              className="zt-visually-hidden"
-              onChange={(e) => onPickPbix(e.target.files?.[0])}
-              data-testid="attach-file-input"
-            />
-          </div>
-
-          <label className="zt-field">
-            <span className="zt-field__label">Destination folder</span>
-            <input
-              type="text"
-              className="zt-input"
-              placeholder="C:\PowerBIProjects\my-report"
-              value={destFolder}
-              onChange={(e) => setDestFolder(e.target.value)}
-              data-testid="attach-dest-input"
-            />
-            <span className="zt-field__hint">Where you will Save As the .pbip. Zero Two watches this folder.</span>
-          </label>
-
           <label className="zt-field">
             <span className="zt-field__label">Agent</span>
             <ZeroTwoAgentPicker value={agent} onChange={setAgent} idBase="attach-agent" />
           </label>
 
-          <button
-            type="button"
-            className="zt-btn zt-btn--primary"
-            disabled={!canStartWatch}
-            onClick={() => setStep('convert')}
-            data-testid="attach-start-watch"
-          >
-            Start watching
-          </button>
-
-          <div className="zt-or" role="separator">
-            <span>or</span>
-          </div>
-
+          {/* Primary path — most users already have a report folder on disk. */}
           <label className="zt-field">
-            <span className="zt-field__label">Select an existing PBIP folder</span>
+            <span className="zt-field__label">Open an existing report folder</span>
             <div className="zt-field__row">
               <input
                 type="text"
@@ -385,16 +316,91 @@ export function AttachReportWizard({ open, onClose, onOpened, onReportInventory,
               />
               <button
                 type="button"
-                className="zt-btn"
+                className="zt-btn zt-btn--primary"
                 disabled={!folderPath.trim()}
                 onClick={useExistingFolder}
                 data-testid="attach-use-folder"
               >
-                Use this folder
+                Open folder
               </button>
             </div>
-            <span className="zt-field__hint">Already have a PBIP on disk? Skip the conversion.</span>
+            <span className="zt-field__hint">
+              Point Zero Two at the folder that already contains your report (a <code>*.Report</code> or{' '}
+              <code>.pbip</code>).
+            </span>
           </label>
+
+          {/* Secondary, demoted path — converting a raw .pbix by watching a Save-As. */}
+          <details className="zt-advanced" data-testid="attach-pbix-advanced">
+            <summary className="zt-advanced__summary">Only have a .pbix? Convert it</summary>
+            <div className="zt-advanced__body">
+              <div
+                className={`zt-dropzone${dragOver ? ' is-drag' : ''}${pbixName ? ' is-filled' : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  onPickPbix(e.dataTransfer.files?.[0]);
+                }}
+                onClick={() => fileInputRef.current?.click()}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+                aria-label="Drop a .pbix file or click to browse"
+                data-testid="attach-dropzone"
+              >
+                <Icon name={pbixName ? 'file-code' : 'upload'} size={22} />
+                {pbixName ? (
+                  <p className="zt-dropzone__file">{pbixName}</p>
+                ) : (
+                  <>
+                    <p className="zt-dropzone__title">Drop a .pbix file</p>
+                    <p className="zt-dropzone__hint">or click to browse</p>
+                  </>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pbix"
+                  className="zt-visually-hidden"
+                  onChange={(e) => onPickPbix(e.target.files?.[0])}
+                  data-testid="attach-file-input"
+                />
+              </div>
+
+              <label className="zt-field">
+                <span className="zt-field__label">Destination folder</span>
+                <input
+                  type="text"
+                  className="zt-input"
+                  placeholder="C:\PowerBIProjects\my-report"
+                  value={destFolder}
+                  onChange={(e) => setDestFolder(e.target.value)}
+                  data-testid="attach-dest-input"
+                />
+                <span className="zt-field__hint">Where you will Save As the .pbip. Zero Two watches this folder.</span>
+              </label>
+
+              <button
+                type="button"
+                className="zt-btn"
+                disabled={!canStartWatch}
+                onClick={() => setStep('convert')}
+                data-testid="attach-start-watch"
+              >
+                Start watching
+              </button>
+            </div>
+          </details>
         </div>
       ) : null}
 
