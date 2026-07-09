@@ -65,6 +65,16 @@ export interface PipelineResult {
   remediation?: { stage: StageName; message: string };
 }
 
+/** Turn a raw bridge/reload failure into actionable guidance. The preview
+ *  requires a live Power BI Desktop with the report open + the Desktop Bridge
+ *  connected; a bare "NO_BRIDGE" tells the user nothing. */
+function bridgeRemediation(raw: string): string {
+  if (/no[_ ]?bridge|not[_ ]?connected|bridge connection|desktop bridge|no power bi desktop/i.test(raw)) {
+    return "Open this report in Power BI Desktop and make sure the Desktop Bridge is connected, then run the pipeline — Zero Two captures the live Desktop preview.";
+  }
+  return raw;
+}
+
 export class PipelineService {
   constructor(private readonly deps: PipelineDeps) {}
 
@@ -119,7 +129,13 @@ export class PipelineService {
     } catch (err) {
       const message = err instanceof DesktopBridgeError ? err.message : String((err as Error)?.message ?? err);
       emit({ stage: "reload", status: "failed", detail: message });
-      return { ok: false, stages, validateAttempts: attempts, commitSha: null, remediation: { stage: "reload", message } };
+      return {
+        ok: false,
+        stages,
+        validateAttempts: attempts,
+        commitSha: null,
+        remediation: { stage: "reload", message: bridgeRemediation(message) },
+      };
     }
 
     // --- screenshot ---
@@ -133,7 +149,13 @@ export class PipelineService {
     } catch (err) {
       const message = err instanceof DesktopBridgeError ? err.message : String((err as Error)?.message ?? err);
       emit({ stage: "screenshot", status: "failed", detail: message });
-      return { ok: false, stages, validateAttempts: attempts, commitSha: null, remediation: { stage: "screenshot", message } };
+      return {
+        ok: false,
+        stages,
+        validateAttempts: attempts,
+        commitSha: null,
+        remediation: { stage: "screenshot", message: bridgeRemediation(message) },
+      };
     }
 
     // --- commit ---
