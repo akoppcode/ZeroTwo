@@ -48,6 +48,9 @@ export interface PipelineOptions {
   /** Reload the model too (auto-suggested when .SemanticModel changed). */
   reloadWithModel?: boolean;
   maxValidateAttempts?: number;
+  /** When false, a validation failure does not stop the run (user-triggered
+   *  "Run pipeline" still renders a preview). Defaults to true (agent loop). */
+  blockOnValidate?: boolean;
   onEvent?: (event: StageEvent) => void;
   onScreenshots?: (payload: { runId: string; pages: string[] }) => void;
 }
@@ -91,7 +94,11 @@ export class PipelineService {
         if (!retry) break;
       }
     }
-    if (!validateOk) {
+    // A user-triggered "Run pipeline" (blockOnValidate=false) should still render
+    // a preview even when the existing report has validation issues — the
+    // validate result is surfaced as a failed stage, but reload/screenshot run
+    // anyway. The agent loop keeps validate blocking (default true).
+    if (!validateOk && (options.blockOnValidate ?? true)) {
       return { ok: false, stages, validateAttempts: attempts, commitSha: null };
     }
 

@@ -75,6 +75,9 @@ export function registerPipelineRoutes(app: Express, ctx: RegisterPipelineRoutes
           runDir,
           agentSummary: typeof req.body?.summary === "string" ? req.body.summary : "chore: pipeline run",
           reloadWithModel,
+          // User-triggered preview: don't hard-stop on a report's pre-existing
+          // validation issues; surface them but still reload + screenshot.
+          blockOnValidate: false,
           onEvent: (event: StageEvent) => emit("pipeline:stage", event),
           onScreenshots: (payload) => emit("screenshots:updated", payload),
         });
