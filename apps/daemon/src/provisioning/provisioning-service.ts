@@ -1,9 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { runCli } from "../cli-runner.js";
 import { join } from "node:path";
 import { buildProvisioningPlan, expectedInstalledPlugins, type ProvisioningAgent } from "./provisioning-plan.js";
 import { writeZeroTwoMd, linkZeroTwoMd } from "./zero-two-md.js";
 import type { CliRunner } from "./auth-service.js";
-import { execFile } from "node:child_process";
 
 /**
  * ProvisioningService (spec §5.3). Drives the resolved command plan through the
@@ -34,13 +34,7 @@ export interface ProvisioningReport {
   zeroTwoMdPath: string;
 }
 
-const defaultRunner: CliRunner = (bin, argv, opts) =>
-  new Promise((resolve) => {
-    execFile(bin, argv, { cwd: opts?.cwd, env: opts?.env, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
-      const code = err && typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : err ? 1 : 0;
-      resolve({ code, stdout: stdout?.toString() ?? "", stderr: stderr?.toString() ?? "" });
-    });
-  });
+const defaultRunner: CliRunner = runCli;
 
 /** A `/plugin ...` REPL command → the non-interactive `plugin ...` argv. */
 function stepArgv(command: string): string[] {

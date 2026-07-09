@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { runCli } from "../cli-runner.js";
 import type { ProvisioningAgent } from "./provisioning-plan.js";
 
 /**
@@ -21,13 +21,7 @@ export type CliRunner = (
   opts?: { cwd?: string; env?: NodeJS.ProcessEnv },
 ) => Promise<{ code: number; stdout: string; stderr: string }>;
 
-const defaultRunner: CliRunner = (bin, argv, opts) =>
-  new Promise((resolve) => {
-    execFile(bin, argv, { cwd: opts?.cwd, env: opts?.env, windowsHide: true }, (err, stdout, stderr) => {
-      const code = err && typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : err ? 1 : 0;
-      resolve({ code, stdout: stdout?.toString() ?? "", stderr: stderr?.toString() ?? "" });
-    });
-  });
+const defaultRunner: CliRunner = runCli;
 
 /** The command the user runs to sign in (shown in the UI when logged out). */
 export function guidedLoginCommand(agent: ProvisioningAgent): string {

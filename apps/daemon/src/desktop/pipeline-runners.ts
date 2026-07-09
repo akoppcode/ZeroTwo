@@ -1,5 +1,5 @@
-import { execFile } from "node:child_process";
 import type { StageOutput } from "./pipeline-service.js";
+import { runCli } from "../cli-runner.js";
 
 /**
  * Default stage runners for the pipeline (spec §6.2): structural validation via
@@ -15,13 +15,7 @@ export type CliRunner = (
   opts?: { cwd?: string; env?: NodeJS.ProcessEnv },
 ) => Promise<{ code: number; stdout: string; stderr: string }>;
 
-const defaultRunner: CliRunner = (bin, argv, opts) =>
-  new Promise((resolve) => {
-    execFile(bin, argv, { cwd: opts?.cwd, env: opts?.env, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
-      const code = err && typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : err ? 1 : 0;
-      resolve({ code, stdout: stdout?.toString() ?? "", stderr: stderr?.toString() ?? "" });
-    });
-  });
+const defaultRunner: CliRunner = runCli;
 
 export function makeValidateRunner(
   runner: CliRunner = defaultRunner,
