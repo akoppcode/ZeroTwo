@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import type { RouteDeps } from "../server-context.js";
 import { ProjectService, type ProjectAgent, type AttachOutcome } from "../pbip/project-service.js";
+import { inspectPbip } from "../pbip/pbip-inspect.js";
 import { watchForPbip } from "../pbip/attach-watcher.js";
 
 /**
@@ -56,6 +57,56 @@ export function registerPbipProjectRoutes(app: Express, ctx: RegisterPbipProject
       };
     });
     res.json({ projects });
+  });
+
+  // Resolve a single Zero Two project by id, re-inspecting the PBIP folder so the
+  // Workspace has the live page/visual inventory (the list route only stores
+  // counts). Doubles as the PBIP-vs-inherited detection the renderer uses to
+  // decide between the Zero Two report workspace and the open-design ProjectView:
+  // a non-PBIP (inherited) project id 404s here. Local-only.
+  app.get("/api/projects/:id/pbip", async (req, res) => {
+    if (!isLocalSameOrigin(req, getPort())) {
+      return res.status(403).json({ error: "cross-origin request rejected" });
+    }
+    const row = db
+      .prepare(
+        `SELECT id, name, kind, agent, pbip_path, metadata_json FROM projects WHERE id = ?`,
+      )
+      .get(req.params.id) as Record<string, any> | undefined;
+    if (!row?.pbip_path) {
+      return res.status(404).json({ error: { code: "NOT_FOUND", message: "not a Zero Two project" } });
+    }
+    let meta: Record<string, any> = {};
+    try {
+      meta = JSON.parse(row.metadata_json ?? "{}");
+    } catch {
+      meta = {};
+    }
+    // Re-inspect for the page inventory; on a transient read failure fall back to
+    // an empty inventory so the Workspace still renders (the pipeline can refresh).
+    let pages: unknown[] = [];
+    let reportDirName: string | null = meta.reportDirName ?? null;
+    try {
+      const inspect = await inspectPbip(row.pbip_path);
+      if (inspect.ok) {
+        pages = inspect.report.pages;
+        reportDirName = inspect.report.reportDirName;
+      }
+    } catch {
+      pages = [];
+    }
+    res.json({
+      project: {
+        id: row.id,
+        name: row.name,
+        kind: row.kind,
+        agent: row.agent,
+        path: row.pbip_path,
+        reportDirName,
+        hasSemanticModel: meta.hasSemanticModel ?? false,
+      },
+      pages,
+    });
   });
 
   const persist = (outcome: Extract<AttachOutcome, { ok: true }>): { id: string } => {

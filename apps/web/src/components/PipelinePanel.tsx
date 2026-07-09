@@ -31,6 +31,8 @@ interface Props {
   onClose?: () => void;
   /** Hand off to the full Workspace once it exists (later phase). */
   onOpenWorkspace?: (projectId: string) => void;
+  /** Sink for a comment-mode annotation prompt (Workspace pipes it into the chat). */
+  onSubmitPrompt?: (prompt: string) => void;
 }
 
 type Phase = 'idle' | 'running' | 'done' | 'error';
@@ -78,7 +80,7 @@ async function readSseStream(
   }
 }
 
-export function PipelinePanel({ projectId, pages, onClose, onOpenWorkspace }: Props) {
+export function PipelinePanel({ projectId, pages, onClose, onOpenWorkspace, onSubmitPrompt }: Props) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [started, setStarted] = useState(false);
   const [stages, setStages] = useState<Record<StageName, StageView>>(PENDING_STAGES);
@@ -211,6 +213,7 @@ export function PipelinePanel({ projectId, pages, onClose, onOpenWorkspace }: Pr
         refreshing={phase === 'running'}
         onRefresh={() => void run()}
         sessionId={sessionId}
+        {...(onSubmitPrompt ? { onSubmitPrompt } : {})}
       />
     </section>
   );

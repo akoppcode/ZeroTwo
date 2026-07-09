@@ -28,6 +28,7 @@ import { PetOverlay, type PetTaskCenter } from './components/pet/PetOverlay';
 import { buildPetTaskCenter } from './components/pet/taskCenter';
 import { migrateCustomPetAtlas } from './components/pet/pets';
 import { ProjectView } from './components/ProjectView';
+import { ZeroTwoWorkspace } from './components/ZeroTwoWorkspace';
 import { TooltipLayer } from './components/TooltipLayer';
 import { openWorkspaceTab, WorkspaceTabsBar } from './components/WorkspaceTabsBar';
 import {
@@ -1560,6 +1561,57 @@ function AppInner() {
   }, [route]);
   const activeProject = loadedActiveProject ?? routeProjectPlaceholder;
 
+  // Zero Two (PBIP) project ids. Opening one of these lands in the report
+  // workspace (ZeroTwoWorkspace) rather than the inherited open-design
+  // ProjectView; inherited projects are absent here and keep ProjectView. The
+  // set is seeded from the PBIP list on mount / reconnect (instant, flash-free
+  // routing when opening from the Reports grid) and re-probed per active project
+  // id so a freshly attached project or a deep link resolves too. GET
+  // /api/projects/:id/pbip 404s for inherited projects, so a probe miss simply
+  // leaves the id out of the set.
+  const [pbipProjectIds, setPbipProjectIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/projects/pbip');
+        if (!res.ok) return;
+        const body = (await res.json()) as { projects?: Array<{ id?: string }> };
+        if (cancelled || !Array.isArray(body.projects)) return;
+        setPbipProjectIds((prev) => {
+          const next = new Set(prev);
+          for (const p of body.projects!) if (p?.id) next.add(p.id);
+          return next.size === prev.size ? prev : next;
+        });
+      } catch {
+        /* daemon offline — ProjectView stays the default until a probe succeeds */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [daemonLive]);
+
+  useEffect(() => {
+    if (route.kind !== 'project') return;
+    const id = route.projectId;
+    if (pbipProjectIds.has(id)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(id)}/pbip`);
+        if (cancelled || !res.ok) return;
+        setPbipProjectIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+      } catch {
+        /* inherited project or offline — keep ProjectView */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [route, pbipProjectIds]);
+
   // Deep-linked route to a project we don't have yet (e.g. after a refresh
   // that finishes after the project list comes back). Fetch it in the
   // background so the view can render rather than bouncing to home.
@@ -1828,6 +1880,16 @@ function AppInner() {
         onInitialRevisionJobConsumed={(jobId) =>
           handleDesignSystemRevisionJobConsumed(route.designSystemId, jobId)
         }
+      />
+    );
+  } else if (activeProject && pbipProjectIds.has(activeProject.id)) {
+    // A Zero Two report project: open the Power BI report workspace, never the
+    // open-design sketch/deck surface.
+    appMain = (
+      <ZeroTwoWorkspace
+        key={activeProject.id}
+        projectId={activeProject.id}
+        onBack={() => navigate({ kind: 'home', view: 'reports' })}
       />
     );
   } else if (activeProject) {
