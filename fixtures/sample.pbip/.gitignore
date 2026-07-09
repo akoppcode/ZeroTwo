@@ -1,0 +1,9 @@
+# Power BI Desktop cache / per-user files
+*.pbix
+.pbi/
+*.Report/.pbi/
+*.SemanticModel/.pbi/
+
+# Zero Two local state (committed: briefs/, zerotwo.json)
+.zerotwo/screenshots/
+.zerotwo/sessions/
