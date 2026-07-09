@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -34,6 +34,13 @@ describe("DesktopService (mock bridge)", () => {
       { pid: 1234, title: "A.pbip" },
       { pid: 5678, title: "B.pbip" },
     ]);
+  });
+
+  it("reports the bridge as disconnected from the real not_connected JSON", async () => {
+    const desktop = new DesktopService(mockRunner({ ZT_MOCK_PBID_STATUS: "not_connected" }));
+    const status = await desktop.status();
+    expect(status.connected).toBe(false);
+    expect(status.instances).toEqual([]);
   });
 
   it("reports the cached manifest capability list", async () => {
@@ -119,6 +126,35 @@ describe("PipelineService", () => {
     const result = await pipeline.run({ ...baseOpts(join(root, "r")), maxValidateAttempts: 3 });
     expect(result.ok).toBe(false);
     expect(result.validateAttempts).toBe(3);
+  });
+
+  it("opens Power BI Desktop when the bridge is not connected instead of reloading", async () => {
+    const calls: string[][] = [];
+    const runner: CliRunner = async (_bin, argv) => {
+      calls.push(argv);
+      const cmd = argv[0];
+      if (cmd === "status") {
+        return { code: 0, stdout: JSON.stringify({ status: "not_connected", instances: [] }), stderr: "" };
+      }
+      if (cmd === "open" || cmd === "reload") return { code: 0, stdout: "ok", stderr: "" };
+      if (cmd === "screenshot-all") {
+        const outDir = argv[argv.indexOf("--output-dir") + 1]!;
+        mkdirSync(outDir, { recursive: true });
+        writeFileSync(join(outDir, "overview.png"), Buffer.from(""));
+        return { code: 0, stdout: JSON.stringify({ pages: ["overview"] }), stderr: "" };
+      }
+      return { code: 1, stdout: "", stderr: `unsupported ${cmd}` };
+    };
+    const pipeline = new PipelineService(deps({ desktop: new DesktopService(runner) }));
+    const result = await pipeline.run({
+      ...baseOpts(join(root, ".zerotwo", "screenshots", "run-open")),
+      openPath: join(root, "Report.pbip"),
+    });
+
+    expect(result.ok).toBe(true);
+    const commands = calls.map((c) => c[0]);
+    expect(commands).toContain("open");
+    expect(commands).not.toContain("reload");
   });
 
   it("returns a remediation when screenshot fails (bridge down)", async () => {

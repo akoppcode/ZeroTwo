@@ -52,15 +52,21 @@ export class DesktopService {
     const res = await this.run(["status"]);
     const text = res.stdout.trim();
     if (res.code !== 0) throw new DesktopBridgeError(res.stderr.trim() || "bridge status failed", "status");
-    if (text.startsWith("not_connected")) return { connected: false, instances: [] };
     try {
+      // Real bridge output is JSON with an explicit `status` field, e.g.
+      // {"status":"not_connected","instances":[]} or
+      // {"status":"connected","instances":[{pid,title},…]}. Trust that field —
+      // an empty `instances` array is NOT a signal of connectivity.
       const parsed = JSON.parse(text);
       const instances: DesktopInstance[] = Array.isArray(parsed.instances)
         ? parsed.instances.map((i: any) => ({ pid: Number(i.pid), title: String(i.title ?? "") }))
         : [];
-      return { connected: true, instances };
+      const connected =
+        typeof parsed.status === "string" ? parsed.status === "connected" : instances.length > 0;
+      return { connected, instances };
     } catch {
-      // Legacy human-readable form ("connected: ...") — treat as one instance.
+      // Legacy human-readable forms ("not_connected" / "connected: …").
+      if (/^not_connected/i.test(text)) return { connected: false, instances: [] };
       return { connected: /^connected/i.test(text), instances: [] };
     }
   }

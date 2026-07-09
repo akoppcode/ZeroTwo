@@ -20,7 +20,8 @@ if (args.includes("--version")) {
 if (cmd === "status") {
   const status = process.env.ZT_MOCK_PBID_STATUS ?? "connected";
   if (status === "not_connected") {
-    process.stdout.write("not_connected\n");
+    // Match the real bridge: not_connected is JSON, not plain text.
+    process.stdout.write(JSON.stringify({ status: "not_connected", instances: [] }) + "\n");
     process.exit(0);
   }
   // ZT_MOCK_PBID_INSTANCES: "PID:title;PID:title" for the PID-ambiguity picker.
